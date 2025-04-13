@@ -1,4 +1,3 @@
-
 export interface Point {
   x: number;
   y: number;
@@ -75,6 +74,11 @@ export interface ZoomSettings {
 }
 
 export interface ClipboardData {
+  points: ControlPoint[];
+  timestamp: number;
+}
+
+export interface HistoryState {
   points: ControlPoint[];
   timestamp: number;
 }

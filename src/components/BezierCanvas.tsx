@@ -1,10 +1,12 @@
+
 import React, { useRef, useEffect, useState } from 'react';
 import { 
   ControlPoint, 
   Point, 
   ControlPointType, 
   SelectedPoint,
-  SelectionRect
+  SelectionRect,
+  HistoryState
 } from '../types/bezier';
 import { 
   isPointNear, 
@@ -14,7 +16,7 @@ import {
   isPointInSelectionRect
 } from '../utils/bezierUtils';
 import { toast } from '@/components/ui/use-toast';
-import { Copy, Scissors, ZoomIn, ZoomOut } from 'lucide-react';
+import { Copy, Scissors, ZoomIn, ZoomOut, Undo } from 'lucide-react';
 
 interface BezierCanvasProps {
   width: number;
@@ -71,6 +73,15 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
   // Add clipboard state
   const [clipboard, setClipboard] = useState<ControlPoint[]>([]);
   
+  // Add history state for undo functionality
+  const [history, setHistory] = useState<HistoryState[]>([]);
+  const [currentHistoryIndex, setCurrentHistoryIndex] = useState<number>(-1);
+  
+  // Add canvas dragging state
+  const [isCanvasDragging, setIsCanvasDragging] = useState<boolean>(false);
+  const [dragStart, setDragStart] = useState<Point>({ x: 0, y: 0 });
+  const [isSpacePressed, setIsSpacePressed] = useState<boolean>(false);
+  
   const POINT_RADIUS = 8;
   const HANDLE_RADIUS = 6;
   const POINT_COLOR = '#3498db'; // Blue
@@ -78,6 +89,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
   const SELECTED_COLOR = '#e74c3c'; // Red
   const HANDLE_LINE_COLOR = 'rgba(52, 152, 219, 0.5)';
   const ZOOM_FACTOR = 0.1; // Zoom in/out factor
+  const MAX_HISTORY_SIZE = 50; // Maximum number of history states to store
   
   // Initialize background image if URL is provided
   useEffect(() => {
@@ -91,6 +103,44 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       setBackgroundImageObj(null);
     }
   }, [backgroundImage]);
+  
+  // Save points to history when they change
+  useEffect(() => {
+    if (points.length > 0) {
+      // Only add to history if this is a new state (not an undo/redo)
+      if (currentHistoryIndex === history.length - 1 || currentHistoryIndex === -1) {
+        const newHistoryState: HistoryState = {
+          points: JSON.parse(JSON.stringify(points)), // Deep clone to avoid reference issues
+          timestamp: Date.now()
+        };
+        
+        // Limit history size by removing oldest entries if needed
+        const newHistory = [...history, newHistoryState].slice(-MAX_HISTORY_SIZE);
+        setHistory(newHistory);
+        setCurrentHistoryIndex(newHistory.length - 1);
+      }
+    }
+  }, [points]);
+  
+  // Undo function
+  const handleUndo = () => {
+    if (currentHistoryIndex > 0) {
+      const prevState = history[currentHistoryIndex - 1];
+      setCurrentHistoryIndex(currentHistoryIndex - 1);
+      onPointsChange(prevState.points);
+      
+      toast({
+        title: 'Undo',
+        description: 'Previous action undone'
+      });
+    } else {
+      toast({
+        title: 'Cannot Undo',
+        description: 'No more actions to undo',
+        variant: 'destructive'
+      });
+    }
+  };
   
   // Convert screen coordinates to canvas coordinates (accounting for zoom)
   const screenToCanvas = (x: number, y: number): Point => {
@@ -348,6 +398,14 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     ctx.font = '12px Arial';
     ctx.fillText(`Zoom: ${Math.round(zoom * 100)}%`, 10, 20);
     
+    // Draw hand cursor if in canvas drag mode
+    if (isSpacePressed || isCanvasDragging) {
+      const cursorSize = 20;
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+      ctx.font = `${cursorSize}px Arial`;
+      ctx.fillText('✋', mousePos.x, mousePos.y);
+    }
+    
   }, [
     points, 
     selectedPoint, 
@@ -366,7 +424,10 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     backgroundImageObj,
     backgroundOpacity,
     zoom,
-    panOffset
+    panOffset,
+    isSpacePressed,
+    isCanvasDragging,
+    mousePos
   ]);
   
   // Handle mouse down
@@ -384,6 +445,13 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     const y = canvasCoords.y;
     
     setMousePos({ x, y });
+    
+    // Handle canvas dragging with middle mouse button or when space is pressed
+    if (e.button === 1 || isSpacePressed) {
+      setIsCanvasDragging(true);
+      setDragStart({ x: screenX, y: screenY });
+      return;
+    }
     
     // Check if clicking on a control point or handle
     let found = false;
@@ -474,7 +542,21 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     const x = canvasCoords.x;
     const y = canvasCoords.y;
     
-    setMousePos({ x, y });
+    setMousePos({ x: screenX, y: screenY }); // Use screen coordinates for cursor
+    
+    // Handle canvas dragging
+    if (isCanvasDragging) {
+      const deltaX = screenX - dragStart.x;
+      const deltaY = screenY - dragStart.y;
+      
+      setPanOffset(prev => ({
+        x: prev.x + deltaX,
+        y: prev.y + deltaY
+      }));
+      
+      setDragStart({ x: screenX, y: screenY });
+      return;
+    }
     
     if (isDragging && selectedPoint !== null) {
       const { pointIndex, type } = selectedPoint;
@@ -518,7 +600,13 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
   };
   
   // Handle mouse up
-  const handleMouseUp = () => {
+  const handleMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    // Handle canvas dragging
+    if (isCanvasDragging) {
+      setIsCanvasDragging(false);
+      return;
+    }
+    
     if (isSelecting && selectionRect) {
       // Find points inside the selection rectangle
       const selectedIndices = points.reduce((indices: number[], point, index) => {
@@ -708,6 +796,23 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
   // Handle keyboard events
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Add spacebar check for canvas dragging
+      if (e.code === 'Space' && !isSpacePressed) {
+        e.preventDefault();
+        setIsSpacePressed(true);
+        
+        // Change cursor to indicate canvas dragging mode
+        if (canvasRef.current) {
+          canvasRef.current.style.cursor = 'grab';
+        }
+      }
+      
+      // Undo (Ctrl+Z or Cmd+Z)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        e.preventDefault();
+        handleUndo();
+      }
+      
       // Copy (Ctrl+C or Cmd+C)
       if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
         e.preventDefault();
@@ -747,6 +852,12 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         setIsSelecting(false);
         setSelectionRect(null);
         setSelectedPointsIndices([]);
+        setIsSpacePressed(false);
+        
+        // Reset cursor
+        if (canvasRef.current) {
+          canvasRef.current.style.cursor = 'crosshair';
+        }
         
         toast({
           title: "Selection cleared",
@@ -791,9 +902,27 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       }
     };
     
+    const handleKeyUp = (e: KeyboardEvent) => {
+      // Handle spacebar release
+      if (e.code === 'Space') {
+        e.preventDefault();
+        setIsSpacePressed(false);
+        
+        // Reset cursor
+        if (canvasRef.current) {
+          canvasRef.current.style.cursor = 'crosshair';
+        }
+      }
+    };
+    
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [points, selectedPointsIndices, selectedPoint, clipboard, zoom, onPointsChange]);
+    window.addEventListener('keyup', handleKeyUp);
+    
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [points, selectedPointsIndices, selectedPoint, clipboard, zoom, onPointsChange, history, currentHistoryIndex, isSpacePressed]);
   
   return (
     <div ref={wrapperRef} className="relative w-full h-full overflow-hidden border border-gray-200 rounded-md bg-white">
@@ -802,10 +931,17 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       </div>
       
       <div className="absolute bottom-4 left-4 text-xs text-gray-500">
-        Shortcuts: Copy (⌘/Ctrl+C) • Cut (⌘/Ctrl+X) • Delete (Del/Backspace) • Cancel/Deselect (ESC) • Multiple Selection (Shift+Drag) • Zoom (Mouse Wheel)
+        Shortcuts: Copy (⌘/Ctrl+C) • Cut (⌘/Ctrl+X) • Paste (⌘/Ctrl+V) • Undo (⌘/Ctrl+Z) • Delete (Del/Backspace) • Cancel/Deselect (ESC) • Multiple Selection (Shift+Drag) • Zoom (Mouse Wheel) • Pan Canvas (Space+Drag or Middle Mouse Button)
       </div>
       
       <div className="absolute top-4 right-4 flex space-x-2">
+        <button
+          className="p-1 bg-white bg-opacity-70 rounded hover:bg-opacity-100 transition-colors"
+          onClick={handleUndo}
+          title="Undo (Ctrl+Z)"
+        >
+          <Undo size={16} />
+        </button>
         <button
           className="p-1 bg-white bg-opacity-70 rounded hover:bg-opacity-100 transition-colors"
           onClick={() => {
@@ -840,7 +976,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         ref={canvasRef}
         width={width}
         height={height}
-        className="touch-none cursor-crosshair"
+        className={`touch-none ${isSpacePressed ? 'cursor-grab' : 'cursor-crosshair'}`}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
