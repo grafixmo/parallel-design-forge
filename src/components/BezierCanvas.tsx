@@ -1,4 +1,3 @@
-
 import React, { useRef, useEffect, useState } from 'react';
 import { 
   ControlPoint, 
@@ -16,7 +15,7 @@ import {
 } from '../utils/bezierUtils';
 import { toast } from '@/hooks/use-toast';
 import { ZoomIn, ZoomOut, Undo, Move } from 'lucide-react';
-import BezierObjectRenderer from './BezierObject';
+import { BezierObjectRenderer } from './BezierObject';
 
 interface BezierCanvasProps {
   width: number;
@@ -191,7 +190,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     // Draw all bezier objects
     for (const object of objects) {
       const isObjectSelected = selectedObjectIds.includes(object.id);
-      const bezierObject = BezierObjectRenderer({
+      const bezierObject = new BezierObjectRenderer({
         object,
         isSelected: isObjectSelected,
         zoom,
@@ -292,7 +291,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     
     for (const object of objects) {
       // Create a temporary bezier object to use its methods
-      const bezierObject = BezierObjectRenderer({
+      const bezierObject = new BezierObjectRenderer({
         object,
         isSelected: selectedObjectIds.includes(object.id),
         zoom,

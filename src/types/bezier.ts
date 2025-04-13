@@ -1,4 +1,3 @@
-
 export interface Point {
   x: number;
   y: number;
@@ -47,6 +46,7 @@ export interface BezierObject {
 export interface DesignData {
   objects: BezierObject[];
   backgroundImage?: BackgroundImage;
+  points?: ControlPoint[]; // Added for backward compatibility with old format
 }
 
 export interface SavedDesign {

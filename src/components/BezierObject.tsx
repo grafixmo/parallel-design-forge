@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 import { 
   BezierObject as BezierObjectType, 
   ControlPoint, 
@@ -22,31 +22,37 @@ interface BezierObjectProps {
   onSelect: (objectId: string, multiSelect: boolean) => void;
 }
 
-const BezierObject: React.FC<BezierObjectProps> = ({
-  object,
-  isSelected,
-  zoom,
-  selectedPoint,
-  onPointSelect,
-  onPointMove,
-  onSelect
-}) => {
-  const {
-    id: objectId,
-    points,
-    curveConfig,
-    transform
-  } = object;
+// Create a utility class that can be used by the component
+export class BezierObjectRenderer {
+  object: BezierObjectType;
+  isSelected: boolean;
+  zoom: number;
+  selectedPoint: SelectedPoint | null;
+  onPointSelect: (point: SelectedPoint) => void;
+  onPointMove: (objectId: string, points: ControlPoint[]) => void;
+  onSelect: (objectId: string, multiSelect: boolean) => void;
   
-  const POINT_RADIUS = 8;
-  const HANDLE_RADIUS = 6;
-  const POINT_COLOR = '#3498db'; // Blue
-  const CONTROL_POINT_COLOR = '#2ecc71'; // Green
-  const SELECTED_COLOR = '#e74c3c'; // Red
-  const HANDLE_LINE_COLOR = 'rgba(52, 152, 219, 0.5)';
+  POINT_RADIUS = 8;
+  HANDLE_RADIUS = 6;
+  POINT_COLOR = '#3498db'; // Blue
+  CONTROL_POINT_COLOR = '#2ecc71'; // Green
+  SELECTED_COLOR = '#e74c3c'; // Red
+  HANDLE_LINE_COLOR = 'rgba(52, 152, 219, 0.5)';
+  
+  constructor(props: BezierObjectProps) {
+    this.object = props.object;
+    this.isSelected = props.isSelected;
+    this.zoom = props.zoom;
+    this.selectedPoint = props.selectedPoint;
+    this.onPointSelect = props.onPointSelect;
+    this.onPointMove = props.onPointMove;
+    this.onSelect = props.onSelect;
+  }
   
   // Check if point is within object to know if we should select
-  const isPointInObject = (x: number, y: number, radius: number): boolean => {
+  isPointInObject(x: number, y: number, radius: number): boolean {
+    const points = this.object.points;
+    
     // First check all control points
     for (let i = 0; i < points.length; i++) {
       const point = points[i];
@@ -92,7 +98,7 @@ const BezierObject: React.FC<BezierObjectProps> = ({
             0 // No offset for the main curve
           );
           
-          if (isPointNear({ x, y }, curvePoint, radius + curveConfig.styles[0].width / 2)) {
+          if (isPointNear({ x, y }, curvePoint, radius + this.object.curveConfig.styles[0].width / 2)) {
             return true;
           }
         }
@@ -100,14 +106,16 @@ const BezierObject: React.FC<BezierObjectProps> = ({
     }
     
     return false;
-  };
+  }
   
   // Handle mouse interaction on a control point
-  const handlePointInteraction = (
+  handlePointInteraction(
     x: number, 
     y: number, 
     radius: number
-  ): { found: boolean, pointIndex: number, type: ControlPointType } => {
+  ): { found: boolean, pointIndex: number, type: ControlPointType } {
+    const points = this.object.points;
+    
     // Check if mouse is near any control point
     for (let i = 0; i < points.length; i++) {
       const point = points[i];
@@ -129,10 +137,15 @@ const BezierObject: React.FC<BezierObjectProps> = ({
     }
     
     return { found: false, pointIndex: -1, type: ControlPointType.MAIN };
-  };
+  }
   
   // Draw the object in a canvas
-  const renderObject = (ctx: CanvasRenderingContext2D) => {
+  renderObject(ctx: CanvasRenderingContext2D) {
+    const points = this.object.points;
+    const curveConfig = this.object.curveConfig;
+    const transform = this.object.transform;
+    const objectId = this.object.id;
+    
     // Save the context state for transformation
     ctx.save();
     
@@ -161,7 +174,7 @@ const BezierObject: React.FC<BezierObjectProps> = ({
         const width = curveConfig.styles[p] ? curveConfig.styles[p].width : curveConfig.styles[0].width;
         
         ctx.strokeStyle = color;
-        ctx.lineWidth = width / zoom; // Adjust for zoom
+        ctx.lineWidth = width / this.zoom; // Adjust for zoom
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
         
@@ -201,7 +214,7 @@ const BezierObject: React.FC<BezierObjectProps> = ({
       // Draw main curve
       const mainStyle = curveConfig.styles[0] || { color: '#000000', width: 5 };
       ctx.strokeStyle = mainStyle.color;
-      ctx.lineWidth = mainStyle.width / zoom; // Adjust for zoom
+      ctx.lineWidth = mainStyle.width / this.zoom; // Adjust for zoom
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
       
@@ -228,10 +241,10 @@ const BezierObject: React.FC<BezierObjectProps> = ({
     ctx.restore();
     
     // Only draw handles and points if the object is selected
-    if (isSelected) {
+    if (this.isSelected) {
       // Draw handle lines
-      ctx.strokeStyle = HANDLE_LINE_COLOR;
-      ctx.lineWidth = 1 / zoom; // Adjust for zoom
+      ctx.strokeStyle = this.HANDLE_LINE_COLOR;
+      ctx.lineWidth = 1 / this.zoom; // Adjust for zoom
       
       for (let i = 0; i < points.length; i++) {
         const point = points[i];
@@ -250,42 +263,42 @@ const BezierObject: React.FC<BezierObjectProps> = ({
         // Draw handle points
         // Handle In
         ctx.beginPath();
-        ctx.arc(point.handleIn.x, point.handleIn.y, HANDLE_RADIUS / zoom, 0, Math.PI * 2);
-        if (selectedPoint && 
-            selectedPoint.objectId === objectId && 
-            selectedPoint.pointIndex === i && 
-            selectedPoint.type === ControlPointType.HANDLE_IN) {
-          ctx.fillStyle = SELECTED_COLOR;
+        ctx.arc(point.handleIn.x, point.handleIn.y, this.HANDLE_RADIUS / this.zoom, 0, Math.PI * 2);
+        if (this.selectedPoint && 
+            this.selectedPoint.objectId === objectId && 
+            this.selectedPoint.pointIndex === i && 
+            this.selectedPoint.type === ControlPointType.HANDLE_IN) {
+          ctx.fillStyle = this.SELECTED_COLOR;
         } else {
-          ctx.fillStyle = CONTROL_POINT_COLOR;
+          ctx.fillStyle = this.CONTROL_POINT_COLOR;
         }
         ctx.fill();
         
         // Handle Out
         ctx.beginPath();
-        ctx.arc(point.handleOut.x, point.handleOut.y, HANDLE_RADIUS / zoom, 0, Math.PI * 2);
-        if (selectedPoint && 
-            selectedPoint.objectId === objectId && 
-            selectedPoint.pointIndex === i && 
-            selectedPoint.type === ControlPointType.HANDLE_OUT) {
-          ctx.fillStyle = SELECTED_COLOR;
+        ctx.arc(point.handleOut.x, point.handleOut.y, this.HANDLE_RADIUS / this.zoom, 0, Math.PI * 2);
+        if (this.selectedPoint && 
+            this.selectedPoint.objectId === objectId && 
+            this.selectedPoint.pointIndex === i && 
+            this.selectedPoint.type === ControlPointType.HANDLE_OUT) {
+          ctx.fillStyle = this.SELECTED_COLOR;
         } else {
-          ctx.fillStyle = CONTROL_POINT_COLOR;
+          ctx.fillStyle = this.CONTROL_POINT_COLOR;
         }
         ctx.fill();
         
         // Draw main point
         ctx.beginPath();
-        ctx.arc(point.x, point.y, POINT_RADIUS / zoom, 0, Math.PI * 2);
+        ctx.arc(point.x, point.y, this.POINT_RADIUS / this.zoom, 0, Math.PI * 2);
         
         // Change color if selected
-        if (selectedPoint && 
-            selectedPoint.objectId === objectId && 
-            selectedPoint.pointIndex === i && 
-            selectedPoint.type === ControlPointType.MAIN) {
-          ctx.fillStyle = SELECTED_COLOR;
+        if (this.selectedPoint && 
+            this.selectedPoint.objectId === objectId && 
+            this.selectedPoint.pointIndex === i && 
+            this.selectedPoint.type === ControlPointType.MAIN) {
+          ctx.fillStyle = this.SELECTED_COLOR;
         } else {
-          ctx.fillStyle = POINT_COLOR;
+          ctx.fillStyle = this.POINT_COLOR;
         }
         
         ctx.fill();
@@ -302,12 +315,12 @@ const BezierObject: React.FC<BezierObjectProps> = ({
         const maxY = Math.max(...yValues);
         
         // Add padding
-        const padding = 10 / zoom;
+        const padding = 10 / this.zoom;
         
         // Draw dashed rectangle around object
         ctx.strokeStyle = 'rgba(52, 152, 219, 0.5)';
-        ctx.lineWidth = 1 / zoom;
-        ctx.setLineDash([5 / zoom, 3 / zoom]);
+        ctx.lineWidth = 1 / this.zoom;
+        ctx.setLineDash([5 / this.zoom, 3 / this.zoom]);
         
         ctx.beginPath();
         ctx.rect(
@@ -320,9 +333,14 @@ const BezierObject: React.FC<BezierObjectProps> = ({
         ctx.setLineDash([]);
       }
     }
-  };
-  
-  return { isPointInObject, handlePointInteraction, renderObject };
+  }
+}
+
+// The actual React component that now properly returns JSX
+const BezierObject: React.FC<BezierObjectProps> = (props) => {
+  // This component doesn't actually render anything visible
+  // It's a utility component that provides methods for the canvas
+  return null;
 };
 
 export default BezierObject;
