@@ -1,4 +1,3 @@
-
 import React, { useRef, useEffect, useState } from 'react';
 import { 
   ControlPoint, 
@@ -15,7 +14,7 @@ import {
   isPointInSelectionRect
 } from '../utils/bezierUtils';
 import { toast } from '@/components/ui/use-toast';
-import { Copy, Cut, ZoomIn, ZoomOut } from 'lucide-react';
+import { Copy, Scissors, ZoomIn, ZoomOut } from 'lucide-react';
 
 interface BezierCanvasProps {
   width: number;
