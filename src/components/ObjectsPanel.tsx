@@ -38,6 +38,7 @@ interface ObjectsPanelProps {
   onCreateObject: () => void;
   onSelectObject: (objectId: string, multiSelect: boolean) => void;
   onDeleteObject: (objectId: string) => void;
+  onDeleteSelectedObjects: () => void;
   onRenameObject: (objectId: string, name: string) => void;
 }
 
@@ -47,6 +48,7 @@ const ObjectsPanel: React.FC<ObjectsPanelProps> = ({
   onCreateObject,
   onSelectObject,
   onDeleteObject,
+  onDeleteSelectedObjects,
   onRenameObject
 }) => {
   const [editingObjectId, setEditingObjectId] = React.useState<string | null>(null);
@@ -79,14 +81,46 @@ const ObjectsPanel: React.FC<ObjectsPanelProps> = ({
       <CardHeader className="pb-3">
         <div className="flex justify-between items-center">
           <CardTitle>Objects</CardTitle>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={onCreateObject}
-          >
-            <Plus className="h-4 w-4 mr-1" />
-            New
-          </Button>
+          <div className="flex space-x-2">
+            {selectedObjectIds.length > 0 && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button 
+                    variant="destructive" 
+                    size="sm"
+                  >
+                    <Trash className="h-4 w-4 mr-1" />
+                    Delete
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete Selected Objects</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Are you sure you want to delete {selectedObjectIds.length} selected objects? This action cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={onDeleteSelectedObjects}
+                      className="bg-red-500 hover:bg-red-600"
+                    >
+                      Delete
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={onCreateObject}
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              New
+            </Button>
+          </div>
         </div>
         <CardDescription>
           Create and manage bezier objects
@@ -96,7 +130,7 @@ const ObjectsPanel: React.FC<ObjectsPanelProps> = ({
         <div className="space-y-2">
           {objects.length === 0 ? (
             <div className="text-center p-4 text-sm text-gray-500">
-              No objects created yet. Click "New" to create your first object.
+              No objects created yet. Click "New" to create your first object, then continue clicking to add more points.
             </div>
           ) : (
             objects.map((object) => (
@@ -176,6 +210,13 @@ const ObjectsPanel: React.FC<ObjectsPanelProps> = ({
                     </AlertDialog>
                   </div>
                 </div>
+                <div className="mt-1 text-xs text-gray-500">
+                  {object.points.length < 2 ? (
+                    <div className="text-amber-500">
+                      Need at least 2 points. Keep clicking on canvas to add more.
+                    </div>
+                  ) : null}
+                </div>
               </div>
             ))
           )}
@@ -183,9 +224,9 @@ const ObjectsPanel: React.FC<ObjectsPanelProps> = ({
       </CardContent>
       <CardFooter className="text-xs text-gray-500 pt-1">
         {objects.length > 0 ? (
-          <p>Shift+click to select multiple objects</p>
+          <p>Click objects to select, Shift+click for multiple. Right-click or double-click to finish drawing.</p>
         ) : (
-          <p>Click anywhere on the canvas to start drawing</p>
+          <p>Click anywhere on the canvas to start drawing. Add at least 2 points per object.</p>
         )}
       </CardFooter>
     </Card>
@@ -193,3 +234,4 @@ const ObjectsPanel: React.FC<ObjectsPanelProps> = ({
 };
 
 export default ObjectsPanel;
+

@@ -52,14 +52,38 @@ export function useBezierObjects() {
     
     setSelectedObjectIds([newObject.id]);
     
-    // Add to history
-    addToHistory([...objects, newObject]);
+    // Don't add to history yet since this is just starting a drawing
+    // We'll add to history when the object is completed
     
     return newObject.id;
   }, [objects]);
   
+  // Update all objects at once
+  const setAllObjects = useCallback((newObjects: BezierObject[]) => {
+    setObjects(newObjects);
+    
+    // Update selected object IDs based on object.isSelected property
+    setSelectedObjectIds(
+      newObjects
+        .filter(obj => obj.isSelected)
+        .map(obj => obj.id)
+    );
+  }, []);
+  
   // Select a specific object
   const selectObject = useCallback((objectId: string, multiSelect: boolean = false) => {
+    if (objectId === '') {
+      // Deselect all
+      setObjects(prevObjects => 
+        prevObjects.map(obj => ({
+          ...obj,
+          isSelected: false
+        }))
+      );
+      setSelectedObjectIds([]);
+      return;
+    }
+    
     setObjects(prevObjects => 
       prevObjects.map(obj => ({
         ...obj,
@@ -91,17 +115,9 @@ export function useBezierObjects() {
     setSelectedObjectIds([]);
   }, []);
   
-  // Update points for a specific object
-  const updateObjectPoints = useCallback((objectId: string, points: ControlPoint[]) => {
-    setObjects(prevObjects => 
-      prevObjects.map(obj => 
-        obj.id === objectId 
-          ? { ...obj, points }
-          : obj
-      )
-    );
-    
-    // Don't add to history on every point movement, that would be too many entries
+  // Update objects with new data (primarily for point movement)
+  const updateObjects = useCallback((updatedObjects: BezierObject[]) => {
+    setObjects(updatedObjects);
   }, []);
   
   // Update curve config for a specific object
@@ -151,7 +167,32 @@ export function useBezierObjects() {
     // Add to history after deletion
     const updatedObjects = objects.filter(obj => obj.id !== objectId);
     addToHistory(updatedObjects);
+    
+    toast({
+      title: "Object Deleted",
+      description: "The selected object has been removed"
+    });
   }, [objects]);
+  
+  // Delete all selected objects
+  const deleteSelectedObjects = useCallback(() => {
+    if (selectedObjectIds.length === 0) return;
+    
+    setObjects(prevObjects => 
+      prevObjects.filter(obj => !selectedObjectIds.includes(obj.id))
+    );
+    
+    // Add to history after deletion
+    const updatedObjects = objects.filter(obj => !selectedObjectIds.includes(obj.id));
+    addToHistory(updatedObjects);
+    
+    toast({
+      title: `${selectedObjectIds.length} Objects Deleted`,
+      description: "Selected objects have been removed"
+    });
+    
+    setSelectedObjectIds([]);
+  }, [selectedObjectIds, objects]);
   
   // Rename an object
   const renameObject = useCallback((objectId: string, name: string) => {
@@ -162,7 +203,13 @@ export function useBezierObjects() {
           : obj
       )
     );
-  }, []);
+    
+    // Add to history after renaming
+    const updatedObjects = objects.map(obj => 
+      obj.id === objectId ? { ...obj, name } : obj
+    );
+    addToHistory(updatedObjects);
+  }, [objects]);
   
   // Add current state to history
   const addToHistory = useCallback((updatedObjects: BezierObject[]) => {
@@ -248,15 +295,18 @@ export function useBezierObjects() {
     objects,
     selectedObjectIds,
     createObject,
+    setAllObjects,
     selectObject,
     deselectAllObjects,
-    updateObjectPoints,
+    updateObjects,
     updateObjectCurveConfig,
     updateObjectTransform,
     deleteObject,
+    deleteSelectedObjects,
     renameObject,
     undo,
     redo,
     saveCurrentState
   };
 }
+

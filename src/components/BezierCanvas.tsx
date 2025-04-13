@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect, useState } from 'react';
 import { 
   ControlPoint, 
@@ -69,6 +70,9 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
   const [dragStart, setDragStart] = useState<Point>({ x: 0, y: 0 });
   const [isSpacePressed, setIsSpacePressed] = useState<boolean>(false);
 
+  // New state for tracking current drawing object
+  const [currentDrawingObjectId, setCurrentDrawingObjectId] = useState<string | null>(null);
+  
   const POINT_RADIUS = 8;
   const HANDLE_RADIUS = 6;
   const ZOOM_FACTOR = 0.1;
@@ -83,13 +87,21 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     setLastDragPosition(null);
   };
   
+  // Reset drawing state - called when cancelling or completing a drawing
+  const resetDrawingState = () => {
+    setCurrentDrawingObjectId(null);
+    setSelectedPoint(null);
+  };
+  
   // Update instruction message based on current state
   useEffect(() => {
     if (isDrawingMode) {
-      if (objects.length === 0) {
-        setInstructionMessage('Click to place first control point (ESC to cancel)');
+      if (currentDrawingObjectId) {
+        // Currently drawing an object
+        setInstructionMessage('Click to add more points. Right-click or double-click to finish the object. (ESC to cancel)');
       } else {
-        setInstructionMessage('Click to add more points, or drag handles to adjust the curve (ESC to exit drawing mode)');
+        // Ready to start drawing
+        setInstructionMessage('Click to place first control point (ESC to cancel)');
       }
     } else {
       if (selectedObjectIds.length > 0) {
@@ -98,7 +110,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         setInstructionMessage('Click to select objects or Shift+Drag to select multiple objects');
       }
     }
-  }, [isDrawingMode, objects.length, selectedObjectIds.length]);
+  }, [isDrawingMode, currentDrawingObjectId, selectedObjectIds.length]);
   
   // Initialize background image if URL is provided
   useEffect(() => {
@@ -119,6 +131,47 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       x: (x - panOffset.x) / zoom,
       y: (y - panOffset.y) / zoom
     };
+  };
+
+  // Complete and finalize the current drawing object
+  const finalizeDrawingObject = () => {
+    if (currentDrawingObjectId) {
+      // Find the current drawing object
+      const drawingObject = objects.find(obj => obj.id === currentDrawingObjectId);
+      
+      if (drawingObject && drawingObject.points.length >= 2) {
+        // Object has at least 2 points, so it's valid
+        toast({
+          title: "Object Created",
+          description: `Created "${drawingObject.name}" with ${drawingObject.points.length} points`
+        });
+        
+        // Save state and reset drawing
+        onSaveState();
+        resetDrawingState();
+      } else {
+        // Not enough points, inform the user
+        toast({
+          title: "Cannot Create Object",
+          description: "An object must have at least 2 points. Keep clicking to add more points.",
+          variant: "destructive"
+        });
+      }
+    }
+  };
+  
+  // Cancel the current drawing
+  const cancelDrawing = () => {
+    if (currentDrawingObjectId) {
+      // Remove the partial object
+      onObjectsChange(objects.filter(obj => obj.id !== currentDrawingObjectId));
+      resetDrawingState();
+      
+      toast({
+        title: "Drawing Cancelled",
+        description: "The current drawing has been discarded"
+      });
+    }
   };
 
   // Draw the canvas
@@ -190,9 +243,11 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     // Draw all bezier objects
     for (const object of objects) {
       const isObjectSelected = selectedObjectIds.includes(object.id);
+      const isDrawingObject = object.id === currentDrawingObjectId;
+      
       const bezierObject = new BezierObjectRenderer({
         object,
-        isSelected: isObjectSelected,
+        isSelected: isObjectSelected || isDrawingObject,
         zoom,
         selectedPoint,
         onPointSelect: setSelectedPoint,
@@ -201,6 +256,32 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       });
       
       bezierObject.renderObject(ctx);
+      
+      // Add special visual indicator for the object being drawn
+      if (isDrawingObject && object.points.length > 0) {
+        // Draw a hint line from the last point to the mouse position
+        const lastPoint = object.points[object.points.length - 1];
+        
+        ctx.strokeStyle = 'rgba(46, 204, 113, 0.6)';
+        ctx.lineWidth = 2 / zoom;
+        ctx.setLineDash([5 / zoom, 5 / zoom]);
+        
+        ctx.beginPath();
+        ctx.moveTo(lastPoint.x, lastPoint.y);
+        ctx.lineTo(mousePos.x, mousePos.y);
+        ctx.stroke();
+        
+        ctx.setLineDash([]);
+        
+        // Text hint to show number of points in the drawing
+        ctx.fillStyle = 'rgba(46, 204, 113, 0.8)';
+        ctx.font = `${12 / zoom}px Arial`;
+        ctx.fillText(
+          `Drawing: ${object.points.length} point${object.points.length === 1 ? '' : 's'} (need at least 2)`, 
+          lastPoint.x + 10 / zoom, 
+          lastPoint.y - 10 / zoom
+        );
+      }
     }
     
     // Draw selection rectangle if selecting
@@ -239,11 +320,24 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     ctx.font = '12px Arial';
     ctx.fillText(`Mode: ${isDrawingMode ? 'Drawing' : 'Selection'}`, 10, 40);
     
+    // Show drawing status if applicable
+    if (currentDrawingObjectId) {
+      const drawingObject = objects.find(obj => obj.id === currentDrawingObjectId);
+      if (drawingObject) {
+        ctx.fillStyle = 'rgba(46, 204, 113, 0.6)';
+        ctx.font = '12px Arial';
+        ctx.fillText(
+          `Drawing object: ${drawingObject.points.length} point${drawingObject.points.length === 1 ? '' : 's'}`, 
+          10, 60
+        );
+      }
+    }
+    
     // Show drag indicator when dragging
     if (isMultiDragging && selectedObjectIds.length > 0) {
       ctx.fillStyle = 'rgba(231, 76, 60, 0.8)';
       ctx.font = '12px Arial';
-      ctx.fillText(`Moving ${selectedObjectIds.length} objects`, 10, 60);
+      ctx.fillText(`Moving ${selectedObjectIds.length} objects`, 10, 80);
     }
     
   }, [
@@ -260,7 +354,8 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     isCanvasDragging,
     mousePos,
     isDrawingMode,
-    isMultiDragging
+    isMultiDragging,
+    currentDrawingObjectId
   ]);
   
   // Handle mouse down
@@ -279,6 +374,13 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     
     setMousePos({ x, y });
     
+    // Right click to finish drawing
+    if (e.button === 2 && currentDrawingObjectId) {
+      e.preventDefault();
+      finalizeDrawingObject();
+      return;
+    }
+    
     // Handle canvas dragging with middle mouse button or when space is pressed
     if (e.button === 1 || isSpacePressed) {
       setIsCanvasDragging(true);
@@ -290,6 +392,9 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     let clickedOnObject = false;
     
     for (const object of objects) {
+      // Skip the current drawing object for selection
+      if (object.id === currentDrawingObjectId) continue;
+      
       // Create a temporary bezier object to use its methods
       const bezierObject = new BezierObjectRenderer({
         object,
@@ -334,19 +439,41 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       }
     }
     
-    // If we didn't click on any object, handle canvas interaction
-    if (!clickedOnObject) {
-      if (!isDrawingMode && e.shiftKey) {
-        // Start selection rectangle (only in selection mode)
-        setIsSelecting(true);
-        setSelectionRect({
-          startX: x,
-          startY: y,
-          width: 0,
-          height: 0
+    // If we're in drawing mode and didn't click on any object, handle drawing
+    if (!clickedOnObject && isDrawingMode) {
+      if (currentDrawingObjectId) {
+        // We're already drawing an object, add a new point to it
+        const objectIndex = objects.findIndex(obj => obj.id === currentDrawingObjectId);
+        if (objectIndex === -1) return;
+        
+        const object = objects[objectIndex];
+        
+        // Create a new point
+        const newPoint: ControlPoint = {
+          x,
+          y,
+          handleIn: { x: x - 50, y },
+          handleOut: { x: x + 50, y },
+          id: generateId()
+        };
+        
+        // Add the point to the object
+        const updatedPoints = [...object.points, newPoint];
+        const updatedObjects = [...objects];
+        updatedObjects[objectIndex] = { ...object, points: updatedPoints };
+        
+        onObjectsChange(updatedObjects);
+        
+        // Select the new point for potential dragging
+        setSelectedPoint({
+          objectId: object.id,
+          pointIndex: updatedPoints.length - 1,
+          type: ControlPointType.MAIN
         });
-      } else if (isDrawingMode) {
-        // In drawing mode, add a new point to a new object
+        setIsDragging(true);
+        setLastDragPosition({ x, y });
+      } else {
+        // Start a new drawing with the first point
         const newPoint: ControlPoint = {
           x,
           y,
@@ -357,6 +484,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         
         // Create a new object with this point
         const newObjectId = onCreateObject([newPoint]);
+        setCurrentDrawingObjectId(newObjectId);
         
         // Select the new point for potential dragging
         setSelectedPoint({
@@ -366,11 +494,25 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         });
         setIsDragging(true);
         setLastDragPosition({ x, y });
-      } else {
-        // In selection mode, clear selection when clicking on empty space
-        if (selectedObjectIds.length > 0) {
-          onObjectSelect('', false); // Deselect all objects
-        }
+        
+        toast({
+          title: "Started Drawing",
+          description: "Click to add more points. Right-click or double-click to finish."
+        });
+      }
+    } else if (!clickedOnObject && !isDrawingMode) {
+      // In selection mode with Shift key, start selection rectangle
+      if (e.shiftKey) {
+        setIsSelecting(true);
+        setSelectionRect({
+          startX: x,
+          startY: y,
+          width: 0,
+          height: 0
+        });
+      } else if (selectedObjectIds.length > 0) {
+        // In selection mode, clear selection when clicking on empty space (without Shift)
+        onObjectSelect('', false); // Deselect all objects
       }
     }
   };
@@ -389,7 +531,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     const x = canvasCoords.x;
     const y = canvasCoords.y;
     
-    setMousePos({ x: screenX, y: screenY }); // Use screen coordinates for cursor
+    setMousePos({ x, y }); // Update mouse position for drawing hints
     
     // Handle canvas dragging
     if (isCanvasDragging) {
@@ -567,7 +709,17 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     setLastDragPosition(null);
   };
   
-  // Handle double click to add points to an existing object or delete points
+  // Handle context menu (right-click)
+  const handleContextMenu = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    e.preventDefault(); // Prevent the browser context menu
+    
+    // If in drawing mode with an active drawing, finalize the object
+    if (isDrawingMode && currentDrawingObjectId) {
+      finalizeDrawingObject();
+    }
+  };
+  
+  // Handle double click to add points to an existing object or finalize drawing
   const handleDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -581,8 +733,14 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     const x = canvasCoords.x;
     const y = canvasCoords.y;
     
-    // If in drawing mode and an object is selected, add a point to it
-    if (isDrawingMode && selectedObjectIds.length === 1) {
+    // If in drawing mode with an active drawing, finalize the object
+    if (isDrawingMode && currentDrawingObjectId) {
+      finalizeDrawingObject();
+      return;
+    }
+    
+    // If in drawing mode and an object is selected (but not being drawn), add a point to it
+    if (isDrawingMode && selectedObjectIds.length === 1 && selectedObjectIds[0] !== currentDrawingObjectId) {
       const objectId = selectedObjectIds[0];
       const objectIndex = objects.findIndex(obj => obj.id === objectId);
       if (objectIndex === -1) return;
@@ -683,9 +841,14 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
   // Add keyboard event handler for shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // ESC key to exit selection or clear selections
+      // ESC key to exit drawing mode or clear selections
       if (e.key === 'Escape') {
-        clearSelections();
+        if (currentDrawingObjectId) {
+          // Cancel the current drawing
+          cancelDrawing();
+        } else {
+          clearSelections();
+        }
       }
       
       // Delete key to delete selected objects
@@ -695,6 +858,11 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
           title: `${selectedObjectIds.length} objects deleted`,
           description: 'Selected objects have been removed'
         });
+      }
+      
+      // Enter key to finalize drawing
+      if (e.key === 'Enter' && currentDrawingObjectId) {
+        finalizeDrawingObject();
       }
       
       // Ctrl+Z for undo
@@ -724,7 +892,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [selectedObjectIds, isDrawingMode, onUndo]);
+  }, [selectedObjectIds, isDrawingMode, onUndo, currentDrawingObjectId, objects]);
   
   return (
     <div ref={wrapperRef} className="relative w-full h-full overflow-hidden">
@@ -738,6 +906,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         onMouseUp={handleMouseUp}
         onDoubleClick={handleDoubleClick}
         onWheel={handleWheel}
+        onContextMenu={handleContextMenu}
       />
       
       <div className="absolute bottom-4 left-4 text-sm text-gray-500 bg-white/80 px-3 py-1 rounded shadow">
@@ -767,8 +936,28 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
           <ZoomOut className="w-5 h-5" />
         </button>
       </div>
+      
+      {currentDrawingObjectId && (
+        <div className="absolute bottom-4 right-4 flex space-x-2">
+          <button
+            className="bg-red-500 text-white px-3 py-1 rounded shadow hover:bg-red-600 transition-colors"
+            onClick={cancelDrawing}
+            title="Cancel Drawing (ESC)"
+          >
+            Cancel
+          </button>
+          <button
+            className="bg-green-500 text-white px-3 py-1 rounded shadow hover:bg-green-600 transition-colors"
+            onClick={finalizeDrawingObject}
+            title="Finish Drawing (Enter or Right-click)"
+          >
+            Finish
+          </button>
+        </div>
+      )}
     </div>
   );
 };
 
 export default BezierCanvas;
+
