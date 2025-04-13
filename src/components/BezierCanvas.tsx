@@ -14,7 +14,7 @@ import {
   generateId,
   isPointInSelectionRect
 } from '../utils/bezierUtils';
-import { toast } from '@/components/ui/use-toast';
+import { toast } from '@/hooks/use-toast';
 import { Copy, Scissors, ZoomIn, ZoomOut, Undo, Move } from 'lucide-react';
 
 interface BezierCanvasProps {
@@ -886,3 +886,4 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     setZoom(newZoom);
     
     toast({
+      title
