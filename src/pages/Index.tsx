@@ -8,7 +8,7 @@ import {
   SavedDesign,
   CurveConfig
 } from '@/types/bezier';
-import BezierCanvas from '@/components/BezierCanvas';
+import { BezierCanvas } from '@/components/canvas';
 import ControlsPanel from '@/components/ControlsPanel';
 import Header from '@/components/Header';
 import LibraryPanel from '@/components/LibraryPanel';
