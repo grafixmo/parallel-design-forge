@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { 
   ControlPoint, 
@@ -5,10 +6,9 @@ import {
   DesignData, 
   TransformSettings,
   SavedDesign,
-  CurveConfig,
-  PointGroup
+  CurveConfig
 } from '@/types/bezier';
-import { BezierCanvas } from '@/components/canvas';
+import BezierCanvas from '@/components/BezierCanvas';
 import ControlsPanel from '@/components/ControlsPanel';
 import Header from '@/components/Header';
 import LibraryPanel from '@/components/LibraryPanel';
@@ -171,16 +171,6 @@ const Index = () => {
     });
   };
   
-  // Helper function to convert flat points array to point groups structure
-  const pointsToPointGroup = (points: ControlPoint[]): PointGroup[] => {
-    if (points.length === 0) return [];
-    
-    return [{
-      id: generateId(),
-      points: [...points]
-    }];
-  };
-  
   // Save design to Supabase
   const handleSaveDesign = async (name: string, category: string) => {
     if (points.length < 2) {
@@ -193,7 +183,7 @@ const Index = () => {
     }
     
     const designData: DesignData = {
-      pointGroups: pointsToPointGroup(points),
+      points,
       curveConfig: {
         styles: [
           { color: curveColor, width: curveWidth },
@@ -252,8 +242,8 @@ const Index = () => {
       
       const parsedData: DesignData = JSON.parse(design.shapes_data);
       
-      // Check if data contains pointGroups (new format) or not
-      if (!parsedData.pointGroups || parsedData.pointGroups.length === 0) {
+      // Check if data contains SVG path but no points
+      if (!parsedData.points || parsedData.points.length === 0) {
         toast({
           title: 'Invalid Design Data',
           description: 'The selected design does not contain valid control points.',
@@ -262,8 +252,8 @@ const Index = () => {
         return;
       }
       
-      // Extract points from the first group for backward compatibility
-      const pointsWithIds = parsedData.pointGroups[0].points.map(point => ({
+      // Add IDs to points if they don't have them
+      const pointsWithIds = parsedData.points.map(point => ({
         ...point,
         id: point.id || generateId()
       }));

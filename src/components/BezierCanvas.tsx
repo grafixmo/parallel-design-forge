@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect, useState } from 'react';
 import { 
   ControlPoint, 
@@ -5,8 +6,7 @@ import {
   ControlPointType, 
   SelectedPoint,
   SelectionRect,
-  HistoryState,
-  PointGroup
+  HistoryState
 } from '../types/bezier';
 import { 
   isPointNear, 
@@ -34,7 +34,7 @@ interface BezierCanvasProps {
   scaleY: number;
   backgroundImage?: string;
   backgroundOpacity: number;
-  isDrawingMode?: boolean;
+  isDrawingMode?: boolean; // New prop to control drawing mode
 }
 
 const BezierCanvas: React.FC<BezierCanvasProps> = ({
@@ -53,7 +53,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
   scaleY,
   backgroundImage,
   backgroundOpacity,
-  isDrawingMode = true
+  isDrawingMode = true // Default to drawing mode
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -69,33 +69,6 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     'Click to place first control point (ESC to cancel)'
   );
   const [backgroundImageObj, setBackgroundImageObj] = useState<HTMLImageElement | null>(null);
-  
-  // Convert flat points array to point groups structure
-  const [pointGroups, setPointGroups] = useState<PointGroup[]>([]);
-  
-  // Initialize point groups from flat points array on first render
-  useEffect(() => {
-    if (points.length > 0 && pointGroups.length === 0) {
-      // Initially, put all points in one group
-      setPointGroups([{
-        id: generateId(),
-        points: [...points]
-      }]);
-    }
-  }, [points, pointGroups.length]);
-  
-  // Helper function to convert point groups to flat array (for backward compatibility)
-  const pointGroupsToFlatArray = (groups: PointGroup[]): ControlPoint[] => {
-    return groups.flatMap(group => group.points);
-  };
-  
-  // Update the external points array when point groups change
-  useEffect(() => {
-    if (pointGroups.length > 0) {
-      const flatPoints = pointGroupsToFlatArray(pointGroups);
-      onPointsChange(flatPoints);
-    }
-  }, [pointGroups, onPointsChange]);
   
   // Add zoom state
   const [zoom, setZoom] = useState<number>(1);
@@ -165,11 +138,11 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
   
   // Save points to history when they change
   useEffect(() => {
-    if (pointGroups.length > 0) {
+    if (points.length > 0) {
       // Only add to history if this is a new state (not an undo/redo)
       if (currentHistoryIndex === history.length - 1 || currentHistoryIndex === -1) {
         const newHistoryState: HistoryState = {
-          pointGroups: JSON.parse(JSON.stringify(pointGroups)), // Deep clone to avoid reference issues
+          points: JSON.parse(JSON.stringify(points)), // Deep clone to avoid reference issues
           timestamp: Date.now()
         };
         
@@ -179,7 +152,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         setCurrentHistoryIndex(newHistory.length - 1);
       }
     }
-  }, [pointGroups, history, currentHistoryIndex]);
+  }, [points]);
   
   // Effect to clear selection when drawing mode changes
   useEffect(() => {
@@ -203,7 +176,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     if (currentHistoryIndex > 0) {
       const prevState = history[currentHistoryIndex - 1];
       setCurrentHistoryIndex(currentHistoryIndex - 1);
-      setPointGroups(prevState.pointGroups);
+      onPointsChange(prevState.points);
       
       toast({
         title: 'Undo',
@@ -612,69 +585,50 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     
     // Check if clicking on a control point or handle
     let found = false;
-    const currentGroupIndex = 0; // Default to first group for backward compatibility
     
-    // For old codebase compatibility, we're assuming all points are in the first group
-    if (pointGroups.length > 0) {
-      const group = pointGroups[0];
-      const points = group.points;
+    for (let i = 0; i < points.length; i++) {
+      const point = points[i];
       
-      for (let i = 0; i < points.length; i++) {
-        const point = points[i];
-        
-        // Check main point
-        if (isPointNear({ x, y }, point, POINT_RADIUS / zoom)) {
-          if (!isDrawingMode && !e.shiftKey && !selectedPointsIndices.includes(i)) {
-            // In selection mode, clicking on a point selects just that point
-            setSelectedPointsIndices([i]);
-          } else if (!isDrawingMode && e.shiftKey) {
-            // Add/remove from selection with shift
-            if (selectedPointsIndices.includes(i)) {
-              setSelectedPointsIndices(selectedPointsIndices.filter(idx => idx !== i));
-            } else {
-              setSelectedPointsIndices([...selectedPointsIndices, i]);
-            }
+      // Check main point
+      if (isPointNear({ x, y }, point, POINT_RADIUS / zoom)) {
+        if (!isDrawingMode && !e.shiftKey && !selectedPointsIndices.includes(i)) {
+          // In selection mode, clicking on a point selects just that point
+          setSelectedPointsIndices([i]);
+        } else if (!isDrawingMode && e.shiftKey) {
+          // Add/remove from selection with shift
+          if (selectedPointsIndices.includes(i)) {
+            setSelectedPointsIndices(selectedPointsIndices.filter(idx => idx !== i));
           } else {
-            setSelectedPoint({ 
-              groupIndex: currentGroupIndex,
-              pointIndex: i, 
-              type: ControlPointType.MAIN 
-            });
+            setSelectedPointsIndices([...selectedPointsIndices, i]);
           }
-          
+        } else {
+          setSelectedPoint({ pointIndex: i, type: ControlPointType.MAIN });
+        }
+        
+        setIsDragging(true);
+        setLastDragPosition({ x, y });
+        found = true;
+        break;
+      }
+      
+      // Only check handles in drawing mode or if point is already selected
+      if (isDrawingMode || selectedPointsIndices.includes(i)) {
+        // Check handle in
+        if (isPointNear({ x, y }, point.handleIn, HANDLE_RADIUS / zoom)) {
+          setSelectedPoint({ pointIndex: i, type: ControlPointType.HANDLE_IN });
           setIsDragging(true);
           setLastDragPosition({ x, y });
           found = true;
           break;
         }
         
-        // Only check handles in drawing mode or if point is already selected
-        if (isDrawingMode || selectedPointsIndices.includes(i)) {
-          // Check handle in
-          if (isPointNear({ x, y }, point.handleIn, HANDLE_RADIUS / zoom)) {
-            setSelectedPoint({ 
-              groupIndex: currentGroupIndex,
-              pointIndex: i, 
-              type: ControlPointType.HANDLE_IN 
-            });
-            setIsDragging(true);
-            setLastDragPosition({ x, y });
-            found = true;
-            break;
-          }
-          
-          // Check handle out
-          if (isPointNear({ x, y }, point.handleOut, HANDLE_RADIUS / zoom)) {
-            setSelectedPoint({ 
-              groupIndex: currentGroupIndex,
-              pointIndex: i, 
-              type: ControlPointType.HANDLE_OUT 
-            });
-            setIsDragging(true);
-            setLastDragPosition({ x, y });
-            found = true;
-            break;
-          }
+        // Check handle out
+        if (isPointNear({ x, y }, point.handleOut, HANDLE_RADIUS / zoom)) {
+          setSelectedPoint({ pointIndex: i, type: ControlPointType.HANDLE_OUT });
+          setIsDragging(true);
+          setLastDragPosition({ x, y });
+          found = true;
+          break;
         }
       }
     }
@@ -701,31 +655,11 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
             id: generateId()
           };
           
-          // For compatibility with old code, we'll add to the first group or create one
-          let updatedPointGroups = [...pointGroups];
-          
-          if (updatedPointGroups.length === 0) {
-            // Create first group if none exists
-            updatedPointGroups = [{
-              id: generateId(),
-              points: [newPoint]
-            }];
-          } else {
-            // Add to first group
-            const firstGroup = {...updatedPointGroups[0]};
-            firstGroup.points = [...firstGroup.points, newPoint];
-            updatedPointGroups[0] = firstGroup;
-          }
-          
-          setPointGroups(updatedPointGroups);
-          
-          // Update flat points array for backward compatibility
-          const flatPoints = pointGroupsToFlatArray(updatedPointGroups);
-          onPointsChange(flatPoints);
+          const updatedPoints = [...points, newPoint];
+          onPointsChange(updatedPoints);
           
           setSelectedPoint({ 
-            groupIndex: 0,
-            pointIndex: updatedPointGroups[0].points.length - 1, 
+            pointIndex: updatedPoints.length - 1, 
             type: ControlPointType.MAIN 
           });
           setIsDragging(true);

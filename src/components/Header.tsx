@@ -54,13 +54,6 @@ const Header: React.FC<HeaderProps> = ({
     setDesignName('');
   };
   
-  const handleClearCanvas = () => {
-    // FIX: Confirm before clearing
-    if (window.confirm("Are you sure you want to clear the canvas? This will remove all objects.")) {
-      onClearCanvas();
-    }
-  };
-  
   return (
     <div className="flex items-center justify-between p-4 border-b bg-white">
       <div className="flex items-center">
@@ -92,7 +85,7 @@ const Header: React.FC<HeaderProps> = ({
             <TooltipTrigger asChild>
               <Button 
                 variant="outline" 
-                onClick={handleClearCanvas}
+                onClick={onClearCanvas}
                 className="mr-2"
               >
                 <Trash2 className="h-4 w-4 mr-2" />
@@ -110,60 +103,29 @@ const Header: React.FC<HeaderProps> = ({
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button 
-                variant="outline" 
-                onClick={handleSaveClick}
-              >
-                <Save className="h-4 w-4 mr-2" />
-                Save
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>Save current design</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-        
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button 
-                variant="outline" 
-                onClick={onLoadDesigns}
-              >
-                <Database className="h-4 w-4 mr-2" />
-                Load
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>Load saved designs</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-        
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button 
-                variant="outline" 
-                onClick={onExportSVG}
-              >
+              <Button variant="outline" onClick={onLoadDesigns}>
                 <Upload className="h-4 w-4 mr-2" />
-                Export SVG
+                Load Reference
               </Button>
             </TooltipTrigger>
             <TooltipContent>
-              <p>Export current design as SVG</p>
+              <p>Load a reference design</p>
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
         
         <Dialog open={saveDialogOpen} onOpenChange={setSaveDialogOpen}>
+          <DialogTrigger asChild>
+            <Button>
+              <Save className="h-4 w-4 mr-2" />
+              Save Design
+            </Button>
+          </DialogTrigger>
           <DialogContent className="sm:max-w-[425px]">
             <DialogHeader>
               <DialogTitle>Save Design</DialogTitle>
               <DialogDescription>
-                Enter a name and select a category for your design
+                Save your design to the database for future use.
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
@@ -171,38 +133,62 @@ const Header: React.FC<HeaderProps> = ({
                 <Label htmlFor="name" className="text-right">
                   Name
                 </Label>
-                <Input 
-                  id="name" 
-                  value={designName} 
-                  onChange={(e) => setDesignName(e.target.value)} 
-                  className="col-span-3" 
-                  placeholder="My amazing design"
+                <Input
+                  id="name"
+                  placeholder="My design"
+                  value={designName}
+                  onChange={(e) => setDesignName(e.target.value)}
+                  className="col-span-3"
                 />
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="category" className="text-right">
                   Category
                 </Label>
-                <Select value={designCategory} onValueChange={setDesignCategory}>
-                  <SelectTrigger className="col-span-3">
-                    <SelectValue placeholder="Select a category" />
+                <Select 
+                  value={designCategory} 
+                  onValueChange={setDesignCategory}
+                >
+                  <SelectTrigger className="col-span-3" id="category">
+                    <SelectValue placeholder="Select category" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="Collares">Collares</SelectItem>
-                    <SelectItem value="Pulseras">Pulseras</SelectItem>
                     <SelectItem value="Anillos">Anillos</SelectItem>
-                    <SelectItem value="Aretes">Aretes</SelectItem>
-                    <SelectItem value="Otros">Otros</SelectItem>
+                    <SelectItem value="Pendientes">Pendientes</SelectItem>
+                    <SelectItem value="Prototipos">Prototipos</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setSaveDialogOpen(false)}>Cancel</Button>
-              <Button onClick={handleSaveDesign}>Save</Button>
+              <Button variant="outline" onClick={() => setSaveDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleSaveDesign} disabled={designName.trim().length === 0}>
+                Save
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button 
+                variant="default" 
+                onClick={onExportSVG}
+                className="bg-indigo-600 hover:bg-indigo-700"
+              >
+                <Database className="h-4 w-4 mr-2" />
+                Export SVG
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Export design as SVG file</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       </div>
     </div>
   );
