@@ -1,17 +1,27 @@
+
 import { useEffect, useCallback } from 'react';
-import { ControlPoint } from '@/types/bezier';
+import { ControlPoint, ControlPointType, PointGroup } from '@/types/bezier';
 import { toast } from '@/components/ui/use-toast';
-import { copyPointsToClipboard, cutPointsFromCanvas, pastePointsFromClipboard } from '@/utils/canvas/clipboardHelpers';
+import { 
+  copyPointsToClipboard, 
+  copyGroupedPointsToClipboard,
+  cutPointsFromCanvas, 
+  cutGroupedPointsFromCanvas,
+  pastePointsFromClipboard,
+  pasteGroupedPointsFromClipboard
+} from '@/utils/canvas/clipboardHelpers';
 
 interface UseKeyboardShortcutsProps {
-  points: ControlPoint[];
-  onPointsChange: (points: ControlPoint[]) => void;
-  selectedPointsIndices: number[];
-  setSelectedPointsIndices: (indices: number[]) => void;
-  selectedPoint: { pointIndex: number, type: string } | null;
-  setSelectedPoint: (point: { pointIndex: number, type: string } | null) => void;
+  pointGroups: PointGroup[];
+  setPointGroups: (groups: PointGroup[]) => void;
+  selectedPointsIndices: { groupIndex: number; pointIndex: number }[];
+  setSelectedPointsIndices: (indices: { groupIndex: number; pointIndex: number }[]) => void;
+  selectedPoint: { groupIndex: number; pointIndex: number; type: ControlPointType } | null;
+  setSelectedPoint: (point: { groupIndex: number; pointIndex: number; type: ControlPointType } | null) => void;
   clearSelections: () => void;
-  handleUndo: () => void;
+  history: any[];
+  currentHistoryIndex: number;
+  setCurrentHistoryIndex: (index: number) => void;
   clipboard: ControlPoint[];
   setClipboard: (points: ControlPoint[]) => void;
   isSpacePressed: boolean;
@@ -21,17 +31,20 @@ interface UseKeyboardShortcutsProps {
   zoom: number;
   setZoom: (zoom: number) => void;
   setPanOffset: (offset: { x: number, y: number }) => void;
+  currentGroupIndex: number;
 }
 
 export function useKeyboardShortcuts({
-  points,
-  onPointsChange,
+  pointGroups,
+  setPointGroups,
   selectedPointsIndices,
   setSelectedPointsIndices,
   selectedPoint,
   setSelectedPoint,
   clearSelections,
-  handleUndo,
+  history,
+  currentHistoryIndex,
+  setCurrentHistoryIndex,
   clipboard,
   setClipboard,
   isSpacePressed,
@@ -40,13 +53,14 @@ export function useKeyboardShortcuts({
   isDrawingMode,
   zoom,
   setZoom,
-  setPanOffset
+  setPanOffset,
+  currentGroupIndex
 }: UseKeyboardShortcutsProps): void {
   
   // Copy selected points to clipboard
   const copySelectedPoints = useCallback(() => {
     if (selectedPointsIndices.length > 0) {
-      const pointsToCopy = copyPointsToClipboard(points, selectedPointsIndices);
+      const pointsToCopy = copyGroupedPointsToClipboard(pointGroups, selectedPointsIndices);
       setClipboard(pointsToCopy);
       
       toast({
@@ -54,26 +68,26 @@ export function useKeyboardShortcuts({
         description: `${pointsToCopy.length} points copied to clipboard`
       });
     } else if (selectedPoint) {
-      const pointToCopy = copyPointsToClipboard(points, [selectedPoint.pointIndex]);
-      setClipboard(pointToCopy);
+      const pointsToCopy = copyGroupedPointsToClipboard(pointGroups, [selectedPoint]);
+      setClipboard(pointsToCopy);
       
       toast({
         title: "Copied point",
         description: "1 point copied to clipboard"
       });
     }
-  }, [points, selectedPointsIndices, selectedPoint, setClipboard]);
+  }, [pointGroups, selectedPointsIndices, selectedPoint, setClipboard]);
   
   // Cut selected points to clipboard
   const cutSelectedPoints = useCallback(() => {
     if (selectedPointsIndices.length > 0) {
       // First copy
-      const pointsToCut = copyPointsToClipboard(points, selectedPointsIndices);
+      const pointsToCut = copyGroupedPointsToClipboard(pointGroups, selectedPointsIndices);
       setClipboard(pointsToCut);
       
       // Then delete
-      const updatedPoints = cutPointsFromCanvas(points, selectedPointsIndices);
-      onPointsChange(updatedPoints);
+      const updatedGroups = cutGroupedPointsFromCanvas(pointGroups, selectedPointsIndices);
+      setPointGroups(updatedGroups);
       setSelectedPointsIndices([]);
       
       toast({
@@ -82,12 +96,12 @@ export function useKeyboardShortcuts({
       });
     } else if (selectedPoint) {
       // First copy
-      const pointToCut = copyPointsToClipboard(points, [selectedPoint.pointIndex]);
-      setClipboard(pointToCut);
+      const pointsToCut = copyGroupedPointsToClipboard(pointGroups, [selectedPoint]);
+      setClipboard(pointsToCut);
       
       // Then delete
-      const updatedPoints = cutPointsFromCanvas(points, [selectedPoint.pointIndex]);
-      onPointsChange(updatedPoints);
+      const updatedGroups = cutGroupedPointsFromCanvas(pointGroups, [selectedPoint]);
+      setPointGroups(updatedGroups);
       setSelectedPoint(null);
       
       toast({
@@ -96,11 +110,11 @@ export function useKeyboardShortcuts({
       });
     }
   }, [
-    points, 
+    pointGroups, 
     selectedPointsIndices, 
     selectedPoint, 
     setClipboard, 
-    onPointsChange, 
+    setPointGroups, 
     setSelectedPointsIndices, 
     setSelectedPoint
   ]);
@@ -108,8 +122,13 @@ export function useKeyboardShortcuts({
   // Paste points from clipboard
   const pastePoints = useCallback(() => {
     if (clipboard.length > 0) {
-      const { updatedPoints, newSelectionIndices } = pastePointsFromClipboard(points, clipboard);
-      onPointsChange(updatedPoints);
+      const { updatedGroups, newSelectionIndices } = pasteGroupedPointsFromClipboard(
+        pointGroups, 
+        clipboard, 
+        currentGroupIndex
+      );
+      
+      setPointGroups(updatedGroups);
       setSelectedPointsIndices(newSelectionIndices);
       
       toast({
@@ -117,13 +136,13 @@ export function useKeyboardShortcuts({
         description: `${clipboard.length} points pasted from clipboard`
       });
     }
-  }, [clipboard, points, onPointsChange, setSelectedPointsIndices]);
+  }, [clipboard, pointGroups, currentGroupIndex, setPointGroups, setSelectedPointsIndices]);
   
   // Delete selected points
   const deleteSelectedPoints = useCallback(() => {
     if (selectedPointsIndices.length > 0) {
-      const updatedPoints = cutPointsFromCanvas(points, selectedPointsIndices);
-      onPointsChange(updatedPoints);
+      const updatedGroups = cutGroupedPointsFromCanvas(pointGroups, selectedPointsIndices);
+      setPointGroups(updatedGroups);
       setSelectedPointsIndices([]);
       
       toast({
@@ -131,7 +150,7 @@ export function useKeyboardShortcuts({
         description: `${selectedPointsIndices.length} points have been deleted`
       });
     }
-  }, [points, selectedPointsIndices, onPointsChange, setSelectedPointsIndices]);
+  }, [pointGroups, selectedPointsIndices, setPointGroups, setSelectedPointsIndices]);
   
   // Reset zoom and pan
   const resetZoomAndPan = useCallback(() => {
@@ -167,6 +186,31 @@ export function useKeyboardShortcuts({
       description: "View has been zoomed out"
     });
   }, [zoom, setZoom]);
+  
+  // Handle undo
+  const handleUndo = useCallback(() => {
+    if (history.length > 0 && currentHistoryIndex > 0) {
+      // Get the previous state
+      const prevState = history[currentHistoryIndex - 1];
+      
+      // Update the current history index
+      setCurrentHistoryIndex(currentHistoryIndex - 1);
+      
+      // Update the point groups
+      setPointGroups(prevState.pointGroups);
+      
+      toast({
+        title: "Undo",
+        description: "Previous action undone"
+      });
+    } else {
+      toast({
+        title: "Cannot Undo",
+        description: "No more actions to undo",
+        variant: "destructive"
+      });
+    }
+  }, [history, currentHistoryIndex, setCurrentHistoryIndex, setPointGroups]);
   
   // Handle keyboard events
   useEffect(() => {
@@ -268,12 +312,11 @@ export function useKeyboardShortcuts({
       window.removeEventListener('keyup', handleKeyUp);
     };
   }, [
-    points,
+    pointGroups,
     selectedPointsIndices,
     selectedPoint,
     clipboard,
     zoom,
-    onPointsChange,
     handleUndo,
     isSpacePressed,
     isDrawingMode,
@@ -284,6 +327,14 @@ export function useKeyboardShortcuts({
     setSelectedPointsIndices,
     setSelectedPoint,
     setZoom,
-    setPanOffset
+    setPanOffset,
+    copySelectedPoints,
+    cutSelectedPoints,
+    pastePoints,
+    deleteSelectedPoints,
+    resetZoomAndPan,
+    zoomIn,
+    zoomOut,
+    currentHistoryIndex
   ]);
 }

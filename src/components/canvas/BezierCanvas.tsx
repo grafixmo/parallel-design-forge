@@ -196,49 +196,18 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     }
   }, [pointGroups, onPointsChange]);
 
-  // Set up keyboard shortcuts with adapter for old API
+  // Set up keyboard shortcuts with the updated adapter
   useKeyboardShortcuts({
-    points: pointGroupsToFlatArray(pointGroups),
-    onPointsChange: (newPoints) => {
-      // If all points are deleted, reset point groups
-      if (newPoints.length === 0) {
-        setPointGroups([]);
-      } else {
-        // Not handling complex operations here as they're better handled by the new grouped structure
-        // This is just a compatibility layer for basic keyboard shortcuts
-      }
-    },
-    selectedPointsIndices: selectedPointsIndices.map(idx => idx.pointIndex), // backward compatibility
-    setSelectedPointsIndices: (indices) => {
-      // Convert flat indices to grouped indices (simplified)
-      setSelectedPointsIndices(indices.map(index => ({
-        groupIndex: currentGroupIndex >= 0 ? currentGroupIndex : 0,
-        pointIndex: index
-      })));
-    },
-    selectedPoint: selectedPoint ? {
-      pointIndex: selectedPoint.pointIndex,
-      type: selectedPoint.type
-    } : null,
-    setSelectedPoint: (point) => {
-      if (point) {
-        setSelectedPoint({
-          groupIndex: currentGroupIndex >= 0 ? currentGroupIndex : 0,
-          pointIndex: point.pointIndex,
-          type: point.type as ControlPointType // Fixed: Ensure type is ControlPointType enum
-        });
-      } else {
-        setSelectedPoint(null);
-      }
-    },
+    pointGroups,
+    setPointGroups,
+    selectedPointsIndices,
+    setSelectedPointsIndices,
+    selectedPoint,
+    setSelectedPoint,
     clearSelections,
-    handleUndo: () => {
-      if (history.length > 0 && currentHistoryIndex > 0) {
-        const prevState = history[currentHistoryIndex - 1];
-        setCurrentHistoryIndex(currentHistoryIndex - 1);
-        setPointGroups(prevState.pointGroups);
-      }
-    },
+    history,
+    currentHistoryIndex,
+    setCurrentHistoryIndex,
     clipboard,
     setClipboard,
     isSpacePressed,
@@ -246,8 +215,9 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     canvasRef,
     isDrawingMode,
     zoom,
-    setZoom: () => {}, // Not used
-    setPanOffset: () => {} // Not used
+    setZoom,
+    setPanOffset,
+    currentGroupIndex
   });
 
   // Update instruction message based on drawing mode and points
@@ -279,8 +249,10 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     clearSelections();
     
     if (isDrawingMode) {
-      // When entering drawing mode, set new object mode to true
-      setIsNewObjectMode(true);
+      // When entering drawing mode, set new object mode to true if there are no groups
+      if (pointGroups.length === 0) {
+        setIsNewObjectMode(true);
+      }
       
       toast({
         title: 'Drawing Mode Activated',
@@ -292,7 +264,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         description: 'Select points to move or delete'
       });
     }
-  }, [isDrawingMode, clearSelections, setIsNewObjectMode]);
+  }, [isDrawingMode, clearSelections, setIsNewObjectMode, pointGroups.length]);
 
   // Save points to history when they change
   useEffect(() => {
@@ -363,15 +335,15 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         ctx.globalAlpha = 0.5; // Set reduced opacity for non-current groups
       }
       
-      // Don't change the colors for non-current groups, just use the provided colors
+      // Draw the curves using provided colors
       drawCurves(
         ctx, 
         group.points, 
-        curveColor, // Always use the original curve color
+        curveColor, 
         curveWidth, 
         parallelCount, 
         parallelSpacing, 
-        parallelColors, // Always use original parallel colors
+        parallelColors, 
         parallelWidths,
         zoom
       );
@@ -379,13 +351,18 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       // Reset opacity
       ctx.globalAlpha = 1.0;
       
-      // Fix: Pass indices as an array instead of a boolean
+      // Draw handle lines
+      const isPointInGroup = selectedPoint && selectedPoint.groupIndex === groupIndex;
+      const selectedPointIndicesInGroup = selectedPointsIndices
+        .filter(idx => idx.groupIndex === groupIndex)
+        .map(idx => idx.pointIndex);
+      
       drawHandleLines(
         ctx, 
         group.points, 
-        isDrawingMode, 
-        selectedPoint?.groupIndex === groupIndex ? selectedPoint : null, 
-        selectedPointsIndices.filter(idx => idx.groupIndex === groupIndex).map(idx => idx.pointIndex),
+        true, // Always show handle lines for better usability 
+        isPointInGroup ? selectedPoint : null, 
+        selectedPointIndicesInGroup,
         zoom
       );
       
@@ -398,14 +375,15 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       ctx.scale(zoom, zoom);
       
       // Draw control points and handles for this group (without transformation)
+      // Always allow handle interaction for all groups
       drawControlPoints(
         ctx, 
         group.points, 
-        isDrawingMode || isCurrentGroup, // Allow handle interaction for current group or in drawing mode
-        selectedPoint?.groupIndex === groupIndex ? selectedPoint : null, 
-        selectedPointsIndices.filter(idx => idx.groupIndex === groupIndex).map(idx => idx.pointIndex),
+        true, // Always allow handle interaction for better usability
+        isPointInGroup ? selectedPoint : null, 
+        selectedPointIndicesInGroup,
         zoom,
-        isCurrentGroup
+        isCurrentGroup || !isDrawingMode // Highlight current group or all groups in selection mode
       );
       
       // Draw a highlight around the current group in drawing mode
@@ -453,7 +431,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
           pointGroups[groupIndex].points[pointIndex] : null
       ).filter(Boolean) as ControlPoint[];
       
-      // Fix: Update arguments to match the updated function signature
+      // Draw multi-selection indicator
       drawMultiSelectionIndicator(ctx, isDrawingMode, selectedPoints, zoom);
     }
     
@@ -562,8 +540,8 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     
     // If not clicking on a point, start selection or add new point
     if (!handled) {
-      if (e.shiftKey) {
-        // Start selection rectangle
+      if (e.shiftKey && !isDrawingMode) {
+        // Start selection rectangle (only in selection mode)
         handleSelectionStart(x, y);
       } else {
         if (isDrawingMode) {

@@ -1,3 +1,4 @@
+
 import { Point, ControlPoint, ControlPointType, SelectionRect } from '@/types/bezier';
 import { isPointNear, isPointInSelectionRect, generateId } from '../bezierUtils';
 
@@ -70,15 +71,18 @@ export const findPointNearCoordinates = (
       return { found: true, pointIndex: i, type: ControlPointType.MAIN };
     }
     
-    // Check handles regardless of drawing mode to ensure they're always interactive
-    // Check handle in
-    if (isPointNear({ x, y }, point.handleIn, handleRadius / zoom)) {
-      return { found: true, pointIndex: i, type: ControlPointType.HANDLE_IN };
-    }
-    
-    // Check handle out
-    if (isPointNear({ x, y }, point.handleOut, handleRadius / zoom)) {
-      return { found: true, pointIndex: i, type: ControlPointType.HANDLE_OUT };
+    // Always check handles for selection mode OR drawing mode OR if the point is selected
+    // This ensures handles are always interactive when needed
+    if (!isDrawingMode || selectedPointsIndices.includes(i)) {
+      // Check handle in
+      if (isPointNear({ x, y }, point.handleIn, handleRadius / zoom)) {
+        return { found: true, pointIndex: i, type: ControlPointType.HANDLE_IN };
+      }
+      
+      // Check handle out
+      if (isPointNear({ x, y }, point.handleOut, handleRadius / zoom)) {
+        return { found: true, pointIndex: i, type: ControlPointType.HANDLE_OUT };
+      }
     }
   }
   
@@ -148,6 +152,12 @@ export const updatePointDuringDrag = (
   lastY: number
 ): ControlPoint[] => {
   const updatedPoints = [...points];
+  
+  // Make sure the point index is valid
+  if (pointIndex < 0 || pointIndex >= updatedPoints.length) {
+    return updatedPoints;
+  }
+  
   const point = { ...updatedPoints[pointIndex] };
   
   if (type === ControlPointType.MAIN) {
