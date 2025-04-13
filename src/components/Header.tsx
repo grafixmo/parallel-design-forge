@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { Button } from '@/components/ui/button';
-import { PenLine, Trash2, Upload, Save, Database, MousePointer } from 'lucide-react';
+import { PenLine, Trash2, Upload, Save, Database, MousePointer, Move } from 'lucide-react';
 import {
   Tooltip,
   TooltipContent,
@@ -69,13 +69,13 @@ const Header: React.FC<HeaderProps> = ({
                 {isDrawingMode ? (
                   <PenLine className="h-4 w-4 mr-2" />
                 ) : (
-                  <MousePointer className="h-4 w-4 mr-2" />
+                  <Move className="h-4 w-4 mr-2" />
                 )}
                 {isDrawingMode ? 'Drawing Mode' : 'Selection Mode'}
               </Button>
             </TooltipTrigger>
             <TooltipContent>
-              <p>Toggle between drawing and selection mode (ESC to deselect)</p>
+              <p>{isDrawingMode ? 'Switch to selection mode to select and move objects' : 'Switch to drawing mode to add points'}</p>
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>

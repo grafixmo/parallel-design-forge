@@ -16,7 +16,7 @@ import {
   isPointInSelectionRect
 } from '../utils/bezierUtils';
 import { toast } from '@/components/ui/use-toast';
-import { Copy, Scissors, ZoomIn, ZoomOut, Undo } from 'lucide-react';
+import { Copy, Scissors, ZoomIn, ZoomOut, Undo, Move } from 'lucide-react';
 
 interface BezierCanvasProps {
   width: number;
@@ -58,6 +58,8 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [isMultiDragging, setIsMultiDragging] = useState(false); // New state for dragging multiple points
+  const [lastDragPosition, setLastDragPosition] = useState<Point | null>(null); // Track last drag position
   const [selectedPoint, setSelectedPoint] = useState<SelectedPoint | null>(null);
   const [mousePos, setMousePos] = useState<Point>({ x: 0, y: 0 });
   const [isSelecting, setIsSelecting] = useState(false);
@@ -93,6 +95,17 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
   const ZOOM_FACTOR = 0.1; // Zoom in/out factor
   const MAX_HISTORY_SIZE = 50; // Maximum number of history states to store
   
+  // Clear all selections and reset states
+  const clearSelections = () => {
+    setSelectedPoint(null);
+    setIsDragging(false);
+    setIsMultiDragging(false);
+    setIsSelecting(false);
+    setSelectionRect(null);
+    setSelectedPointsIndices([]);
+    setLastDragPosition(null);
+  };
+  
   // Update instruction message based on drawing mode and points
   useEffect(() => {
     if (isDrawingMode) {
@@ -102,9 +115,13 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         setInstructionMessage('Click to add more points, or drag handles to adjust the curve (ESC to exit drawing mode)');
       }
     } else {
-      setInstructionMessage('Drawing mode off. Click to select points. Press ESC to deselect.');
+      if (selectedPointsIndices.length > 0) {
+        setInstructionMessage('Drag selected points to move them as a group, or press DEL to delete them');
+      } else {
+        setInstructionMessage('Click to select points or Shift+Drag to select multiple points. Press ESC to deselect.');
+      }
     }
-  }, [isDrawingMode, points.length]);
+  }, [isDrawingMode, points.length, selectedPointsIndices.length]);
   
   // Initialize background image if URL is provided
   useEffect(() => {
@@ -136,6 +153,23 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       }
     }
   }, [points]);
+  
+  // Effect to clear selection when drawing mode changes
+  useEffect(() => {
+    clearSelections();
+    
+    if (isDrawingMode) {
+      toast({
+        title: 'Drawing Mode Activated',
+        description: 'Click to add points, drag to adjust curves'
+      });
+    } else {
+      toast({
+        title: 'Selection Mode Activated',
+        description: 'Select points to move or delete'
+      });
+    }
+  }, [isDrawingMode]);
   
   // Undo function
   const handleUndo = () => {
@@ -332,16 +366,19 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     for (let i = 0; i < points.length; i++) {
       const point = points[i];
       
-      // Draw handle lines
-      ctx.beginPath();
-      ctx.moveTo(point.x, point.y);
-      ctx.lineTo(point.handleIn.x, point.handleIn.y);
-      ctx.stroke();
-      
-      ctx.beginPath();
-      ctx.moveTo(point.x, point.y);
-      ctx.lineTo(point.handleOut.x, point.handleOut.y);
-      ctx.stroke();
+      // Only show handles in drawing mode or if the point is selected
+      if (isDrawingMode || selectedPoint?.pointIndex === i || selectedPointsIndices.includes(i)) {
+        // Draw handle lines
+        ctx.beginPath();
+        ctx.moveTo(point.x, point.y);
+        ctx.lineTo(point.handleIn.x, point.handleIn.y);
+        ctx.stroke();
+        
+        ctx.beginPath();
+        ctx.moveTo(point.x, point.y);
+        ctx.lineTo(point.handleOut.x, point.handleOut.y);
+        ctx.stroke();
+      }
     }
     
     // Restore the context state (remove transformation)
@@ -350,29 +387,32 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     // Draw all control points and handles on top (without transformation)
     for (let i = 0; i < points.length; i++) {
       const point = points[i];
+      const isPointSelected = selectedPoint?.pointIndex === i || selectedPointsIndices.includes(i);
       
-      // Draw handle points
-      ctx.fillStyle = CONTROL_POINT_COLOR;
-      
-      // Handle In
-      ctx.beginPath();
-      ctx.arc(point.handleIn.x, point.handleIn.y, HANDLE_RADIUS / zoom, 0, Math.PI * 2);
-      if (selectedPoint && selectedPoint.pointIndex === i && selectedPoint.type === ControlPointType.HANDLE_IN) {
-        ctx.fillStyle = SELECTED_COLOR;
-      } else {
+      // Draw handle points - only visible in drawing mode or when point is selected
+      if (isDrawingMode || isPointSelected) {
         ctx.fillStyle = CONTROL_POINT_COLOR;
+        
+        // Handle In
+        ctx.beginPath();
+        ctx.arc(point.handleIn.x, point.handleIn.y, HANDLE_RADIUS / zoom, 0, Math.PI * 2);
+        if (selectedPoint && selectedPoint.pointIndex === i && selectedPoint.type === ControlPointType.HANDLE_IN) {
+          ctx.fillStyle = SELECTED_COLOR;
+        } else {
+          ctx.fillStyle = CONTROL_POINT_COLOR;
+        }
+        ctx.fill();
+        
+        // Handle Out
+        ctx.beginPath();
+        ctx.arc(point.handleOut.x, point.handleOut.y, HANDLE_RADIUS / zoom, 0, Math.PI * 2);
+        if (selectedPoint && selectedPoint.pointIndex === i && selectedPoint.type === ControlPointType.HANDLE_OUT) {
+          ctx.fillStyle = SELECTED_COLOR;
+        } else {
+          ctx.fillStyle = CONTROL_POINT_COLOR;
+        }
+        ctx.fill();
       }
-      ctx.fill();
-      
-      // Handle Out
-      ctx.beginPath();
-      ctx.arc(point.handleOut.x, point.handleOut.y, HANDLE_RADIUS / zoom, 0, Math.PI * 2);
-      if (selectedPoint && selectedPoint.pointIndex === i && selectedPoint.type === ControlPointType.HANDLE_OUT) {
-        ctx.fillStyle = SELECTED_COLOR;
-      } else {
-        ctx.fillStyle = CONTROL_POINT_COLOR;
-      }
-      ctx.fill();
       
       // Draw main point
       ctx.beginPath();
@@ -407,6 +447,44 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       ctx.stroke();
     }
     
+    // Draw indication for multiple selected points in selection mode
+    if (!isDrawingMode && selectedPointsIndices.length > 1) {
+      // Draw a bounding box or highlight around the selected points
+      const selectedPoints = selectedPointsIndices.map(index => points[index]);
+      
+      // Find min/max bounds of selected points
+      const minX = Math.min(...selectedPoints.map(p => p.x));
+      const minY = Math.min(...selectedPoints.map(p => p.y));
+      const maxX = Math.max(...selectedPoints.map(p => p.x));
+      const maxY = Math.max(...selectedPoints.map(p => p.y));
+      
+      // Draw dashed rectangle around selected points
+      ctx.strokeStyle = 'rgba(231, 76, 60, 0.8)';
+      ctx.lineWidth = 1.5 / zoom;
+      ctx.setLineDash([5 / zoom, 3 / zoom]);
+      
+      ctx.beginPath();
+      ctx.rect(minX - 10 / zoom, minY - 10 / zoom, maxX - minX + 20 / zoom, maxY - minY + 20 / zoom);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      
+      // Draw move icon in the center
+      const centerX = (minX + maxX) / 2;
+      const centerY = (minY + maxY) / 2;
+      
+      // Draw a simple move icon
+      ctx.fillStyle = 'rgba(231, 76, 60, 0.8)';
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, 15 / zoom, 0, Math.PI * 2);
+      ctx.fill();
+      
+      ctx.fillStyle = 'white';
+      ctx.font = `${24 / zoom}px Arial`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('⤸', centerX, centerY);
+    }
+    
     // Draw zoom level indicator
     ctx.restore(); // Restore original context without zoom
     ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
@@ -421,10 +499,17 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       ctx.fillText('✋', mousePos.x, mousePos.y);
     }
     
-    // Show drawing mode indicator
+    // Show current mode indicator
     ctx.fillStyle = isDrawingMode ? 'rgba(46, 204, 113, 0.6)' : 'rgba(231, 76, 60, 0.6)';
     ctx.font = '12px Arial';
     ctx.fillText(`Mode: ${isDrawingMode ? 'Drawing' : 'Selection'}`, 10, 40);
+    
+    // Show drag indicator when dragging multiple points
+    if (isMultiDragging && selectedPointsIndices.length > 0) {
+      ctx.fillStyle = 'rgba(231, 76, 60, 0.8)';
+      ctx.font = '12px Arial';
+      ctx.fillText(`Moving ${selectedPointsIndices.length} points`, 10, 60);
+    }
     
   }, [
     points, 
@@ -448,7 +533,8 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     isSpacePressed,
     isCanvasDragging,
     mousePos,
-    isDrawingMode
+    isDrawingMode,
+    isMultiDragging
   ]);
   
   // Handle mouse down
@@ -474,6 +560,29 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       return;
     }
     
+    // Check if we're in selection mode and have selected points
+    if (!isDrawingMode && selectedPointsIndices.length > 0) {
+      // Check if clicking within the bounds of selected points
+      const selectedPoints = selectedPointsIndices.map(index => points[index]);
+      
+      // Find min/max bounds of selected points
+      const minX = Math.min(...selectedPoints.map(p => p.x));
+      const minY = Math.min(...selectedPoints.map(p => p.y));
+      const maxX = Math.max(...selectedPoints.map(p => p.x));
+      const maxY = Math.max(...selectedPoints.map(p => p.y));
+      
+      // Add some padding for easier selection
+      const padding = 20 / zoom;
+      
+      // Check if click is within the bounding box of selected points
+      if (x >= minX - padding && x <= maxX + padding && 
+          y >= minY - padding && y <= maxY + padding) {
+        setIsMultiDragging(true);
+        setLastDragPosition({ x, y });
+        return;
+      }
+    }
+    
     // Check if clicking on a control point or handle
     let found = false;
     
@@ -482,26 +591,45 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       
       // Check main point
       if (isPointNear({ x, y }, point, POINT_RADIUS / zoom)) {
-        setSelectedPoint({ pointIndex: i, type: ControlPointType.MAIN });
+        if (!isDrawingMode && !e.shiftKey && !selectedPointsIndices.includes(i)) {
+          // In selection mode, clicking on a point selects just that point
+          setSelectedPointsIndices([i]);
+        } else if (!isDrawingMode && e.shiftKey) {
+          // Add/remove from selection with shift
+          if (selectedPointsIndices.includes(i)) {
+            setSelectedPointsIndices(selectedPointsIndices.filter(idx => idx !== i));
+          } else {
+            setSelectedPointsIndices([...selectedPointsIndices, i]);
+          }
+        } else {
+          setSelectedPoint({ pointIndex: i, type: ControlPointType.MAIN });
+        }
+        
         setIsDragging(true);
+        setLastDragPosition({ x, y });
         found = true;
         break;
       }
       
-      // Check handle in
-      if (isPointNear({ x, y }, point.handleIn, HANDLE_RADIUS / zoom)) {
-        setSelectedPoint({ pointIndex: i, type: ControlPointType.HANDLE_IN });
-        setIsDragging(true);
-        found = true;
-        break;
-      }
-      
-      // Check handle out
-      if (isPointNear({ x, y }, point.handleOut, HANDLE_RADIUS / zoom)) {
-        setSelectedPoint({ pointIndex: i, type: ControlPointType.HANDLE_OUT });
-        setIsDragging(true);
-        found = true;
-        break;
+      // Only check handles in drawing mode or if point is already selected
+      if (isDrawingMode || selectedPointsIndices.includes(i)) {
+        // Check handle in
+        if (isPointNear({ x, y }, point.handleIn, HANDLE_RADIUS / zoom)) {
+          setSelectedPoint({ pointIndex: i, type: ControlPointType.HANDLE_IN });
+          setIsDragging(true);
+          setLastDragPosition({ x, y });
+          found = true;
+          break;
+        }
+        
+        // Check handle out
+        if (isPointNear({ x, y }, point.handleOut, HANDLE_RADIUS / zoom)) {
+          setSelectedPoint({ pointIndex: i, type: ControlPointType.HANDLE_OUT });
+          setIsDragging(true);
+          setLastDragPosition({ x, y });
+          found = true;
+          break;
+        }
       }
     }
     
@@ -519,32 +647,26 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       } else {
         if (isDrawingMode) {
           // Add new point if in drawing mode
-          if (selectedPointsIndices.length > 0) {
-            // Deselect points if clicking elsewhere
-            setSelectedPointsIndices([]);
-          } else {
-            // Add new point
-            const newPoint: ControlPoint = {
-              x,
-              y,
-              handleIn: { x: x - 50, y },
-              handleOut: { x: x + 50, y },
-              id: generateId()
-            };
-            
-            const updatedPoints = [...points, newPoint];
-            onPointsChange(updatedPoints);
-            
-            setSelectedPoint({ 
-              pointIndex: updatedPoints.length - 1, 
-              type: ControlPointType.MAIN 
-            });
-            setIsDragging(true);
-          }
+          const newPoint: ControlPoint = {
+            x,
+            y,
+            handleIn: { x: x - 50, y },
+            handleOut: { x: x + 50, y },
+            id: generateId()
+          };
+          
+          const updatedPoints = [...points, newPoint];
+          onPointsChange(updatedPoints);
+          
+          setSelectedPoint({ 
+            pointIndex: updatedPoints.length - 1, 
+            type: ControlPointType.MAIN 
+          });
+          setIsDragging(true);
+          setLastDragPosition({ x, y });
         } else {
-          // In selection mode, just deselect when clicking on empty space
-          setSelectedPoint(null);
-          setSelectedPointsIndices([]);
+          // In selection mode, clear selection when clicking on empty space
+          clearSelections();
         }
       }
     }
@@ -580,7 +702,37 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       return;
     }
     
-    if (isDragging && selectedPoint !== null) {
+    // Handle multi-point dragging
+    if (isMultiDragging && lastDragPosition && selectedPointsIndices.length > 0) {
+      const deltaX = x - lastDragPosition.x;
+      const deltaY = y - lastDragPosition.y;
+      
+      // Update all selected points
+      const updatedPoints = [...points];
+      
+      selectedPointsIndices.forEach(index => {
+        if (index >= 0 && index < updatedPoints.length) {
+          const point = { ...updatedPoints[index] };
+          
+          // Move the point and its handles
+          point.x += deltaX;
+          point.y += deltaY;
+          point.handleIn.x += deltaX;
+          point.handleIn.y += deltaY;
+          point.handleOut.x += deltaX;
+          point.handleOut.y += deltaY;
+          
+          updatedPoints[index] = point;
+        }
+      });
+      
+      onPointsChange(updatedPoints);
+      setLastDragPosition({ x, y });
+      return;
+    }
+    
+    // Handle single point dragging
+    if (isDragging && selectedPoint !== null && lastDragPosition) {
       const { pointIndex, type } = selectedPoint;
       const updatedPoints = [...points];
       
@@ -589,11 +741,11 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         
         if (type === ControlPointType.MAIN) {
           // Move the entire point and its handles
-          const deltaX = x - point.x;
-          const deltaY = y - point.y;
+          const deltaX = x - lastDragPosition.x;
+          const deltaY = y - lastDragPosition.y;
           
-          point.x = x;
-          point.y = y;
+          point.x += deltaX;
+          point.y += deltaY;
           point.handleIn.x += deltaX;
           point.handleIn.y += deltaY;
           point.handleOut.x += deltaX;
@@ -610,6 +762,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         
         updatedPoints[pointIndex] = point;
         onPointsChange(updatedPoints);
+        setLastDragPosition({ x, y });
       }
     } else if (isSelecting && selectionRect) {
       // Update selection rectangle
@@ -618,6 +771,19 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         width: x - selectionRect.startX,
         height: y - selectionRect.startY
       });
+    }
+    
+    // Update cursor based on context
+    if (canvas) {
+      if (isSpacePressed || isCanvasDragging) {
+        canvas.style.cursor = 'grab';
+      } else if (isDrawingMode) {
+        canvas.style.cursor = 'crosshair';
+      } else if (isMultiDragging || (selectedPointsIndices.length > 0 && !isSelecting)) {
+        canvas.style.cursor = 'move';
+      } else {
+        canvas.style.cursor = 'default';
+      }
     }
   };
   
@@ -639,18 +805,20 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       }, []);
       
       setSelectedPointsIndices(selectedIndices);
-      setIsSelecting(false);
       
       if (selectedIndices.length > 0) {
         toast({
           title: `${selectedIndices.length} points selected`,
-          description: "Press Delete to remove selected points, or drag to move them together"
+          description: "Drag to move points as a group, or press Delete to remove them"
         });
       }
     }
     
     setIsDragging(false);
+    setIsMultiDragging(false);
     setIsSelecting(false);
+    setSelectionRect(null);
+    setLastDragPosition(null);
   };
   
   // Handle double click to delete a point
@@ -872,13 +1040,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       if (e.key === 'Escape') {
         e.preventDefault();
         
-        // Clear selections
-        setSelectedPoint(null);
-        setIsDragging(false);
-        setIsSelecting(false);
-        setSelectionRect(null);
-        setSelectedPointsIndices([]);
-        setIsSpacePressed(false);
+        clearSelections();
         
         // Reset cursor
         if (canvasRef.current) {
@@ -1002,7 +1164,15 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         ref={canvasRef}
         width={width}
         height={height}
-        className={`touch-none ${isSpacePressed ? 'cursor-grab' : isDrawingMode ? 'cursor-crosshair' : 'cursor-default'}`}
+        className={`touch-none ${
+          isSpacePressed || isCanvasDragging 
+            ? 'cursor-grab' 
+            : isMultiDragging || (selectedPointsIndices.length > 0 && !isDrawingMode) 
+              ? 'cursor-move' 
+              : isDrawingMode 
+                ? 'cursor-crosshair' 
+                : 'cursor-default'
+        }`}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
