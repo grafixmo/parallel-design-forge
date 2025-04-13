@@ -1,4 +1,3 @@
-
 import { useEffect, useCallback } from 'react';
 import { ControlPoint, ControlPointType, PointGroup } from '@/types/bezier';
 import { toast } from '@/components/ui/use-toast';
@@ -34,6 +33,11 @@ interface UseKeyboardShortcutsProps {
   currentGroupIndex: number;
 }
 
+// Define a return type for the hook
+interface UseKeyboardShortcutsReturn {
+  clearAllPoints: () => void;
+}
+
 export function useKeyboardShortcuts({
   pointGroups,
   setPointGroups,
@@ -55,7 +59,7 @@ export function useKeyboardShortcuts({
   setZoom,
   setPanOffset,
   currentGroupIndex
-}: UseKeyboardShortcutsProps): void {
+}: UseKeyboardShortcutsProps): UseKeyboardShortcutsReturn {
   
   // Copy selected points to clipboard
   const copySelectedPoints = useCallback(() => {
@@ -349,8 +353,8 @@ export function useKeyboardShortcuts({
     currentHistoryIndex
   ]);
   
-  // Expose the clearAllPoints function for use in the UI
+  // Return the clearAllPoints function explicitly
   return {
     clearAllPoints
-  } as any;
+  };
 }
