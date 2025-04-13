@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect, useState } from 'react';
 import { ControlPoint, Point, ControlPointType, PointGroup } from '@/types/bezier';
 import { toast } from '@/components/ui/use-toast';
@@ -224,7 +225,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         setSelectedPoint({
           groupIndex: currentGroupIndex >= 0 ? currentGroupIndex : 0,
           pointIndex: point.pointIndex,
-          type: point.type
+          type: point.type as ControlPointType // Fixed: Ensure type is ControlPointType enum
         });
       } else {
         setSelectedPoint(null);
@@ -306,10 +307,10 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     
-    // Clear canvas
+    // Clear canvas entirely to prevent ghost images
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
-    // Apply zoom and pan transformations
+    // Apply zoom and pan transformations for the grid and background
     ctx.save();
     ctx.translate(panOffset.x, panOffset.y);
     ctx.scale(zoom, zoom);
@@ -320,27 +321,30 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     // Draw grid
     drawGrid(ctx, canvas.width, canvas.height, zoom, panOffset);
     
-    // Reset transformation matrix to identity before drawing each group
-    // This ensures we don't have cumulative transformations causing ghost images
+    // Reset transformation to ensure clean state before drawing objects
     ctx.restore();
-    ctx.save();
-    ctx.translate(panOffset.x, panOffset.y);
-    ctx.scale(zoom, zoom);
     
     // Draw each object group with different visual treatment
     pointGroups.forEach((group, groupIndex) => {
       const isCurrentGroup = groupIndex === currentGroupIndex;
       
-      // Save the context state for transformation
+      // Save context before applying transformations for this group
       ctx.save();
+      ctx.translate(panOffset.x, panOffset.y);
+      ctx.scale(zoom, zoom);
       
       // Calculate center point for transformation
-      const sumX = group.points.reduce((sum, point) => sum + point.x, 0);
-      const sumY = group.points.reduce((sum, point) => sum + point.y, 0);
-      const centerX = group.points.length > 0 ? sumX / group.points.length : canvas.width / (2 * zoom);
-      const centerY = group.points.length > 0 ? sumY / group.points.length : canvas.height / (2 * zoom);
+      let centerX = canvas.width / (2 * zoom);
+      let centerY = canvas.height / (2 * zoom);
       
-      // Apply transformations
+      if (group.points.length > 0) {
+        const sumX = group.points.reduce((sum, point) => sum + point.x, 0);
+        const sumY = group.points.reduce((sum, point) => sum + point.y, 0);
+        centerX = sumX / group.points.length;
+        centerY = sumY / group.points.length;
+      }
+      
+      // Apply transformations for this group
       ctx.translate(centerX, centerY);
       ctx.rotate((rotation * Math.PI) / 180);
       ctx.scale(scaleX, scaleY);
@@ -388,6 +392,11 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       // Restore the context state (remove transformation)
       ctx.restore();
       
+      // Apply fresh transformation for control points (without rotation/scale)
+      ctx.save();
+      ctx.translate(panOffset.x, panOffset.y);
+      ctx.scale(zoom, zoom);
+      
       // Draw control points and handles for this group (without transformation)
       drawControlPoints(
         ctx, 
@@ -423,7 +432,14 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         ctx.stroke();
         ctx.setLineDash([]);
       }
+      
+      ctx.restore();
     });
+    
+    // Use a clean context state for UI elements
+    ctx.save();
+    ctx.translate(panOffset.x, panOffset.y);
+    ctx.scale(zoom, zoom);
     
     // Draw selection rectangle if selecting
     drawSelectionRect(ctx, isSelecting, selectionRect, zoom);
@@ -440,6 +456,11 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       // Fix: Update arguments to match the updated function signature
       drawMultiSelectionIndicator(ctx, isDrawingMode, selectedPoints, zoom);
     }
+    
+    ctx.restore();
+    
+    // Draw UI indicators and info in screen space (no transformations)
+    ctx.save();
     
     // Draw UI indicators
     drawUIIndicators(
