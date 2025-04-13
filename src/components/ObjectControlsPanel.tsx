@@ -14,7 +14,9 @@ import {
   RefreshCw, 
   RotateCw, 
   Maximize, 
-  Info
+  Info,
+  Image,
+  X
 } from 'lucide-react';
 import {
   Accordion,
@@ -493,8 +495,59 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
                       <p className="w-[200px] text-xs">Add a reference image to trace over</p>
                     </TooltipContent>
                   </Tooltip>
+                </TooltipProvider>
+              </div>
+            </AccordionTrigger>
+            <AccordionContent className="pb-4">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex items-center text-sm px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded-md"
+                  >
+                    <Image className="h-4 w-4 mr-1" />
+                    {backgroundImage ? 'Change Image' : 'Upload Image'}
+                  </button>
+                  
+                  {backgroundImage && (
+                    <button
+                      type="button"
+                      onClick={onRemoveImage}
+                      className="flex items-center text-sm px-2 py-1 text-red-500 hover:text-red-700"
+                    >
+                      <X className="h-4 w-4 mr-1" />
+                      Remove
+                    </button>
+                  )}
+                  
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={onUploadImage}
+                    className="hidden"
+                  />
                 </div>
-              </AccordionTrigger>
+                
+                {backgroundImage && (
+                  <div>
+                    <div className="flex justify-between mb-2">
+                      <Label htmlFor="bg-opacity">Opacity</Label>
+                      <span className="text-sm text-gray-500">{Math.round(backgroundOpacity * 100)}%</span>
+                    </div>
+                    <Slider
+                      id="bg-opacity"
+                      value={[backgroundOpacity * 100]}
+                      min={10}
+                      max={100}
+                      step={5}
+                      onValueChange={(values) => onBackgroundOpacityChange(values[0] / 100)}
+                      className="flex-1"
+                    />
+                  </div>
+                )}
+              </div>
             </AccordionContent>
           </AccordionItem>
         </Accordion>
