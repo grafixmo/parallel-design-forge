@@ -1,4 +1,4 @@
-import { ControlPoint, Point, SelectionRect } from '@/types/bezier';
+import { ControlPoint, Point, SelectionRect, ControlPointType } from '@/types/bezier';
 
 // Helper function to draw a grid
 export const drawGrid = (
@@ -225,7 +225,7 @@ export const drawHandleLines = (
   ctx: CanvasRenderingContext2D,
   points: ControlPoint[],
   isDrawingMode: boolean,
-  selectedPoint: { pointIndex: number; type: string } | null,
+  selectedPoint: { pointIndex: number; type: ControlPointType } | null,
   selectedPointsIndices: number[],
   zoom: number
 ) => {
@@ -257,9 +257,10 @@ export const drawControlPoints = (
   ctx: CanvasRenderingContext2D,
   points: ControlPoint[],
   isDrawingMode: boolean,
-  selectedPoint: { pointIndex: number; type: string } | null,
+  selectedPoint: { pointIndex: number; type: ControlPointType } | null,
   selectedPointsIndices: number[],
-  zoom: number
+  zoom: number,
+  isCurrentGroup: boolean = true
 ) => {
   const POINT_RADIUS = 8;
   const HANDLE_RADIUS = 6;
@@ -278,7 +279,7 @@ export const drawControlPoints = (
       // Handle In
       ctx.beginPath();
       ctx.arc(point.handleIn.x, point.handleIn.y, HANDLE_RADIUS / zoom, 0, Math.PI * 2);
-      if (selectedPoint && selectedPoint.pointIndex === i && selectedPoint.type === 'handleIn') {
+      if (selectedPoint && selectedPoint.pointIndex === i && selectedPoint.type === ControlPointType.HANDLE_IN) {
         ctx.fillStyle = SELECTED_COLOR;
       } else {
         ctx.fillStyle = CONTROL_POINT_COLOR;
@@ -288,7 +289,7 @@ export const drawControlPoints = (
       // Handle Out
       ctx.beginPath();
       ctx.arc(point.handleOut.x, point.handleOut.y, HANDLE_RADIUS / zoom, 0, Math.PI * 2);
-      if (selectedPoint && selectedPoint.pointIndex === i && selectedPoint.type === 'handleOut') {
+      if (selectedPoint && selectedPoint.pointIndex === i && selectedPoint.type === ControlPointType.HANDLE_OUT) {
         ctx.fillStyle = SELECTED_COLOR;
       } else {
         ctx.fillStyle = CONTROL_POINT_COLOR;
@@ -301,7 +302,7 @@ export const drawControlPoints = (
     ctx.arc(point.x, point.y, POINT_RADIUS / zoom, 0, Math.PI * 2);
 
     // Change color if selected
-    if (selectedPoint && selectedPoint.pointIndex === i && selectedPoint.type === 'main') {
+    if (selectedPoint && selectedPoint.pointIndex === i && selectedPoint.type === ControlPointType.MAIN) {
       ctx.fillStyle = SELECTED_COLOR;
     } else if (selectedPointsIndices.includes(i)) {
       ctx.fillStyle = SELECTED_COLOR;
@@ -341,13 +342,11 @@ export const drawSelectionRect = (
 export const drawMultiSelectionIndicator = (
   ctx: CanvasRenderingContext2D,
   isDrawingMode: boolean,
-  selectedPointsIndices: number[],
-  points: ControlPoint[],
+  selectedPoints: ControlPoint[],
   zoom: number
 ) => {
-  if (!isDrawingMode && selectedPointsIndices.length > 1) {
+  if (!isDrawingMode && selectedPoints.length > 1) {
     // Draw a bounding box or highlight around the selected points
-    const selectedPoints = selectedPointsIndices.map(index => points[index]);
 
     // Find min/max bounds of selected points
     const minX = Math.min(...selectedPoints.map(p => p.x));
