@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect, useState } from 'react';
 import { 
   ControlPoint, 
@@ -886,4 +887,152 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     setZoom(newZoom);
     
     toast({
-      title
+      title: `Zoom: ${Math.round(newZoom * 100)}%`,
+      description: 'Use mouse wheel to zoom in and out'
+    });
+  };
+  
+  // Add keyboard event handler for shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // ESC key to exit selection or clear selections
+      if (e.key === 'Escape') {
+        clearSelections();
+      }
+      
+      // Delete key to delete selected points
+      if (e.key === 'Delete' && !isDrawingMode && selectedPointsIndices.length > 0) {
+        const updatedPoints = points.filter((_, index) => !selectedPointsIndices.includes(index));
+        onPointsChange(updatedPoints);
+        clearSelections();
+        
+        toast({
+          title: `${selectedPointsIndices.length} points deleted`,
+          description: 'Selected points have been removed'
+        });
+      }
+      
+      // Ctrl+Z for undo
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        e.preventDefault();
+        handleUndo();
+      }
+      
+      // Space to enable panning
+      if (e.key === ' ' && !e.repeat) {
+        e.preventDefault();
+        setIsSpacePressed(true);
+      }
+      
+      // Ctrl+C to copy selected points
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c' && selectedPointsIndices.length > 0) {
+        const pointsToCopy = selectedPointsIndices.map(index => {
+          // Create deep copy to avoid reference issues
+          return JSON.parse(JSON.stringify(points[index]));
+        });
+        setClipboard(pointsToCopy);
+        
+        toast({
+          title: `${pointsToCopy.length} points copied`,
+          description: 'Use Ctrl+V to paste them'
+        });
+      }
+      
+      // Ctrl+V to paste points
+      if ((e.ctrlKey || e.metaKey) && e.key === 'v' && clipboard.length > 0) {
+        // Create new points with new IDs
+        const newPoints = clipboard.map(point => ({
+          ...point,
+          id: generateId(),
+          // Optionally offset pasted points slightly so they're visible
+          x: point.x + 20,
+          y: point.y + 20,
+          handleIn: {
+            x: point.handleIn.x + 20,
+            y: point.handleIn.y + 20
+          },
+          handleOut: {
+            x: point.handleOut.x + 20,
+            y: point.handleOut.y + 20
+          }
+        }));
+        
+        const updatedPoints = [...points, ...newPoints];
+        onPointsChange(updatedPoints);
+        
+        // Select the newly pasted points
+        const newIndices = Array.from(
+          { length: newPoints.length }, 
+          (_, i) => points.length + i
+        );
+        setSelectedPointsIndices(newIndices);
+        
+        toast({
+          title: `${newPoints.length} points pasted`,
+          description: 'Points have been added to the canvas'
+        });
+      }
+    };
+    
+    const handleKeyUp = (e: KeyboardEvent) => {
+      // Space to disable panning
+      if (e.key === ' ') {
+        setIsSpacePressed(false);
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [points, isDrawingMode, selectedPointsIndices, clipboard, zoom, handleUndo]);
+  
+  return (
+    <div ref={wrapperRef} className="relative w-full h-full overflow-hidden">
+      <canvas
+        ref={canvasRef}
+        width={width}
+        height={height}
+        className="w-full h-full bg-white"
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onDoubleClick={handleDoubleClick}
+        onWheel={handleWheel}
+      />
+      
+      <div className="absolute bottom-4 left-4 text-sm text-gray-500 bg-white/80 px-3 py-1 rounded shadow">
+        {instructionMessage}
+      </div>
+      
+      <div className="absolute top-4 right-4 flex space-x-2">
+        <button 
+          className="bg-white/80 p-2 rounded shadow hover:bg-white transition-colors"
+          onClick={handleUndo}
+          title="Undo (Ctrl+Z)"
+        >
+          <Undo className="w-5 h-5" />
+        </button>
+        <button 
+          className="bg-white/80 p-2 rounded shadow hover:bg-white transition-colors"
+          onClick={() => setZoom(prev => Math.min(5, prev + ZOOM_FACTOR))}
+          title="Zoom In"
+        >
+          <ZoomIn className="w-5 h-5" />
+        </button>
+        <button 
+          className="bg-white/80 p-2 rounded shadow hover:bg-white transition-colors"
+          onClick={() => setZoom(prev => Math.max(0.1, prev - ZOOM_FACTOR))}
+          title="Zoom Out"
+        >
+          <ZoomOut className="w-5 h-5" />
+        </button>
+      </div>
+    </div>
+  );
+};
+
+export default BezierCanvas;
