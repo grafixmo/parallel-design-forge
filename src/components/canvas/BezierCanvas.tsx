@@ -146,7 +146,9 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     setIsSpacePressed,
     setIsCanvasDragging,
     setDragStart,
-    updatePanOffset
+    updatePanOffset,
+    setZoom,
+    setPanOffset
   } = useZoomPan();
 
   const {
