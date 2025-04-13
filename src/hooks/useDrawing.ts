@@ -19,12 +19,16 @@ interface UseDrawingReturn {
   addPointToCanvas: (x: number, y: number, points: ControlPoint[]) => ControlPoint[];
   handleUndo: (points: ControlPoint[], onPointsChange: (points: ControlPoint[]) => void) => void;
   saveToHistory: (points: ControlPoint[]) => void;
+  startNewObject: (onPointsChange: (points: ControlPoint[]) => void) => void;
+  isNewObjectMode: boolean;
+  setIsNewObjectMode: (isNewObjectMode: boolean) => void;
 }
 
 export function useDrawing(): UseDrawingReturn {
   const [history, setHistory] = useState<HistoryState[]>([]);
   const [currentHistoryIndex, setCurrentHistoryIndex] = useState<number>(-1);
   const [clipboard, setClipboard] = useState<ControlPoint[]>([]);
+  const [isNewObjectMode, setIsNewObjectMode] = useState<boolean>(true);
   const MAX_HISTORY_SIZE = 50;
 
   // Add a new point to the canvas
@@ -81,6 +85,17 @@ export function useDrawing(): UseDrawingReturn {
     }
   }, [history, currentHistoryIndex]);
 
+  // Start a new object (clear selection and set new object mode)
+  const startNewObject = useCallback((onPointsChange: (points: ControlPoint[]) => void) => {
+    // We don't actually clear points here, just set the mode to create a new object
+    setIsNewObjectMode(true);
+    
+    toast({
+      title: 'New Object Mode',
+      description: 'Click to start creating a new object'
+    });
+  }, []);
+
   return {
     history,
     setHistory,
@@ -90,6 +105,9 @@ export function useDrawing(): UseDrawingReturn {
     setClipboard,
     addPointToCanvas,
     handleUndo,
-    saveToHistory
+    saveToHistory,
+    startNewObject,
+    isNewObjectMode,
+    setIsNewObjectMode
   };
 }

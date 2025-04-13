@@ -2,7 +2,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { ControlPoint, Point, ControlPointType } from '@/types/bezier';
 import { toast } from '@/components/ui/use-toast';
-import { Undo, ZoomIn, ZoomOut } from 'lucide-react';
+import { Undo, ZoomIn, ZoomOut, Plus } from 'lucide-react';
 
 // Import custom hooks
 import { useCanvasSetup } from '@/hooks/useCanvasSetup';
@@ -106,7 +106,10 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     setClipboard,
     addPointToCanvas,
     handleUndo: handleUndoAction,
-    saveToHistory
+    saveToHistory,
+    startNewObject,
+    isNewObjectMode,
+    setIsNewObjectMode
   } = useDrawing();
 
   const {
@@ -154,7 +157,9 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     selectionRect,
     setSelectionRect,
     clearSelections,
-    zoom
+    zoom,
+    isNewObjectMode,
+    setIsNewObjectMode
   });
 
   // Set up keyboard shortcuts
@@ -181,7 +186,9 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
   // Update instruction message based on drawing mode and points
   useEffect(() => {
     if (isDrawingMode) {
-      if (points.length === 0) {
+      if (isNewObjectMode) {
+        setInstructionMessage('Click to place first control point of a new object (ESC to cancel)');
+      } else if (points.length === 0) {
         setInstructionMessage('Click to place first control point (ESC to cancel)');
       } else {
         setInstructionMessage('Click to add more points, or drag handles to adjust the curve (ESC to exit drawing mode)');
@@ -193,13 +200,16 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         setInstructionMessage('Click to select points or Shift+Drag to select multiple points. Press ESC to deselect.');
       }
     }
-  }, [isDrawingMode, points.length, selectedPointsIndices.length]);
+  }, [isDrawingMode, points.length, selectedPointsIndices.length, isNewObjectMode]);
 
-  // Effect to clear selection when drawing mode changes
+  // Effect to handle drawing mode changes
   useEffect(() => {
     clearSelections();
     
     if (isDrawingMode) {
+      // When entering drawing mode, set new object mode to true
+      setIsNewObjectMode(true);
+      
       toast({
         title: 'Drawing Mode Activated',
         description: 'Click to add points, drag to adjust curves'
@@ -210,7 +220,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         description: 'Select points to move or delete'
       });
     }
-  }, [isDrawingMode, clearSelections]);
+  }, [isDrawingMode, clearSelections, setIsNewObjectMode]);
 
   // Save points to history when they change
   useEffect(() => {
@@ -281,7 +291,8 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       selectedPointsIndices, 
       mousePos, 
       isSpacePressed, 
-      isCanvasDragging
+      isCanvasDragging,
+      isNewObjectMode
     );
     
     ctx.restore();
@@ -308,7 +319,8 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     isCanvasDragging,
     mousePos,
     isDrawingMode,
-    isMultiDragging
+    isMultiDragging,
+    isNewObjectMode
   ]);
 
   // Handle mouse down
@@ -433,6 +445,15 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       </div>
       
       <div className="absolute top-4 right-4 flex space-x-2">
+        {isDrawingMode && !isNewObjectMode && (
+          <button
+            className="p-1 bg-white bg-opacity-70 rounded hover:bg-opacity-100 transition-colors"
+            onClick={() => startNewObject(onPointsChange)}
+            title="Start New Object"
+          >
+            <Plus size={16} />
+          </button>
+        )}
         <button
           className="p-1 bg-white bg-opacity-70 rounded hover:bg-opacity-100 transition-colors"
           onClick={() => handleUndoAction(points, onPointsChange)}

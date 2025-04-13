@@ -30,6 +30,8 @@ interface UseInteractionProps {
   setSelectionRect: (rect: { startX: number; startY: number; width: number; height: number } | null) => void;
   clearSelections: () => void;
   zoom: number;
+  isNewObjectMode: boolean;
+  setIsNewObjectMode: (isNewObjectMode: boolean) => void;
 }
 
 interface UseInteractionReturn {
@@ -61,7 +63,9 @@ export function useInteraction({
   selectionRect,
   setSelectionRect,
   clearSelections,
-  zoom
+  zoom,
+  isNewObjectMode,
+  setIsNewObjectMode
 }: UseInteractionProps): UseInteractionReturn {
   const POINT_RADIUS = 8;
   const HANDLE_RADIUS = 6;
@@ -79,12 +83,22 @@ export function useInteraction({
       }
     }
     
+    // In drawing mode, if we're in new object mode, we shouldn't select existing points
+    if (isDrawingMode && isNewObjectMode) {
+      return false;
+    }
+    
     // Check if clicking on a control point or handle
     const result = findPointNearCoordinates(
       x, y, points, POINT_RADIUS, HANDLE_RADIUS, zoom, isDrawingMode, selectedPointsIndices
     );
     
     if (result && result.found) {
+      // When we select a point in drawing mode, we're no longer in new object mode
+      if (isDrawingMode) {
+        setIsNewObjectMode(false);
+      }
+      
       if (!isDrawingMode && !shiftKey && !selectedPointsIndices.includes(result.pointIndex)) {
         // In selection mode, clicking on a point selects just that point
         setSelectedPointsIndices([result.pointIndex]);
@@ -114,7 +128,9 @@ export function useInteraction({
     setSelectedPoint,
     setIsDragging,
     setIsMultiDragging,
-    setLastDragPosition
+    setLastDragPosition,
+    isNewObjectMode,
+    setIsNewObjectMode
   ]);
 
   // Handle dragging a single point or handle
@@ -197,6 +213,9 @@ export function useInteraction({
     const updatedPoints = [...points, newPoint];
     onPointsChange(updatedPoints);
     
+    // After adding the first point of a new object, we're no longer in new object mode
+    setIsNewObjectMode(false);
+    
     setSelectedPoint({ 
       pointIndex: updatedPoints.length - 1, 
       type: ControlPointType.MAIN 
@@ -209,7 +228,8 @@ export function useInteraction({
     onPointsChange, 
     setSelectedPoint, 
     setIsDragging, 
-    setLastDragPosition
+    setLastDragPosition,
+    setIsNewObjectMode
   ]);
 
   // Handle double click to delete a point
