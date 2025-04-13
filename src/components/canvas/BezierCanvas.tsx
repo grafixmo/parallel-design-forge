@@ -352,7 +352,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         ctx.globalAlpha = 0.5; // Set reduced opacity for non-current groups
       }
       
-      // Draw curves for this group
+      // Fix: Remove the extra parameter from drawCurves
       drawCurves(
         ctx, 
         group.points, 
@@ -361,14 +361,14 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         parallelCount, 
         parallelSpacing, 
         isCurrentGroup ? parallelColors : parallelColors.map(() => '#999999'), 
-        parallelWidths, 
+        parallelWidths,
         zoom
       );
       
       // Reset opacity
       ctx.globalAlpha = 1.0;
       
-      // Draw handle lines for this group
+      // Fix Error 3: Pass indices as an array instead of a boolean
       drawHandleLines(
         ctx, 
         group.points, 
