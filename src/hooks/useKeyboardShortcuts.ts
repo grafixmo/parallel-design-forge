@@ -152,6 +152,17 @@ export function useKeyboardShortcuts({
     }
   }, [pointGroups, selectedPointsIndices, setPointGroups, setSelectedPointsIndices]);
   
+  // Clear all points - FIX: Clear All button functionality
+  const clearAllPoints = useCallback(() => {
+    setPointGroups([]);
+    clearSelections();
+    
+    toast({
+      title: "Canvas cleared",
+      description: "All objects have been removed from the canvas"
+    });
+  }, [setPointGroups, clearSelections]);
+  
   // Reset zoom and pan
   const resetZoomAndPan = useCallback(() => {
     setZoom(1);
@@ -337,4 +348,9 @@ export function useKeyboardShortcuts({
     zoomOut,
     currentHistoryIndex
   ]);
+  
+  // Expose the clearAllPoints function for use in the UI
+  return {
+    clearAllPoints
+  } as any;
 }

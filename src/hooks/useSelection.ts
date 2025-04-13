@@ -20,7 +20,8 @@ interface UseSelectionReturn {
   selectedPointsIndices: { groupIndex: number; pointIndex: number }[];
   setSelectedPointsIndices: (indices: { groupIndex: number; pointIndex: number }[]) => void;
   clearSelections: () => void;
-  finalizeSelection: (points: ControlPoint[]) => void;
+  finalizeSelection: (pointGroups: PointGroup[]) => void;
+  isObjectSelected: (groupIndex: number) => boolean;
 }
 
 export function useSelection(): UseSelectionReturn {
@@ -31,6 +32,11 @@ export function useSelection(): UseSelectionReturn {
   const [isSelecting, setIsSelecting] = useState<boolean>(false);
   const [selectionRect, setSelectionRect] = useState<SelectionRect | null>(null);
   const [selectedPointsIndices, setSelectedPointsIndices] = useState<{ groupIndex: number; pointIndex: number }[]>([]);
+
+  // Check if an object (group) is selected
+  const isObjectSelected = useCallback((groupIndex: number) => {
+    return selectedPointsIndices.some(index => index.groupIndex === groupIndex);
+  }, [selectedPointsIndices]);
 
   // Clear all selections and reset states
   const clearSelections = useCallback(() => {
@@ -44,23 +50,42 @@ export function useSelection(): UseSelectionReturn {
   }, []);
 
   // Finalize selection after drawing rectangle
-  // Note: This is a compatibility layer to work with old code
-  // It assumes all points are in one group (index 0)
-  const finalizeSelection = useCallback((points: ControlPoint[]) => {
+  const finalizeSelection = useCallback((pointGroups: PointGroup[]) => {
     if (!selectionRect) return;
     
-    const selectedIndices = findPointsInSelectionRect(points, selectionRect);
+    const selectedIndices: { groupIndex: number; pointIndex: number }[] = [];
     
-    // Convert to grouped indices format
-    setSelectedPointsIndices(selectedIndices.map(index => ({ 
-      groupIndex: 0, 
-      pointIndex: index 
-    })));
+    // Check points from all groups
+    pointGroups.forEach((group, groupIndex) => {
+      const pointIndices = findPointsInSelectionRect(group.points, selectionRect);
+      
+      // If any point in the group is selected, add all points in the group
+      if (pointIndices.length > 0) {
+        // For better UX, select the entire object (group) when any point is in selection
+        const groupIndices = group.points.map((_, pointIndex) => ({
+          groupIndex,
+          pointIndex
+        }));
+        selectedIndices.push(...groupIndices);
+      }
+    });
     
-    if (selectedIndices.length > 0) {
+    // Update selection with unique indices
+    const uniqueIndices = selectedIndices.filter((item, index, self) =>
+      index === self.findIndex((t) => (
+        t.groupIndex === item.groupIndex && t.pointIndex === item.pointIndex
+      ))
+    );
+    
+    setSelectedPointsIndices(uniqueIndices);
+    
+    if (uniqueIndices.length > 0) {
+      // Count the number of selected objects (groups)
+      const selectedGroups = new Set(uniqueIndices.map(idx => idx.groupIndex));
+      
       toast({
-        title: `${selectedIndices.length} points selected`,
-        description: "Drag to move points as a group, or press Delete to remove them"
+        title: `${selectedGroups.size} object${selectedGroups.size > 1 ? 's' : ''} selected`,
+        description: "Drag to move objects, or press Delete to remove them"
       });
     }
     
@@ -84,6 +109,7 @@ export function useSelection(): UseSelectionReturn {
     selectedPointsIndices,
     setSelectedPointsIndices,
     clearSelections,
-    finalizeSelection
+    finalizeSelection,
+    isObjectSelected
   };
 }

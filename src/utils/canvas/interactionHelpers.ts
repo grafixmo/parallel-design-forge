@@ -71,9 +71,10 @@ export const findPointNearCoordinates = (
       return { found: true, pointIndex: i, type: ControlPointType.MAIN };
     }
     
-    // Always check handles for selection mode OR drawing mode OR if the point is selected
-    // This ensures handles are always interactive when needed
-    if (!isDrawingMode || selectedPointsIndices.includes(i)) {
+    // Check handles
+    // FIX: Always check handles in drawing mode OR if the point is selected
+    // This ensures handles are always interactive
+    if (isDrawingMode || selectedPointsIndices.includes(i)) {
       // Check handle in
       if (isPointNear({ x, y }, point.handleIn, handleRadius / zoom)) {
         return { found: true, pointIndex: i, type: ControlPointType.HANDLE_IN };
@@ -95,10 +96,10 @@ export const updateSelectionRect = (
   currentPoint: Point
 ): SelectionRect => {
   return {
-    startX: startPoint.x,
-    startY: startPoint.y,
-    width: currentPoint.x - startPoint.x,
-    height: currentPoint.y - startPoint.y
+    startX: Math.min(startPoint.x, currentPoint.x),
+    startY: Math.min(startPoint.y, currentPoint.y),
+    width: Math.abs(currentPoint.x - startPoint.x),
+    height: Math.abs(currentPoint.y - startPoint.y)
   };
 };
 

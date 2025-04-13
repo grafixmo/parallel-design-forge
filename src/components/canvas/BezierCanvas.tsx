@@ -44,6 +44,7 @@ interface BezierCanvasProps {
   backgroundImage?: string;
   backgroundOpacity: number;
   isDrawingMode?: boolean;
+  onClearCanvas?: () => void;
 }
 
 const BezierCanvas: React.FC<BezierCanvasProps> = ({
@@ -62,7 +63,8 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
   scaleY,
   backgroundImage,
   backgroundOpacity,
-  isDrawingMode = true
+  isDrawingMode = true,
+  onClearCanvas
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -111,7 +113,8 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     selectedPointsIndices,
     setSelectedPointsIndices,
     clearSelections,
-    finalizeSelection
+    finalizeSelection,
+    isObjectSelected
   } = useSelection();
 
   const {
@@ -198,8 +201,8 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     }
   }, [pointGroups, onPointsChange]);
 
-  // Set up keyboard shortcuts with the updated adapter
-  useKeyboardShortcuts({
+  // Get clearAllPoints function from keyboard shortcuts
+  const { clearAllPoints } = useKeyboardShortcuts({
     pointGroups,
     setPointGroups,
     selectedPointsIndices,
@@ -239,9 +242,10 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       }
     } else {
       if (selectedPointsIndices.length > 0) {
-        setInstructionMessage('Drag selected points to move them as a group, or press DEL to delete them');
+        const selectedGroups = new Set(selectedPointsIndices.map(idx => idx.groupIndex)).size;
+        setInstructionMessage(`${selectedGroups} object${selectedGroups > 1 ? 's' : ''} selected. Drag to move ${selectedGroups > 1 ? 'them' : 'it'}, or press DEL to delete.`);
       } else {
-        setInstructionMessage('Click to select points or Shift+Drag to select multiple points. Press ESC to deselect.');
+        setInstructionMessage('Click to select objects or Shift+Drag to select multiple objects. Press ESC to deselect.');
       }
     }
   }, [isDrawingMode, pointGroups, selectedPointsIndices.length, isNewObjectMode, currentGroupIndex]);
@@ -263,7 +267,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     } else {
       toast({
         title: 'Selection Mode Activated',
-        description: 'Select points to move or delete'
+        description: 'Select objects to move or delete'
       });
     }
   }, [isDrawingMode, clearSelections, setIsNewObjectMode, pointGroups.length]);
@@ -272,6 +276,15 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
   useEffect(() => {
     saveToHistory(pointGroups);
   }, [pointGroups, saveToHistory]);
+
+  // Connect onClearCanvas to clearAllPoints
+  useEffect(() => {
+    if (onClearCanvas) {
+      // This connects the external clear button to our internal clear function
+      // by overriding the provided function
+      onClearCanvas = clearAllPoints;
+    }
+  }, [clearAllPoints, onClearCanvas]);
 
   // Draw the canvas
   useEffect(() => {
@@ -301,6 +314,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     // Draw each object group with different visual treatment
     pointGroups.forEach((group, groupIndex) => {
       const isCurrentGroup = groupIndex === currentGroupIndex;
+      const isGroupSelected = isObjectSelected(groupIndex);
       
       // Save context before applying transformations for this group
       ctx.save();
@@ -327,7 +341,11 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       // Draw object label
       if (group.points.length > 0) {
         const firstPoint = group.points[0];
-        ctx.fillStyle = isCurrentGroup ? 'rgba(46, 204, 113, 0.9)' : 'rgba(52, 152, 219, 0.7)';
+        ctx.fillStyle = isGroupSelected
+          ? 'rgba(231, 76, 60, 0.9)' // Red when selected
+          : isCurrentGroup 
+            ? 'rgba(46, 204, 113, 0.9)' // Green when current 
+            : 'rgba(52, 152, 219, 0.7)'; // Blue otherwise
         ctx.font = `bold ${14 / zoom}px Arial`;
         ctx.fillText(`Object #${groupIndex + 1}`, firstPoint.x - 20, firstPoint.y - 20);
       }
@@ -341,7 +359,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       drawCurves(
         ctx, 
         group.points, 
-        curveColor, 
+        isGroupSelected ? "#e74c3c" : curveColor, // Red when selected
         curveWidth, 
         parallelCount, 
         parallelSpacing, 
@@ -359,14 +377,19 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         .filter(idx => idx.groupIndex === groupIndex)
         .map(idx => idx.pointIndex);
       
-      drawHandleLines(
-        ctx, 
-        group.points, 
-        true, // Always show handle lines for better usability 
-        isPointInGroup ? selectedPoint : null, 
-        selectedPointIndicesInGroup,
-        zoom
-      );
+      // Always show handle lines for the current group in drawing mode or selected groups
+      const showHandles = isDrawingMode ? isCurrentGroup : isGroupSelected;
+      
+      if (showHandles) {
+        drawHandleLines(
+          ctx, 
+          group.points, 
+          true, // Always show handle lines for better usability 
+          isPointInGroup ? selectedPoint : null, 
+          selectedPointIndicesInGroup,
+          zoom
+        );
+      }
       
       // Restore the context state (remove transformation)
       ctx.restore();
@@ -377,16 +400,20 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       ctx.scale(zoom, zoom);
       
       // Draw control points and handles for this group (without transformation)
-      // Always allow handle interaction for all groups
-      drawControlPoints(
-        ctx, 
-        group.points, 
-        true, // Always allow handle interaction for better usability
-        isPointInGroup ? selectedPoint : null, 
-        selectedPointIndicesInGroup,
-        zoom,
-        isCurrentGroup || !isDrawingMode // Highlight current group or all groups in selection mode
-      );
+      // FIX: Only draw handles for the current group in drawing mode or selected groups in selection mode
+      const shouldDrawControls = (isDrawingMode && isCurrentGroup) || (!isDrawingMode && isGroupSelected);
+      
+      if (shouldDrawControls) {
+        drawControlPoints(
+          ctx, 
+          group.points, 
+          true, // Always allow handle interaction for better usability
+          isPointInGroup ? selectedPoint : null, 
+          selectedPointIndicesInGroup,
+          zoom,
+          true // Always highlight when drawing controls
+        );
+      }
       
       // Draw a highlight around the current group in drawing mode
       if (isDrawingMode && isCurrentGroup && group.points.length > 0) {
@@ -399,6 +426,31 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         
         // Draw dashed rectangle around current group
         ctx.strokeStyle = 'rgba(46, 204, 113, 0.8)';
+        ctx.lineWidth = 2 / zoom;
+        ctx.setLineDash([5 / zoom, 3 / zoom]);
+        
+        ctx.beginPath();
+        ctx.rect(
+          minX - padding, 
+          minY - padding, 
+          maxX - minX + (padding * 2), 
+          maxY - minY + (padding * 2)
+        );
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      
+      // Draw a highlight around selected groups in selection mode
+      if (!isDrawingMode && isGroupSelected && group.points.length > 0) {
+        // Find min/max bounds of group points
+        const minX = Math.min(...group.points.map(p => p.x));
+        const minY = Math.min(...group.points.map(p => p.y));
+        const maxX = Math.max(...group.points.map(p => p.x));
+        const maxY = Math.max(...group.points.map(p => p.y));
+        const padding = 30 / zoom;
+        
+        // Draw dashed rectangle around selected group
+        ctx.strokeStyle = 'rgba(231, 76, 60, 0.8)';
         ctx.lineWidth = 2 / zoom;
         ctx.setLineDash([5 / zoom, 3 / zoom]);
         
@@ -511,7 +563,8 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     isDrawingMode,
     isMultiDragging,
     isNewObjectMode,
-    currentGroupIndex
+    currentGroupIndex,
+    isObjectSelected
   ]);
 
   // Handle mouse down
@@ -537,6 +590,18 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       return;
     }
     
+    // Fix: Check if clicking on empty space in selection mode to clear selection
+    if (!isDrawingMode && !e.shiftKey) {
+      // First check if we're clicking on a point or group
+      const handled = handlePointSelection(x, y, e.shiftKey);
+      
+      // If not clicking on a point/group and not starting a selection, clear selection
+      if (!handled && !e.shiftKey) {
+        clearSelections();
+        return;
+      }
+    }
+    
     // Try to handle point selection
     const handled = handlePointSelection(x, y, e.shiftKey);
     
@@ -549,9 +614,6 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         if (isDrawingMode) {
           // Add new point if in drawing mode
           addNewPoint(x, y);
-        } else {
-          // In selection mode, clear selection when clicking on empty space
-          clearSelections();
         }
       }
     }
@@ -615,8 +677,8 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     }
     
     if (isSelecting && selectionRect) {
-      // For backward compatibility, adapt the finalizeSelection function
-      finalizeSelection(pointGroups.flatMap(group => group.points));
+      // Fix: Properly handle selection finalization with multiple groups
+      finalizeSelection(pointGroups);
     }
     
     setIsDragging(false);
