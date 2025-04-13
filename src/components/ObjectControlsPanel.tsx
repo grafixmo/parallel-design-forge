@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Slider } from '@/components/ui/slider';
 import { Input } from '@/components/ui/input';
@@ -11,12 +12,12 @@ import {
 } from '@/components/ui/select';
 import { Card } from '@/components/ui/card';
 import { 
-  RefreshCw, 
   RotateCw, 
   Maximize, 
   Info,
   Image,
-  X
+  X,
+  ChevronRight
 } from 'lucide-react';
 import {
   Accordion,
@@ -30,8 +31,15 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { 
+  Popover,
+  PopoverContent,
+  PopoverTrigger
+} from "@/components/ui/popover";
 import { CurveStyle, CurveConfig, TransformSettings, BezierObject } from '@/types/bezier';
 import ObjectsPanel from './ObjectsPanel';
+import { ColorPicker } from '@/components/ui/color-picker';
+import { cn } from '@/lib/utils';
 
 interface ObjectControlsPanelProps {
   selectedObjects: BezierObject[];
@@ -49,26 +57,6 @@ interface ObjectControlsPanelProps {
   onUploadImage: (event: React.ChangeEvent<HTMLInputElement>) => void;
   onRemoveImage: () => void;
 }
-
-const predefinedColors = [
-  '#000000', '#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff',
-  '#ff8000', '#8000ff', '#00ff80', '#ff0080', '#0080ff'
-];
-
-const ColorButton: React.FC<{
-  color: string;
-  selected: boolean;
-  onClick: () => void;
-}> = ({ color, selected, onClick }) => (
-  <button
-    type="button"
-    className={`w-8 h-8 rounded-md transition-all ${
-      selected ? 'ring-2 ring-blue-500 transform scale-110' : ''
-    }`}
-    style={{ backgroundColor: color }}
-    onClick={onClick}
-  />
-);
 
 const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
   selectedObjects,
@@ -186,6 +174,24 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
     }
   };
   
+  const SectionHeader = ({ children, tooltip }: { children: React.ReactNode, tooltip?: string }) => (
+    <div className="flex items-center mb-2">
+      <h4 className="text-sm font-medium">{children}</h4>
+      {tooltip && (
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Info className="h-3.5 w-3.5 ml-1.5 text-gray-400" />
+            </TooltipTrigger>
+            <TooltipContent>
+              <p className="w-[200px] text-xs">{tooltip}</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      )}
+    </div>
+  );
+  
   return (
     <Card className="p-4 overflow-y-auto max-h-[calc(100vh-100px)]">
       <div className="flex items-center justify-between mb-4">
@@ -215,113 +221,67 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
               : "Multiple objects selected. Select a single object to edit its properties."}
           </div>
         ) : (
-          <Accordion type="multiple" defaultValue={['curve-color', 'curve-width', 'parallel-curves']}>
-            <AccordionItem value="curve-color">
-              <AccordionTrigger className="py-2">
-                <div className="flex items-center">
-                  <span>Curve Color</span>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Info className="h-4 w-4 ml-2 text-gray-400" />
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p className="w-[200px] text-xs">Select the color for the main curve</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </div>
+          <Accordion type="multiple" defaultValue={['curve-properties']}>
+            <AccordionItem value="curve-properties" className="border-b">
+              <AccordionTrigger className="py-2 hover:no-underline">
+                <span className="text-sm font-medium">Curve Properties</span>
               </AccordionTrigger>
-              <AccordionContent className="pb-4">
-                <div className="grid grid-cols-6 gap-2 mb-3">
-                  {predefinedColors.map((color) => (
-                    <ColorButton
-                      key={color}
-                      color={color}
-                      selected={selectedObject.curveConfig.styles[0].color === color}
-                      onClick={() => handleCurveColorChange(selectedObject.id, color)}
-                    />
-                  ))}
+              <AccordionContent className="pb-4 space-y-4">
+                {/* Color & Width in single row */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="curve-color" className="text-xs flex items-center">
+                      Color
+                    </Label>
+                    <div className="flex items-center space-x-2">
+                      <ColorPicker 
+                        color={selectedObject.curveConfig.styles[0].color}
+                        onChange={(color) => handleCurveColorChange(selectedObject.id, color)}
+                      />
+                      <span className="text-xs text-gray-500">
+                        {selectedObject.curveConfig.styles[0].color}
+                      </span>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="curve-width" className="text-xs">Width</Label>
+                    <div className="flex items-center space-x-2">
+                      <Slider
+                        id="curve-width"
+                        value={[selectedObject.curveConfig.styles[0].width]}
+                        min={1}
+                        max={20}
+                        step={1}
+                        onValueChange={(values) => handleCurveWidthChange(selectedObject.id, values[0])}
+                        className="flex-1"
+                      />
+                      <Input
+                        type="number"
+                        value={selectedObject.curveConfig.styles[0].width}
+                        onChange={(e) => handleCurveWidthChange(selectedObject.id, Number(e.target.value))}
+                        min={1}
+                        max={20}
+                        className="w-14 h-7 text-sm"
+                      />
+                    </div>
+                  </div>
                 </div>
-                <div className="flex items-center space-x-2">
-                  <div 
-                    className="w-10 h-10 rounded-md" 
-                    style={{ backgroundColor: selectedObject.curveConfig.styles[0].color }}
-                  ></div>
-                  <input
-                    type="color"
-                    value={selectedObject.curveConfig.styles[0].color}
-                    onChange={(e) => handleCurveColorChange(selectedObject.id, e.target.value)}
-                    className="w-full h-8"
-                  />
-                </div>
-              </AccordionContent>
-            </AccordionItem>
-
-            <AccordionItem value="curve-width">
-              <AccordionTrigger className="py-2">
-                <div className="flex items-center">
-                  <span>Curve Width</span>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Info className="h-4 w-4 ml-2 text-gray-400" />
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p className="w-[200px] text-xs">Adjust the thickness of the main curve</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </div>
-              </AccordionTrigger>
-              <AccordionContent className="pb-4">
-                <div className="flex items-center space-x-4">
-                  <Slider
-                    value={[selectedObject.curveConfig.styles[0].width]}
-                    min={1}
-                    max={20}
-                    step={1}
-                    onValueChange={(values) => handleCurveWidthChange(selectedObject.id, values[0])}
-                    className="flex-1"
-                  />
-                  <Input
-                    type="number"
-                    value={selectedObject.curveConfig.styles[0].width}
-                    onChange={(e) => handleCurveWidthChange(selectedObject.id, Number(e.target.value))}
-                    min={1}
-                    max={20}
-                    className="w-16"
-                  />
-                </div>
-              </AccordionContent>
-            </AccordionItem>
-
-            <AccordionItem value="parallel-curves">
-              <AccordionTrigger className="py-2">
-                <div className="flex items-center">
-                  <span>Parallel Curves</span>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Info className="h-4 w-4 ml-2 text-gray-400" />
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p className="w-[200px] text-xs">Configure parallel curves that follow the main curve path</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </div>
-              </AccordionTrigger>
-              <AccordionContent className="pb-4">
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="parallel-count">Number of Curves</Label>
+                
+                {/* Parallel Curves */}
+                <div className="space-y-2 pt-2 border-t border-gray-100">
+                  <SectionHeader tooltip="Configure parallel curves that follow the main curve path">
+                    Parallel Curves
+                  </SectionHeader>
+                  
+                  <div className="flex items-end space-x-4">
+                    <div className="flex-1">
+                      <Label htmlFor="parallel-count" className="text-xs mb-1 block">Number of Curves</Label>
                       <Select
                         value={selectedObject.curveConfig.parallelCount.toString()}
                         onValueChange={(value) => handleParallelCountChange(selectedObject.id, value)}
                       >
-                        <SelectTrigger id="parallel-count">
+                        <SelectTrigger id="parallel-count" className="h-8 text-xs">
                           <SelectValue placeholder="Select count" />
                         </SelectTrigger>
                         <SelectContent>
@@ -332,52 +292,52 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
                         </SelectContent>
                       </Select>
                     </div>
-                  </div>
-
-                  <div>
-                    <div className="flex justify-between mb-2">
-                      <Label htmlFor="curve-spacing">Curve Spacing</Label>
-                      <span className="text-sm text-gray-500">{selectedObject.curveConfig.spacing}px</span>
+                    
+                    <div className="flex-1">
+                      <Label htmlFor="curve-spacing" className="text-xs mb-1 block">
+                        Spacing: {selectedObject.curveConfig.spacing}px
+                      </Label>
+                      <Slider
+                        id="curve-spacing"
+                        value={[selectedObject.curveConfig.spacing]}
+                        min={2}
+                        max={50}
+                        step={1}
+                        onValueChange={(values) => handleParallelSpacingChange(selectedObject.id, values[0])}
+                      />
                     </div>
-                    <Slider
-                      id="curve-spacing"
-                      value={[selectedObject.curveConfig.spacing]}
-                      min={2}
-                      max={50}
-                      step={1}
-                      onValueChange={(values) => handleParallelSpacingChange(selectedObject.id, values[0])}
-                    />
                   </div>
 
-                  {selectedObject.curveConfig.parallelCount > 0 && (
-                    <div className="space-y-4 pt-2 border-t border-gray-100">
-                      <h4 className="text-sm font-medium">Individual Curve Styles</h4>
+                  {selectedObject.curveConfig.parallelCount > 1 && (
+                    <div className="space-y-2 pt-2">
+                      <p className="text-xs text-gray-500">Individual Curve Styles</p>
                       
                       {Array.from({ length: Math.min(selectedObject.curveConfig.parallelCount, 4) }).map((_, i) => (
-                        <div key={i} className="p-2 border border-gray-100 rounded-md">
-                          <h5 className="text-sm font-medium mb-2">Curve {i + 1}</h5>
-                          <div className="grid grid-cols-2 gap-2 mb-2">
+                        <div key={i} className={cn(
+                          "p-2 border border-gray-100 rounded-md",
+                          i === 0 ? "bg-gray-50" : ""
+                        )}>
+                          <div className="flex items-center justify-between mb-1">
+                            <h5 className="text-xs font-medium">Curve {i + 1}</h5>
+                            {i === 0 && <span className="text-[10px] text-gray-500">(Main)</span>}
+                          </div>
+                          
+                          <div className="grid grid-cols-2 gap-2">
                             <div>
-                              <Label htmlFor={`curve-${i}-color`} className="text-xs">Color</Label>
-                              <div className="flex mt-1">
-                                <div
-                                  className="w-8 h-8 rounded-l-md border border-r-0"
-                                  style={{ backgroundColor: selectedObject.curveConfig.styles[i]?.color || '#000000' }}
-                                ></div>
-                                <input
-                                  id={`curve-${i}-color`}
-                                  type="color"
-                                  value={selectedObject.curveConfig.styles[i]?.color || '#000000'}
-                                  onChange={(e) => handleParallelStyleChange(selectedObject.id, i, {
+                              <Label htmlFor={`curve-${i}-color`} className="text-[10px]">Color</Label>
+                              <div className="flex mt-1 items-center space-x-1">
+                                <ColorPicker 
+                                  color={selectedObject.curveConfig.styles[i]?.color || '#000000'}
+                                  onChange={(color) => handleParallelStyleChange(selectedObject.id, i, {
                                     ...selectedObject.curveConfig.styles[i],
-                                    color: e.target.value
+                                    color
                                   })}
-                                  className="rounded-r-md border h-8"
+                                  className="h-6 w-6"
                                 />
                               </div>
                             </div>
                             <div>
-                              <Label htmlFor={`curve-${i}-width`} className="text-xs">Width</Label>
+                              <Label htmlFor={`curve-${i}-width`} className="text-[10px]">Width</Label>
                               <Input
                                 id={`curve-${i}-width`}
                                 type="number"
@@ -388,7 +348,7 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
                                 })}
                                 min={1}
                                 max={20}
-                                className="h-8 mt-1"
+                                className="h-7 mt-1 text-xs"
                               />
                             </div>
                           </div>
@@ -400,50 +360,38 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
               </AccordionContent>
             </AccordionItem>
 
-            <AccordionItem value="transform">
-              <AccordionTrigger className="py-2">
-                <div className="flex items-center">
-                  <span>Transform</span>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Info className="h-4 w-4 ml-2 text-gray-400" />
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p className="w-[200px] text-xs">Apply rotation and scaling to the entire curve</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </div>
+            <AccordionItem value="transform" className="border-b">
+              <AccordionTrigger className="py-2 hover:no-underline">
+                <span className="text-sm font-medium">Transform</span>
               </AccordionTrigger>
-              <AccordionContent className="pb-4">
-                <div className="space-y-4">
-                  <div>
-                    <div className="flex justify-between mb-2">
-                      <Label htmlFor="rotation">Rotation</Label>
-                      <span className="text-sm text-gray-500">{selectedObject.transform.rotation.toFixed(1)}°</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <RotateCw className="h-4 w-4 text-gray-400" />
-                      <Slider
-                        id="rotation"
-                        value={[selectedObject.transform.rotation]}
-                        min={-180}
-                        max={180}
-                        step={1}
-                        onValueChange={(values) => handleRotationChange(selectedObject.id, values[0])}
-                        className="flex-1"
-                      />
-                    </div>
+              <AccordionContent className="pb-4 space-y-4">
+                <div>
+                  <div className="flex justify-between mb-1">
+                    <Label htmlFor="rotation" className="text-xs">Rotation</Label>
+                    <span className="text-xs text-gray-500">{selectedObject.transform.rotation.toFixed(1)}°</span>
                   </div>
+                  <div className="flex items-center space-x-2">
+                    <RotateCw className="h-3.5 w-3.5 text-gray-400" />
+                    <Slider
+                      id="rotation"
+                      value={[selectedObject.transform.rotation]}
+                      min={-180}
+                      max={180}
+                      step={1}
+                      onValueChange={(values) => handleRotationChange(selectedObject.id, values[0])}
+                      className="flex-1"
+                    />
+                  </div>
+                </div>
 
+                <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <div className="flex justify-between mb-2">
-                      <Label htmlFor="scale-x">Scale X</Label>
-                      <span className="text-sm text-gray-500">{selectedObject.transform.scaleX.toFixed(1)}x</span>
+                    <div className="flex justify-between mb-1">
+                      <Label htmlFor="scale-x" className="text-xs">Scale X</Label>
+                      <span className="text-xs text-gray-500">{selectedObject.transform.scaleX.toFixed(1)}x</span>
                     </div>
                     <div className="flex items-center space-x-2">
-                      <Maximize className="h-4 w-4 text-gray-400" />
+                      <Maximize className="h-3.5 w-3.5 text-gray-400" />
                       <Slider
                         id="scale-x"
                         value={[selectedObject.transform.scaleX * 10]}
@@ -457,12 +405,12 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
                   </div>
 
                   <div>
-                    <div className="flex justify-between mb-2">
-                      <Label htmlFor="scale-y">Scale Y</Label>
-                      <span className="text-sm text-gray-500">{selectedObject.transform.scaleY.toFixed(1)}x</span>
+                    <div className="flex justify-between mb-1">
+                      <Label htmlFor="scale-y" className="text-xs">Scale Y</Label>
+                      <span className="text-xs text-gray-500">{selectedObject.transform.scaleY.toFixed(1)}x</span>
                     </div>
                     <div className="flex items-center space-x-2">
-                      <Maximize className="h-4 w-4 text-gray-400 rotate-90" />
+                      <Maximize className="h-3.5 w-3.5 text-gray-400 rotate-90" />
                       <Slider
                         id="scale-y"
                         value={[selectedObject.transform.scaleY * 10]}
@@ -482,31 +430,19 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
         
         {/* Background Controls - This is global so it's always shown */}
         <Accordion type="multiple" defaultValue={[]}>
-          <AccordionItem value="background">
-            <AccordionTrigger className="py-2">
-              <div className="flex items-center">
-                <span>Background Image</span>
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Info className="h-4 w-4 ml-2 text-gray-400" />
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p className="w-[200px] text-xs">Add a reference image to trace over</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              </div>
+          <AccordionItem value="background" className="border-b">
+            <AccordionTrigger className="py-2 hover:no-underline">
+              <span className="text-sm font-medium">Background Image</span>
             </AccordionTrigger>
             <AccordionContent className="pb-4">
-              <div className="space-y-4">
+              <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="flex items-center text-sm px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded-md"
+                    className="flex items-center text-xs px-2.5 py-1 bg-gray-100 hover:bg-gray-200 rounded-md"
                   >
-                    <Image className="h-4 w-4 mr-1" />
+                    <Image className="h-3.5 w-3.5 mr-1" />
                     {backgroundImage ? 'Change Image' : 'Upload Image'}
                   </button>
                   
@@ -514,9 +450,9 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
                     <button
                       type="button"
                       onClick={onRemoveImage}
-                      className="flex items-center text-sm px-2 py-1 text-red-500 hover:text-red-700"
+                      className="flex items-center text-xs px-2 py-1 text-red-500 hover:text-red-700"
                     >
-                      <X className="h-4 w-4 mr-1" />
+                      <X className="h-3.5 w-3.5 mr-1" />
                       Remove
                     </button>
                   )}
@@ -532,9 +468,9 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
                 
                 {backgroundImage && (
                   <div>
-                    <div className="flex justify-between mb-2">
-                      <Label htmlFor="bg-opacity">Opacity</Label>
-                      <span className="text-sm text-gray-500">{Math.round(backgroundOpacity * 100)}%</span>
+                    <div className="flex justify-between mb-1">
+                      <Label htmlFor="bg-opacity" className="text-xs">Opacity</Label>
+                      <span className="text-xs text-gray-500">{Math.round(backgroundOpacity * 100)}%</span>
                     </div>
                     <Slider
                       id="bg-opacity"

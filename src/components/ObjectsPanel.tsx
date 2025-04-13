@@ -1,14 +1,8 @@
 
 import React from 'react';
 import { Button } from '@/components/ui/button';
-import { BezierObject, CurveStyle, CurveConfig, TransformSettings } from '@/types/bezier';
-import { Plus, Trash, Copy, Edit, Eye, EyeOff } from 'lucide-react';
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
+import { BezierObject } from '@/types/bezier';
+import { Plus, Trash, Edit, ChevronRight, List } from 'lucide-react';
 import {
   Card,
   CardContent,
@@ -18,8 +12,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { toast } from "@/hooks/use-toast";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,6 +23,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
 interface ObjectsPanelProps {
   objects: BezierObject[];
@@ -53,8 +46,10 @@ const ObjectsPanel: React.FC<ObjectsPanelProps> = ({
 }) => {
   const [editingObjectId, setEditingObjectId] = React.useState<string | null>(null);
   const [editName, setEditName] = React.useState<string>('');
+  const [isExpanded, setIsExpanded] = React.useState(true);
   
-  const handleStartRename = (object: BezierObject) => {
+  const handleStartRename = (e: React.MouseEvent, object: BezierObject) => {
+    e.stopPropagation();
     setEditingObjectId(object.id);
     setEditName(object.name);
   };
@@ -77,19 +72,32 @@ const ObjectsPanel: React.FC<ObjectsPanelProps> = ({
   };
   
   return (
-    <Card className="w-full">
-      <CardHeader className="pb-3">
-        <div className="flex justify-between items-center">
-          <CardTitle>Objects</CardTitle>
-          <div className="flex space-x-2">
+    <Card className="w-full shadow-sm border-slate-200">
+      <Collapsible open={isExpanded} onOpenChange={setIsExpanded}>
+        <CardHeader className="px-4 py-3 flex flex-row items-center justify-between space-y-0">
+          <div className="flex items-center space-x-2">
+            <CollapsibleTrigger asChild>
+              <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+                <ChevronRight className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+              </Button>
+            </CollapsibleTrigger>
+            <div>
+              <CardTitle className="text-base">Objects</CardTitle>
+              <CardDescription className="text-xs">
+                {objects.length} object{objects.length !== 1 ? 's' : ''}
+              </CardDescription>
+            </div>
+          </div>
+          <div className="flex space-x-1 z-10">
             {selectedObjectIds.length > 0 && (
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button 
                     variant="destructive" 
                     size="sm"
+                    className="h-7 text-xs px-2"
                   >
-                    <Trash className="h-4 w-4 mr-1" />
+                    <Trash className="h-3.5 w-3.5 mr-1" />
                     Delete
                   </Button>
                 </AlertDialogTrigger>
@@ -116,122 +124,124 @@ const ObjectsPanel: React.FC<ObjectsPanelProps> = ({
               variant="outline" 
               size="sm" 
               onClick={onCreateObject}
+              className="h-7 text-xs px-2"
             >
-              <Plus className="h-4 w-4 mr-1" />
+              <Plus className="h-3.5 w-3.5 mr-1" />
               New
             </Button>
           </div>
-        </div>
-        <CardDescription>
-          Create and manage bezier objects
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-2">
-          {objects.length === 0 ? (
-            <div className="text-center p-4 text-sm text-gray-500">
-              No objects created yet. Click "New" to create your first object, then continue clicking to add more points.
-            </div>
-          ) : (
-            objects.map((object) => (
-              <div 
-                key={object.id}
-                className={`border rounded-md p-2 ${
-                  selectedObjectIds.includes(object.id) 
-                    ? 'border-blue-500 bg-blue-50' 
-                    : 'border-gray-200'
-                }`}
-                onClick={() => onSelectObject(object.id, false)}
-              >
-                <div className="flex items-center justify-between">
-                  {editingObjectId === object.id ? (
-                    <Input
-                      value={editName}
-                      onChange={(e) => setEditName(e.target.value)}
-                      onBlur={handleFinishRename}
-                      onKeyDown={handleKeyPress}
-                      className="h-7 text-sm"
-                      autoFocus
-                    />
-                  ) : (
-                    <div className="flex items-center space-x-2">
-                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: object.curveConfig.styles[0].color }}></div>
-                      <span className="font-medium text-sm">{object.name}</span>
-                      <span className="text-xs text-gray-500">
-                        ({object.points.length} points)
-                      </span>
-                    </div>
-                  )}
-                  
-                  <div className="flex items-center space-x-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleStartRename(object);
-                      }}
-                    >
-                      <Edit className="h-3.5 w-3.5" />
-                    </Button>
+        </CardHeader>
+        
+        <CollapsibleContent>
+          <CardContent className="p-2">
+            <div className="space-y-1">
+              {objects.length === 0 ? (
+                <div className="text-center p-3 text-sm text-gray-500 bg-gray-50 rounded-md">
+                  <List className="h-5 w-5 mx-auto mb-1 text-gray-400" />
+                  <p>No objects yet. Click "New" to create your first object.</p>
+                </div>
+              ) : (
+                objects.map((object) => (
+                  <div 
+                    key={object.id}
+                    className={`flex items-center justify-between p-2 rounded-md hover:bg-gray-50 transition-colors ${
+                      selectedObjectIds.includes(object.id) 
+                        ? 'bg-blue-50 border-l-2 border-blue-500' 
+                        : 'border-l-2 border-transparent'
+                    }`}
+                    onClick={() => onSelectObject(object.id, false)}
+                  >
+                    {editingObjectId === object.id ? (
+                      <Input
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        onBlur={handleFinishRename}
+                        onKeyDown={handleKeyPress}
+                        className="h-7 text-sm"
+                        autoFocus
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    ) : (
+                      <div className="flex items-center space-x-2 overflow-hidden">
+                        <div 
+                          className="w-2.5 h-2.5 rounded-full flex-shrink-0" 
+                          style={{ backgroundColor: object.curveConfig.styles[0].color }}
+                        ></div>
+                        <span className="font-medium text-sm truncate max-w-[120px]">{object.name}</span>
+                        <span className="text-xs text-gray-500 flex-shrink-0">
+                          {object.points.length} pt{object.points.length !== 1 ? 's' : ''}
+                        </span>
+                      </div>
+                    )}
                     
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
+                    {editingObjectId !== object.id && (
+                      <div className="flex items-center space-x-1 ml-2">
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 text-red-500 hover:text-red-700"
-                          onClick={(e) => e.stopPropagation()}
+                          className="h-6 w-6 text-gray-500 hover:text-gray-700"
+                          onClick={(e) => handleStartRename(e, object)}
                         >
-                          <Trash className="h-3.5 w-3.5" />
+                          <Edit className="h-3 w-3" />
                         </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>Delete Object</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            Are you sure you want to delete "{object.name}"? This action cannot be undone.
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Cancel</AlertDialogCancel>
-                          <AlertDialogAction
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onDeleteObject(object.id);
-                            }}
-                            className="bg-red-500 hover:bg-red-600"
-                          >
-                            Delete
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
+                        
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 text-gray-500 hover:text-red-600"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <Trash className="h-3 w-3" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Delete Object</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Are you sure you want to delete "{object.name}"? This action cannot be undone.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onDeleteObject(object.id);
+                                }}
+                                className="bg-red-500 hover:bg-red-600"
+                              >
+                                Delete
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
+                    )}
+                    
+                    {object.points.length < 2 && (
+                      <div className="absolute right-3 text-xs text-amber-500 bg-amber-50 px-2 py-0.5 rounded-full ml-2">
+                        Need more points
+                      </div>
+                    )}
                   </div>
-                </div>
-                <div className="mt-1 text-xs text-gray-500">
-                  {object.points.length < 2 ? (
-                    <div className="text-amber-500">
-                      Need at least 2 points. Keep clicking on canvas to add more.
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </CardContent>
-      <CardFooter className="text-xs text-gray-500 pt-1">
-        {objects.length > 0 ? (
-          <p>Click objects to select, Shift+click for multiple. Right-click or double-click to finish drawing.</p>
-        ) : (
-          <p>Click anywhere on the canvas to start drawing. Add at least 2 points per object.</p>
-        )}
-      </CardFooter>
+                ))
+              )}
+            </div>
+          </CardContent>
+          
+          <CardFooter className="px-3 py-2 border-t text-xs text-gray-500">
+            {objects.length > 0 ? (
+              <p>Shift+click for multiple selection</p>
+            ) : (
+              <p>Click on canvas to add points</p>
+            )}
+          </CardFooter>
+        </CollapsibleContent>
+      </Collapsible>
     </Card>
   );
 };
 
 export default ObjectsPanel;
-
