@@ -1,3 +1,4 @@
+
 export interface Point {
   x: number;
   y: number;
@@ -33,10 +34,18 @@ export interface TransformSettings {
   scaleY: number;
 }
 
-export interface DesignData {
+// New interfaces for individual bezier objects
+export interface BezierObject {
+  id: string;
   points: ControlPoint[];
   curveConfig: CurveConfig;
   transform: TransformSettings;
+  name: string;
+  isSelected: boolean;
+}
+
+export interface DesignData {
+  objects: BezierObject[];
   backgroundImage?: BackgroundImage;
 }
 
@@ -56,6 +65,7 @@ export enum ControlPointType {
 }
 
 export interface SelectedPoint {
+  objectId: string;
   pointIndex: number;
   type: ControlPointType;
 }
@@ -74,11 +84,19 @@ export interface ZoomSettings {
 }
 
 export interface ClipboardData {
-  points: ControlPoint[];
+  objects: BezierObject[];
   timestamp: number;
 }
 
 export interface HistoryState {
-  points: ControlPoint[];
+  objects: BezierObject[];
   timestamp: number;
+}
+
+// New interfaces for grouped objects
+export interface ObjectGroup {
+  id: string;
+  objectIds: string[];
+  name: string;
+  isSelected: boolean;
 }

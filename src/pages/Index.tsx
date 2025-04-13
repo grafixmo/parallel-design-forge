@@ -6,17 +6,18 @@ import {
   DesignData, 
   TransformSettings,
   SavedDesign,
-  CurveConfig
+  CurveConfig,
+  BezierObject
 } from '@/types/bezier';
 import BezierCanvas from '@/components/BezierCanvas';
-import ControlsPanel from '@/components/ControlsPanel';
 import Header from '@/components/Header';
 import LibraryPanel from '@/components/LibraryPanel';
-import { generateId, svgPathToBezierPoints } from '@/utils/bezierUtils';
+import { generateId } from '@/utils/bezierUtils';
 import { exportAsSVG, downloadSVG } from '@/utils/svgExporter';
 import { saveDesign } from '@/services/supabaseClient';
-import { toast } from '@/components/ui/use-toast';
-import { useToast } from '@/components/ui/use-toast';
+import { useToast } from '@/hooks/use-toast';
+import { useBezierObjects } from '@/hooks/useBezierObjects';
+import ObjectControlsPanel from '@/components/ObjectControlsPanel';
 
 const Index = () => {
   const { toast } = useToast();
@@ -25,28 +26,6 @@ const Index = () => {
   const [canvasWidth, setCanvasWidth] = useState<number>(800);
   const [canvasHeight, setCanvasHeight] = useState<number>(600);
   
-  // Control points
-  const [points, setPoints] = useState<ControlPoint[]>([]);
-  
-  // Curve styles
-  const [curveColor, setCurveColor] = useState<string>('#000000');
-  const [curveWidth, setCurveWidth] = useState<number>(5);
-  
-  // Parallel curve settings
-  const [parallelCount, setParallelCount] = useState<number>(2);
-  const [parallelSpacing, setParallelSpacing] = useState<number>(8);
-  const [parallelStyles, setParallelStyles] = useState<CurveStyle[]>([
-    { color: '#ff0000', width: 5 },
-    { color: '#0000ff', width: 5 },
-    { color: '#00ff00', width: 5 },
-    { color: '#ffff00', width: 5 }
-  ]);
-  
-  // Transformation settings
-  const [rotation, setRotation] = useState<number>(0);
-  const [scaleX, setScaleX] = useState<number>(1.0);
-  const [scaleY, setScaleY] = useState<number>(1.0);
-  
   // Background image
   const [backgroundImage, setBackgroundImage] = useState<string | undefined>(undefined);
   const [backgroundOpacity, setBackgroundOpacity] = useState<number>(0.3);
@@ -54,6 +33,26 @@ const Index = () => {
   // UI state
   const [showLibrary, setShowLibrary] = useState<boolean>(false);
   const [isDrawingMode, setIsDrawingMode] = useState<boolean>(true);
+  
+  // Use our custom hook for bezier objects
+  const {
+    objects,
+    selectedObjectIds,
+    createObject,
+    selectObject,
+    deselectAllObjects,
+    updateObjectPoints,
+    updateObjectCurveConfig,
+    updateObjectTransform,
+    deleteObject,
+    renameObject,
+    undo,
+    redo,
+    saveCurrentState
+  } = useBezierObjects();
+  
+  // Get selected objects
+  const selectedObjects = objects.filter(obj => selectedObjectIds.includes(obj.id));
   
   // Resize canvas based on window size
   useEffect(() => {
@@ -71,29 +70,13 @@ const Index = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
   
-  // Handle parallel style change
-  const handleParallelStyleChange = (index: number, style: CurveStyle) => {
-    const newStyles = [...parallelStyles];
-    newStyles[index] = style;
-    setParallelStyles(newStyles);
-  };
-  
   // Reset everything to default
   const handleReset = () => {
-    setPoints([]);
-    setCurveColor('#000000');
-    setCurveWidth(5);
-    setParallelCount(2);
-    setParallelSpacing(8);
-    setParallelStyles([
-      { color: '#ff0000', width: 5 },
-      { color: '#0000ff', width: 5 },
-      { color: '#00ff00', width: 5 },
-      { color: '#ffff00', width: 5 }
-    ]);
-    setRotation(0);
-    setScaleX(1.0);
-    setScaleY(1.0);
+    // Clear all objects
+    objects.forEach(obj => deleteObject(obj.id));
+    setBackgroundImage(undefined);
+    setBackgroundOpacity(0.3);
+    
     toast({
       title: 'Canvas Reset',
       description: 'All design elements have been reset to default.'
@@ -136,33 +119,70 @@ const Index = () => {
     });
   };
   
+  // Handler for creating new objects from the canvas
+  const handleCreateObject = (points: ControlPoint[]) => {
+    const objectName = `Object ${objects.length + 1}`;
+    return createObject(points, objectName);
+  };
+  
+  // Handler for object selection
+  const handleSelectObject = (objectId: string, multiSelect: boolean = false) => {
+    if (objectId === '') {
+      deselectAllObjects();
+    } else {
+      selectObject(objectId, multiSelect);
+    }
+  };
+  
+  // Handler for updating all objects
+  const handleObjectsChange = (updatedObjects: BezierObject[]) => {
+    // This is a simplified version - in a real app you'd need to merge with existing objects
+    updatedObjects.forEach(obj => {
+      const existingObj = objects.find(o => o.id === obj.id);
+      if (existingObj) {
+        // Just update points for now - this is called during dragging
+        updateObjectPoints(obj.id, obj.points);
+      }
+    });
+  };
+  
   // Export design as SVG
   const handleExportSVG = () => {
-    if (points.length < 2) {
+    if (objects.length === 0) {
       toast({
         title: 'Cannot Export',
-        description: 'Please create a curve with at least 2 control points.',
+        description: 'Please create at least one object with points.',
         variant: 'destructive'
       });
       return;
     }
     
-    const curveConfig: CurveConfig = {
-      styles: [
-        { color: curveColor, width: curveWidth },
-        ...parallelStyles
-      ],
-      parallelCount,
-      spacing: parallelSpacing
+    // Prepare data for export
+    const designData: DesignData = {
+      objects: objects,
+      backgroundImage: backgroundImage ? {
+        url: backgroundImage,
+        opacity: backgroundOpacity
+      } : undefined
     };
     
-    const transform: TransformSettings = {
-      rotation,
-      scaleX,
-      scaleY
-    };
+    // Generate SVG content
+    const svgContent = exportAsSVG(
+      objects.flatMap(obj => obj.points), // All points from all objects
+      objects[0]?.curveConfig || { // Use first object's config or default
+        styles: [{ color: '#000000', width: 5 }],
+        parallelCount: 2,
+        spacing: 8
+      }, 
+      objects[0]?.transform || { // Use first object's transform or default
+        rotation: 0,
+        scaleX: 1.0,
+        scaleY: 1.0
+      },
+      canvasWidth,
+      canvasHeight
+    );
     
-    const svgContent = exportAsSVG(points, curveConfig, transform, canvasWidth, canvasHeight);
     downloadSVG(svgContent, 'soutache-design.svg');
     
     toast({
@@ -173,38 +193,22 @@ const Index = () => {
   
   // Save design to Supabase
   const handleSaveDesign = async (name: string, category: string) => {
-    if (points.length < 2) {
+    if (objects.length === 0) {
       toast({
         title: 'Cannot Save',
-        description: 'Please create a curve with at least 2 control points.',
+        description: 'Please create at least one object with points.',
         variant: 'destructive'
       });
       return;
     }
     
     const designData: DesignData = {
-      points,
-      curveConfig: {
-        styles: [
-          { color: curveColor, width: curveWidth },
-          ...parallelStyles
-        ],
-        parallelCount,
-        spacing: parallelSpacing
-      },
-      transform: {
-        rotation,
-        scaleX,
-        scaleY
-      }
-    };
-    
-    if (backgroundImage) {
-      designData.backgroundImage = {
+      objects: objects,
+      backgroundImage: backgroundImage ? {
         url: backgroundImage,
         opacity: backgroundOpacity
-      };
-    }
+      } : undefined
+    };
     
     const design: SavedDesign = {
       name,
@@ -242,8 +246,24 @@ const Index = () => {
       
       const parsedData: DesignData = JSON.parse(design.shapes_data);
       
-      // Check if data contains SVG path but no points
-      if (!parsedData.points || parsedData.points.length === 0) {
+      // Clear current objects
+      objects.forEach(obj => deleteObject(obj.id));
+      
+      // Check if data has objects array (new format) or just points (old format)
+      if (parsedData.objects && parsedData.objects.length > 0) {
+        // New format with objects
+        parsedData.objects.forEach(obj => {
+          createObject(obj.points, obj.name);
+        });
+      } else if (parsedData.points && parsedData.points.length > 0) {
+        // Old format with just points, create a single object
+        const pointsWithIds = parsedData.points.map(point => ({
+          ...point,
+          id: point.id || generateId()
+        }));
+        
+        createObject(pointsWithIds, 'Imported Object');
+      } else {
         toast({
           title: 'Invalid Design Data',
           description: 'The selected design does not contain valid control points.',
@@ -252,38 +272,7 @@ const Index = () => {
         return;
       }
       
-      // Add IDs to points if they don't have them
-      const pointsWithIds = parsedData.points.map(point => ({
-        ...point,
-        id: point.id || generateId()
-      }));
-      
-      setPoints(pointsWithIds);
-      
-      if (parsedData.curveConfig) {
-        if (parsedData.curveConfig.styles && parsedData.curveConfig.styles.length > 0) {
-          setCurveColor(parsedData.curveConfig.styles[0].color);
-          setCurveWidth(parsedData.curveConfig.styles[0].width);
-          
-          if (parsedData.curveConfig.styles.length > 1) {
-            const newStyles = parsedData.curveConfig.styles.slice(1).map(style => ({
-              color: style.color,
-              width: style.width
-            }));
-            setParallelStyles(newStyles);
-          }
-        }
-        
-        setParallelCount(parsedData.curveConfig.parallelCount);
-        setParallelSpacing(parsedData.curveConfig.spacing);
-      }
-      
-      if (parsedData.transform) {
-        setRotation(parsedData.transform.rotation);
-        setScaleX(parsedData.transform.scaleX);
-        setScaleY(parsedData.transform.scaleY);
-      }
-      
+      // Set background image if present
       if (parsedData.backgroundImage) {
         setBackgroundImage(parsedData.backgroundImage.url);
         setBackgroundOpacity(parsedData.backgroundImage.opacity);
@@ -303,6 +292,15 @@ const Index = () => {
     }
   };
   
+  // Handle object deletion
+  const handleDeleteObject = (objectId: string) => {
+    deleteObject(objectId);
+    toast({
+      title: 'Object Deleted',
+      description: 'The selected object has been removed.'
+    });
+  };
+  
   return (
     <div className="flex flex-col h-screen">
       <Header
@@ -319,17 +317,13 @@ const Index = () => {
           <BezierCanvas
             width={canvasWidth}
             height={canvasHeight}
-            points={points}
-            onPointsChange={setPoints}
-            curveWidth={curveWidth}
-            curveColor={curveColor}
-            parallelCount={parallelCount}
-            parallelSpacing={parallelSpacing}
-            parallelColors={parallelStyles.map(style => style.color)}
-            parallelWidths={parallelStyles.map(style => style.width)}
-            rotation={rotation}
-            scaleX={scaleX}
-            scaleY={scaleY}
+            objects={objects}
+            selectedObjectIds={selectedObjectIds}
+            onObjectSelect={handleSelectObject}
+            onObjectsChange={handleObjectsChange}
+            onCreateObject={handleCreateObject}
+            onSaveState={saveCurrentState}
+            onUndo={undo}
             backgroundImage={backgroundImage}
             backgroundOpacity={backgroundOpacity}
             isDrawingMode={isDrawingMode}
@@ -337,29 +331,21 @@ const Index = () => {
         </div>
         
         <div className="w-80 border-l overflow-y-auto">
-          <ControlsPanel
-            curveColor={curveColor}
-            onCurveColorChange={setCurveColor}
-            curveWidth={curveWidth}
-            onCurveWidthChange={setCurveWidth}
-            parallelCount={parallelCount}
-            onParallelCountChange={setParallelCount}
-            parallelSpacing={parallelSpacing}
-            onParallelSpacingChange={setParallelSpacing}
-            parallelStyles={parallelStyles}
-            onParallelStyleChange={handleParallelStyleChange}
-            rotation={rotation}
-            onRotationChange={setRotation}
-            scaleX={scaleX}
-            onScaleXChange={setScaleX}
-            scaleY={scaleY}
-            onScaleYChange={setScaleY}
-            onReset={handleReset}
-            onUploadImage={handleUploadImage}
-            onRemoveImage={handleRemoveImage}
-            hasBackgroundImage={!!backgroundImage}
+          <ObjectControlsPanel
+            selectedObjects={selectedObjects}
+            allObjects={objects}
+            selectedObjectIds={selectedObjectIds}
+            onCreateObject={() => handleCreateObject([])}
+            onSelectObject={handleSelectObject}
+            onDeleteObject={handleDeleteObject}
+            onRenameObject={renameObject}
+            onUpdateCurveConfig={updateObjectCurveConfig}
+            onUpdateTransform={updateObjectTransform}
+            backgroundImage={backgroundImage}
             backgroundOpacity={backgroundOpacity}
             onBackgroundOpacityChange={setBackgroundOpacity}
+            onUploadImage={handleUploadImage}
+            onRemoveImage={handleRemoveImage}
           />
         </div>
       </div>

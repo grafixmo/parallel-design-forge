@@ -1,6 +1,7 @@
+
 import React from 'react';
 import { Button } from '@/components/ui/button';
-import { PenLine, Trash2, Upload, Save, Database, MousePointer, Move } from 'lucide-react';
+import { PenLine, Trash2, Upload, Save, Database, MousePointer } from 'lucide-react';
 import {
   Tooltip,
   TooltipContent,
@@ -20,15 +21,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
-import { SavedDesign } from '@/types/bezier';
 
 interface HeaderProps {
   onClearCanvas: () => void;
   onSaveDesign: (name: string, category: string) => void;
   onLoadDesigns: () => void;
   onExportSVG: () => void;
-  isDrawingMode?: boolean; // New prop to control drawing mode
-  onToggleDrawingMode?: () => void; // New prop to toggle drawing mode
+  isDrawingMode?: boolean;
+  onToggleDrawingMode?: () => void;
 }
 
 const Header: React.FC<HeaderProps> = ({
