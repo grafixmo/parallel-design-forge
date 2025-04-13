@@ -209,6 +209,7 @@ export function useInteraction({
   const addNewPoint = useCallback((x: number, y: number) => {
     if (!isDrawingMode) return;
     
+    // Create a new point with the createNewControlPoint helper
     const newPoint = createNewControlPoint(x, y);
     const updatedPoints = [...points, newPoint];
     onPointsChange(updatedPoints);

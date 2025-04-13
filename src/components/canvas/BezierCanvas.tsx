@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect, useState } from 'react';
 import { ControlPoint, Point, ControlPointType } from '@/types/bezier';
 import { toast } from '@/components/ui/use-toast';
@@ -294,6 +295,28 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       isNewObjectMode
     );
     
+    // Draw visual indicator for new object mode
+    if (isDrawingMode && isNewObjectMode) {
+      ctx.fillStyle = 'rgba(46, 204, 113, 0.6)';
+      ctx.font = `${14 / zoom}px Arial`;
+      const newObjectText = 'New Object Mode';
+      ctx.fillText(newObjectText, 10 / zoom, 80 / zoom);
+      
+      // Draw a highlight around the plus button
+      const plusButtonRect = {
+        x: canvas.width - (70 / zoom),
+        y: 10 / zoom,
+        width: 30 / zoom,
+        height: 30 / zoom
+      };
+      
+      ctx.strokeStyle = 'rgba(46, 204, 113, 0.8)';
+      ctx.lineWidth = 2 / zoom;
+      ctx.setLineDash([5 / zoom, 3 / zoom]);
+      ctx.strokeRect(plusButtonRect.x, plusButtonRect.y, plusButtonRect.width, plusButtonRect.height);
+      ctx.setLineDash([]);
+    }
+    
     ctx.restore();
   }, [
     points, 
@@ -444,13 +467,18 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       </div>
       
       <div className="absolute top-4 right-4 flex space-x-2">
-        {isDrawingMode && !isNewObjectMode && (
+        {isDrawingMode && (
           <button
-            className="p-1 bg-white bg-opacity-70 rounded hover:bg-opacity-100 transition-colors"
+            className={`p-2 rounded transition-colors flex items-center justify-center ${
+              isNewObjectMode 
+                ? 'bg-green-500 text-white hover:bg-green-600' 
+                : 'bg-white bg-opacity-70 hover:bg-opacity-100'
+            }`}
             onClick={() => startNewObject(onPointsChange)}
             title="Start New Object"
           >
             <Plus size={16} />
+            <span className="ml-1 text-xs">New Object</span>
           </button>
         )}
         <button

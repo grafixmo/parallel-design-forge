@@ -85,7 +85,7 @@ export function useDrawing(): UseDrawingReturn {
     }
   }, [history, currentHistoryIndex]);
 
-  // Start a new object (clear selection and set new object mode)
+  // Start a new object - this function now explicitly sets new object mode
   const startNewObject = useCallback((onPointsChange: (points: ControlPoint[]) => void) => {
     // We don't actually clear points here, just set the mode to create a new object
     setIsNewObjectMode(true);
