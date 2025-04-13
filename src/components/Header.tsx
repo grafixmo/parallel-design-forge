@@ -69,7 +69,7 @@ const Header: React.FC<HeaderProps> = ({
                 {isDrawingMode ? (
                   <PenLine className="h-4 w-4 mr-2" />
                 ) : (
-                  <Move className="h-4 w-4 mr-2" />
+                  <MousePointer className="h-4 w-4 mr-2" />
                 )}
                 {isDrawingMode ? 'Drawing Mode' : 'Selection Mode'}
               </Button>
