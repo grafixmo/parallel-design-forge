@@ -1,3 +1,4 @@
+
 import type { Config } from "tailwindcss";
 
 export default {
@@ -61,6 +62,13 @@ export default {
 					'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
 					border: 'hsl(var(--sidebar-border))',
 					ring: 'hsl(var(--sidebar-ring))'
+				},
+				canvas: {
+					grid: "#f0f0f0",
+					point: "#3498db",
+					controlPoint: "#2ecc71",
+					handleLine: "rgba(52, 152, 219, 0.5)",
+					selectionRect: "rgba(52, 152, 219, 0.2)",
 				}
 			},
 			borderRadius: {

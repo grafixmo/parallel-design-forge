@@ -1,0 +1,140 @@
+
+import React, { useState, useEffect } from 'react';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { SavedDesign } from '@/types/bezier';
+import { getDesigns, getDesignsByCategory } from '@/services/supabaseClient';
+import { X } from 'lucide-react';
+
+interface LibraryPanelProps {
+  onClose: () => void;
+  onSelectDesign: (design: SavedDesign) => void;
+}
+
+const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign }) => {
+  const [designs, setDesigns] = useState<SavedDesign[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchDesigns();
+  }, [selectedCategory]);
+
+  const fetchDesigns = async () => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      let response;
+      
+      if (selectedCategory === 'all') {
+        response = await getDesigns();
+      } else {
+        response = await getDesignsByCategory(selectedCategory);
+      }
+      
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      
+      setDesigns(response.data || []);
+    } catch (err) {
+      setError('Failed to load designs. Please try again.');
+      console.error('Error fetching designs:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleCategoryChange = (category: string) => {
+    setSelectedCategory(category);
+  };
+
+  const handleSelectDesign = (design: SavedDesign) => {
+    onSelectDesign(design);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center">
+      <Card className="w-full max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b">
+          <h2 className="text-xl font-semibold">Design Library</h2>
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+        
+        <div className="p-4 border-b">
+          <div className="flex items-center space-x-4">
+            <div className="w-40">
+              <Select value={selectedCategory} onValueChange={handleCategoryChange}>
+                <SelectTrigger>
+                  <SelectValue placeholder="All Categories" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Categories</SelectItem>
+                  <SelectItem value="Collares">Collares</SelectItem>
+                  <SelectItem value="Anillos">Anillos</SelectItem>
+                  <SelectItem value="Pendientes">Pendientes</SelectItem>
+                  <SelectItem value="Prototipos">Prototipos</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <Button variant="outline" size="sm" onClick={fetchDesigns}>
+              Refresh
+            </Button>
+          </div>
+        </div>
+        
+        <div className="flex-1 overflow-auto p-4">
+          {isLoading ? (
+            <div className="text-center py-8">
+              <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent"></div>
+              <p className="mt-2 text-gray-500">Loading designs...</p>
+            </div>
+          ) : error ? (
+            <div className="text-center py-8 text-red-500">
+              <p>{error}</p>
+              <Button variant="outline" size="sm" className="mt-2" onClick={fetchDesigns}>
+                Try Again
+              </Button>
+            </div>
+          ) : designs.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              <p>No designs found.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              {designs.map((design) => (
+                <Card
+                  key={design.id}
+                  className="p-4 hover:shadow-md transition-shadow cursor-pointer"
+                  onClick={() => handleSelectDesign(design)}
+                >
+                  <div className="aspect-square mb-2 border rounded flex items-center justify-center bg-gray-50">
+                    <div className="text-5xl text-gray-300">⌘</div>
+                  </div>
+                  <h3 className="font-medium text-sm truncate">{design.name}</h3>
+                  <p className="text-xs text-gray-500 truncate">{design.category}</p>
+                </Card>
+              ))}
+            </div>
+          )}
+        </div>
+      </Card>
+    </div>
+  );
+};
+
+export default LibraryPanel;
