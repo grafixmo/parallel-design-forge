@@ -222,6 +222,11 @@ export function useInteraction({
     });
     setIsDragging(true);
     setLastDragPosition({ x, y });
+    
+    toast({
+      title: 'Point Added',
+      description: 'Click to add more points to this object or use the + button to start a new object'
+    });
   }, [
     isDrawingMode, 
     points, 
