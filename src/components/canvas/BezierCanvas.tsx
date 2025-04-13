@@ -320,6 +320,13 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     // Draw grid
     drawGrid(ctx, canvas.width, canvas.height, zoom, panOffset);
     
+    // Reset transformation matrix to identity before drawing each group
+    // This ensures we don't have cumulative transformations causing ghost images
+    ctx.restore();
+    ctx.save();
+    ctx.translate(panOffset.x, panOffset.y);
+    ctx.scale(zoom, zoom);
+    
     // Draw each object group with different visual treatment
     pointGroups.forEach((group, groupIndex) => {
       const isCurrentGroup = groupIndex === currentGroupIndex;
@@ -352,7 +359,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         ctx.globalAlpha = 0.5; // Set reduced opacity for non-current groups
       }
       
-      // Fix: Remove the extra parameter from drawCurves
+      // Fix: Fix the arguments for drawCurves
       drawCurves(
         ctx, 
         group.points, 
@@ -368,7 +375,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       // Reset opacity
       ctx.globalAlpha = 1.0;
       
-      // Fix Error 3: Pass indices as an array instead of a boolean
+      // Fix: Pass indices as an array instead of a boolean
       drawHandleLines(
         ctx, 
         group.points, 
@@ -421,7 +428,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     // Draw selection rectangle if selecting
     drawSelectionRect(ctx, isSelecting, selectionRect, zoom);
     
-    // Draw multi-selection indicator (adapting the old function for now)
+    // Draw multi-selection indicator (fixing the arguments)
     if (selectedPointsIndices.length > 0) {
       // Get the actual selected points from different groups
       const selectedPoints = selectedPointsIndices.map(({ groupIndex, pointIndex }) => 
@@ -430,7 +437,8 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
           pointGroups[groupIndex].points[pointIndex] : null
       ).filter(Boolean) as ControlPoint[];
       
-      drawMultiSelectionIndicator(ctx, isDrawingMode, selectedPoints.length > 0, selectedPoints, zoom);
+      // Fix: Update arguments to match the updated function signature
+      drawMultiSelectionIndicator(ctx, isDrawingMode, selectedPoints, zoom);
     }
     
     // Draw UI indicators
