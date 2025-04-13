@@ -358,20 +358,20 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         ctx.fillText(`Object #${groupIndex + 1}`, firstPoint.x - 20, firstPoint.y - 20);
       }
       
-      // Draw curves with different opacity for non-current groups in drawing mode
+      // Apply reduced opacity for non-current groups in drawing mode, but preserve colors
       if (isDrawingMode && !isCurrentGroup) {
         ctx.globalAlpha = 0.5; // Set reduced opacity for non-current groups
       }
       
-      // Fix the arguments for drawCurves
+      // Don't change the colors for non-current groups, just use the provided colors
       drawCurves(
         ctx, 
         group.points, 
-        isCurrentGroup ? curveColor : '#999999', 
+        curveColor, // Always use the original curve color
         curveWidth, 
         parallelCount, 
         parallelSpacing, 
-        isCurrentGroup ? parallelColors : parallelColors.map(() => '#999999'), 
+        parallelColors, // Always use original parallel colors
         parallelWidths,
         zoom
       );
@@ -401,7 +401,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       drawControlPoints(
         ctx, 
         group.points, 
-        isDrawingMode && isCurrentGroup, 
+        isDrawingMode || isCurrentGroup, // Allow handle interaction for current group or in drawing mode
         selectedPoint?.groupIndex === groupIndex ? selectedPoint : null, 
         selectedPointsIndices.filter(idx => idx.groupIndex === groupIndex).map(idx => idx.pointIndex),
         zoom,

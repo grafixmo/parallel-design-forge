@@ -232,18 +232,18 @@ export const drawHandleLines = (
   const HANDLE_LINE_COLOR = 'rgba(52, 152, 219, 0.5)';
   ctx.strokeStyle = HANDLE_LINE_COLOR;
   ctx.lineWidth = 1 / zoom; // Adjust for zoom
-
+  
   for (let i = 0; i < points.length; i++) {
     const point = points[i];
-
-    // Only show handles in drawing mode or if the point is selected
+    
+    // Show handles in drawing mode or if the point is selected
     if (isDrawingMode || selectedPoint?.pointIndex === i || selectedPointsIndices.includes(i)) {
       // Draw handle lines
       ctx.beginPath();
       ctx.moveTo(point.x, point.y);
       ctx.lineTo(point.handleIn.x, point.handleIn.y);
       ctx.stroke();
-
+      
       ctx.beginPath();
       ctx.moveTo(point.x, point.y);
       ctx.lineTo(point.handleOut.x, point.handleOut.y);
@@ -252,30 +252,28 @@ export const drawHandleLines = (
   }
 };
 
-// Helper function to draw control points and handles
+// Helper function to draw control points
 export const drawControlPoints = (
   ctx: CanvasRenderingContext2D,
   points: ControlPoint[],
-  isDrawingMode: boolean,
+  isInteractive: boolean, // Changed from isDrawingMode to isInteractive to reflect the different use case
   selectedPoint: { pointIndex: number; type: ControlPointType } | null,
   selectedPointsIndices: number[],
   zoom: number,
-  isCurrentGroup: boolean = true
+  isCurrentGroup: boolean
 ) => {
   const POINT_RADIUS = 8;
   const HANDLE_RADIUS = 6;
   const POINT_COLOR = '#3498db'; // Blue
   const CONTROL_POINT_COLOR = '#2ecc71'; // Green
   const SELECTED_COLOR = '#e74c3c'; // Red
-
+  
   for (let i = 0; i < points.length; i++) {
     const point = points[i];
     const isPointSelected = selectedPoint?.pointIndex === i || selectedPointsIndices.includes(i);
-
-    // Draw handle points - only visible in drawing mode or when point is selected
-    if (isDrawingMode || isPointSelected) {
-      ctx.fillStyle = CONTROL_POINT_COLOR;
-
+    
+    // Draw handle points - only visible when interactive or when point is selected
+    if (isInteractive || isPointSelected) {
       // Handle In
       ctx.beginPath();
       ctx.arc(point.handleIn.x, point.handleIn.y, HANDLE_RADIUS / zoom, 0, Math.PI * 2);
@@ -285,7 +283,7 @@ export const drawControlPoints = (
         ctx.fillStyle = CONTROL_POINT_COLOR;
       }
       ctx.fill();
-
+      
       // Handle Out
       ctx.beginPath();
       ctx.arc(point.handleOut.x, point.handleOut.y, HANDLE_RADIUS / zoom, 0, Math.PI * 2);
@@ -296,11 +294,11 @@ export const drawControlPoints = (
       }
       ctx.fill();
     }
-
+    
     // Draw main point
     ctx.beginPath();
     ctx.arc(point.x, point.y, POINT_RADIUS / zoom, 0, Math.PI * 2);
-
+    
     // Change color if selected
     if (selectedPoint && selectedPoint.pointIndex === i && selectedPoint.type === ControlPointType.MAIN) {
       ctx.fillStyle = SELECTED_COLOR;
@@ -309,7 +307,7 @@ export const drawControlPoints = (
     } else {
       ctx.fillStyle = POINT_COLOR;
     }
-
+    
     ctx.fill();
   }
 };
@@ -325,7 +323,7 @@ export const drawSelectionRect = (
     ctx.strokeStyle = 'rgba(52, 152, 219, 0.8)';
     ctx.fillStyle = 'rgba(52, 152, 219, 0.2)';
     ctx.lineWidth = 2 / zoom; // Adjust for zoom
-
+    
     ctx.beginPath();
     ctx.rect(
       selectionRect.startX,
@@ -345,35 +343,35 @@ export const drawMultiSelectionIndicator = (
   selectedPoints: ControlPoint[],
   zoom: number
 ) => {
-  if (!isDrawingMode && selectedPoints.length > 1) {
-    // Draw a bounding box or highlight around the selected points
-
-    // Find min/max bounds of selected points
-    const minX = Math.min(...selectedPoints.map(p => p.x));
-    const minY = Math.min(...selectedPoints.map(p => p.y));
-    const maxX = Math.max(...selectedPoints.map(p => p.x));
-    const maxY = Math.max(...selectedPoints.map(p => p.y));
-
-    // Draw dashed rectangle around selected points
-    ctx.strokeStyle = 'rgba(231, 76, 60, 0.8)';
-    ctx.lineWidth = 1.5 / zoom;
-    ctx.setLineDash([5 / zoom, 3 / zoom]);
-
-    ctx.beginPath();
-    ctx.rect(minX - 10 / zoom, minY - 10 / zoom, maxX - minX + 20 / zoom, maxY - minY + 20 / zoom);
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    // Draw move icon in the center
+  if (selectedPoints.length <= 1) return;
+  
+  // Find min/max bounds of selected points
+  const minX = Math.min(...selectedPoints.map(p => p.x));
+  const minY = Math.min(...selectedPoints.map(p => p.y));
+  const maxX = Math.max(...selectedPoints.map(p => p.x));
+  const maxY = Math.max(...selectedPoints.map(p => p.y));
+  
+  // Draw dashed rectangle around selected points
+  ctx.strokeStyle = 'rgba(231, 76, 60, 0.8)';
+  ctx.lineWidth = 1.5 / zoom;
+  ctx.setLineDash([5 / zoom, 3 / zoom]);
+  
+  ctx.beginPath();
+  ctx.rect(minX - 10 / zoom, minY - 10 / zoom, maxX - minX + 20 / zoom, maxY - minY + 20 / zoom);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  
+  // Draw move icon in the center if not in drawing mode
+  if (!isDrawingMode) {
     const centerX = (minX + maxX) / 2;
     const centerY = (minY + maxY) / 2;
-
+    
     // Draw a simple move icon
     ctx.fillStyle = 'rgba(231, 76, 60, 0.8)';
     ctx.beginPath();
     ctx.arc(centerX, centerY, 15 / zoom, 0, Math.PI * 2);
     ctx.fill();
-
+    
     ctx.fillStyle = 'white';
     ctx.font = `${24 / zoom}px Arial`;
     ctx.textAlign = 'center';
@@ -382,42 +380,39 @@ export const drawMultiSelectionIndicator = (
   }
 };
 
+// Helper function to draw UI indicators
 export const drawUIIndicators = (
-  ctx: CanvasRenderingContext2D, 
-  zoom: number, 
-  isDrawingMode: boolean, 
-  isMultiDragging: boolean, 
-  selectedPointsIndices: number[], 
-  mousePos: { x: number; y: number },
+  ctx: CanvasRenderingContext2D,
+  zoom: number,
+  isDrawingMode: boolean,
+  isMultiDragging: boolean,
+  selectedPointsIndices: number[],
+  mousePos: Point,
   isSpacePressed: boolean,
   isCanvasDragging: boolean,
-  isNewObjectMode?: boolean
+  isNewObjectMode: boolean
 ) => {
   // Draw zoom level indicator
   ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
   ctx.font = '12px Arial';
   ctx.fillText(`Zoom: ${Math.round(zoom * 100)}%`, 10, 20);
   
-  // Draw cursor based on interaction state
-  if (isSpacePressed || isCanvasDragging) {
-    const cursorSize = 20;
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-    ctx.font = `${cursorSize}px Arial`;
-    ctx.fillText('✋', mousePos.x, mousePos.y);
-  }
-  
   // Show current mode indicator
   ctx.fillStyle = isDrawingMode ? 'rgba(46, 204, 113, 0.6)' : 'rgba(231, 76, 60, 0.6)';
   ctx.font = '12px Arial';
-  const modeText = isDrawingMode 
-    ? (isNewObjectMode ? 'Drawing: New Object' : 'Drawing: Add Points') 
-    : 'Selection';
-  ctx.fillText(`Mode: ${modeText}`, 10, 40);
+  ctx.fillText(`Mode: ${isDrawingMode ? 'Drawing' : 'Selection'}`, 10, 40);
+  
+  // Show new object mode indicator
+  if (isDrawingMode && isNewObjectMode) {
+    ctx.fillStyle = 'rgba(46, 204, 113, 0.6)';
+    ctx.font = '12px Arial';
+    ctx.fillText('New Object Mode', 10, 60);
+  }
   
   // Show drag indicator when dragging multiple points
   if (isMultiDragging && selectedPointsIndices.length > 0) {
     ctx.fillStyle = 'rgba(231, 76, 60, 0.8)';
     ctx.font = '12px Arial';
-    ctx.fillText(`Moving ${selectedPointsIndices.length} points`, 10, 60);
+    ctx.fillText(`Moving ${selectedPointsIndices.length} points`, 10, 80);
   }
 };
