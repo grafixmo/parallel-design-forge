@@ -34,6 +34,7 @@ interface BezierCanvasProps {
   scaleY: number;
   backgroundImage?: string;
   backgroundOpacity: number;
+  isDrawingMode?: boolean; // New prop to control drawing mode
 }
 
 const BezierCanvas: React.FC<BezierCanvasProps> = ({
@@ -51,7 +52,8 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
   scaleX,
   scaleY,
   backgroundImage,
-  backgroundOpacity
+  backgroundOpacity,
+  isDrawingMode = true // Default to drawing mode
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -90,6 +92,19 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
   const HANDLE_LINE_COLOR = 'rgba(52, 152, 219, 0.5)';
   const ZOOM_FACTOR = 0.1; // Zoom in/out factor
   const MAX_HISTORY_SIZE = 50; // Maximum number of history states to store
+  
+  // Update instruction message based on drawing mode and points
+  useEffect(() => {
+    if (isDrawingMode) {
+      if (points.length === 0) {
+        setInstructionMessage('Click to place first control point (ESC to cancel)');
+      } else {
+        setInstructionMessage('Click to add more points, or drag handles to adjust the curve (ESC to exit drawing mode)');
+      }
+    } else {
+      setInstructionMessage('Drawing mode off. Click to select points. Press ESC to deselect.');
+    }
+  }, [isDrawingMode, points.length]);
   
   // Initialize background image if URL is provided
   useEffect(() => {
@@ -398,13 +413,18 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     ctx.font = '12px Arial';
     ctx.fillText(`Zoom: ${Math.round(zoom * 100)}%`, 10, 20);
     
-    // Draw hand cursor if in canvas drag mode
+    // Draw cursor based on interaction state
     if (isSpacePressed || isCanvasDragging) {
       const cursorSize = 20;
       ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
       ctx.font = `${cursorSize}px Arial`;
       ctx.fillText('✋', mousePos.x, mousePos.y);
     }
+    
+    // Show drawing mode indicator
+    ctx.fillStyle = isDrawingMode ? 'rgba(46, 204, 113, 0.6)' : 'rgba(231, 76, 60, 0.6)';
+    ctx.font = '12px Arial';
+    ctx.fillText(`Mode: ${isDrawingMode ? 'Drawing' : 'Selection'}`, 10, 40);
     
   }, [
     points, 
@@ -427,7 +447,8 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     panOffset,
     isSpacePressed,
     isCanvasDragging,
-    mousePos
+    mousePos,
+    isDrawingMode
   ]);
   
   // Handle mouse down
@@ -496,33 +517,34 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
           height: 0
         });
       } else {
-        // Add a new point if we're not selecting
-        if (selectedPointsIndices.length > 0) {
-          // Deselect points if clicking elsewhere
-          setSelectedPointsIndices([]);
-        } else {
-          // Add new point
-          const newPoint: ControlPoint = {
-            x,
-            y,
-            handleIn: { x: x - 50, y },
-            handleOut: { x: x + 50, y },
-            id: generateId()
-          };
-          
-          const updatedPoints = [...points, newPoint];
-          onPointsChange(updatedPoints);
-          
-          setSelectedPoint({ 
-            pointIndex: updatedPoints.length - 1, 
-            type: ControlPointType.MAIN 
-          });
-          setIsDragging(true);
-          
-          // Update instruction message
-          if (points.length === 0) {
-            setInstructionMessage('Click to add more points, or drag handles to adjust the curve');
+        if (isDrawingMode) {
+          // Add new point if in drawing mode
+          if (selectedPointsIndices.length > 0) {
+            // Deselect points if clicking elsewhere
+            setSelectedPointsIndices([]);
+          } else {
+            // Add new point
+            const newPoint: ControlPoint = {
+              x,
+              y,
+              handleIn: { x: x - 50, y },
+              handleOut: { x: x + 50, y },
+              id: generateId()
+            };
+            
+            const updatedPoints = [...points, newPoint];
+            onPointsChange(updatedPoints);
+            
+            setSelectedPoint({ 
+              pointIndex: updatedPoints.length - 1, 
+              type: ControlPointType.MAIN 
+            });
+            setIsDragging(true);
           }
+        } else {
+          // In selection mode, just deselect when clicking on empty space
+          setSelectedPoint(null);
+          setSelectedPointsIndices([]);
         }
       }
     }
@@ -633,6 +655,8 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
   
   // Handle double click to delete a point
   const handleDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!isDrawingMode) return; // Only allow point deletion in drawing mode
+    
     const canvas = canvasRef.current;
     if (!canvas) return;
     
@@ -847,6 +871,8 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       // Cancel current operation when Escape is pressed
       if (e.key === 'Escape') {
         e.preventDefault();
+        
+        // Clear selections
         setSelectedPoint(null);
         setIsDragging(false);
         setIsSelecting(false);
@@ -856,7 +882,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         
         // Reset cursor
         if (canvasRef.current) {
-          canvasRef.current.style.cursor = 'crosshair';
+          canvasRef.current.style.cursor = isDrawingMode ? 'crosshair' : 'default';
         }
         
         toast({
@@ -910,7 +936,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         
         // Reset cursor
         if (canvasRef.current) {
-          canvasRef.current.style.cursor = 'crosshair';
+          canvasRef.current.style.cursor = isDrawingMode ? 'crosshair' : 'default';
         }
       }
     };
@@ -922,7 +948,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [points, selectedPointsIndices, selectedPoint, clipboard, zoom, onPointsChange, history, currentHistoryIndex, isSpacePressed]);
+  }, [points, selectedPointsIndices, selectedPoint, clipboard, zoom, onPointsChange, history, currentHistoryIndex, isSpacePressed, isDrawingMode]);
   
   return (
     <div ref={wrapperRef} className="relative w-full h-full overflow-hidden border border-gray-200 rounded-md bg-white">
@@ -976,7 +1002,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         ref={canvasRef}
         width={width}
         height={height}
-        className={`touch-none ${isSpacePressed ? 'cursor-grab' : 'cursor-crosshair'}`}
+        className={`touch-none ${isSpacePressed ? 'cursor-grab' : isDrawingMode ? 'cursor-crosshair' : 'cursor-default'}`}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}

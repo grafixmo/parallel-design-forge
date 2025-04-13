@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { Button } from '@/components/ui/button';
-import { PenLine, Trash2, Upload, Save, Database } from 'lucide-react';
+import { PenLine, Trash2, Upload, Save, Database, MousePointer } from 'lucide-react';
 import {
   Tooltip,
   TooltipContent,
@@ -27,22 +27,21 @@ interface HeaderProps {
   onSaveDesign: (name: string, category: string) => void;
   onLoadDesigns: () => void;
   onExportSVG: () => void;
+  isDrawingMode?: boolean; // New prop to control drawing mode
+  onToggleDrawingMode?: () => void; // New prop to toggle drawing mode
 }
 
 const Header: React.FC<HeaderProps> = ({
   onClearCanvas,
   onSaveDesign,
   onLoadDesigns,
-  onExportSVG
+  onExportSVG,
+  isDrawingMode = true,
+  onToggleDrawingMode
 }) => {
-  const [isDrawingMode, setIsDrawingMode] = React.useState(true);
   const [designName, setDesignName] = React.useState('');
   const [designCategory, setDesignCategory] = React.useState('Collares');
   const [saveDialogOpen, setSaveDialogOpen] = React.useState(false);
-  
-  const toggleDrawingMode = () => {
-    setIsDrawingMode(!isDrawingMode);
-  };
   
   const handleSaveClick = () => {
     setSaveDialogOpen(true);
@@ -64,15 +63,19 @@ const Header: React.FC<HeaderProps> = ({
             <TooltipTrigger asChild>
               <Button 
                 variant={isDrawingMode ? "default" : "outline"} 
-                onClick={toggleDrawingMode}
+                onClick={onToggleDrawingMode}
                 className="mr-2"
               >
-                <PenLine className="h-4 w-4 mr-2" />
-                Drawing Mode
+                {isDrawingMode ? (
+                  <PenLine className="h-4 w-4 mr-2" />
+                ) : (
+                  <MousePointer className="h-4 w-4 mr-2" />
+                )}
+                {isDrawingMode ? 'Drawing Mode' : 'Selection Mode'}
               </Button>
             </TooltipTrigger>
             <TooltipContent>
-              <p>Toggle drawing mode</p>
+              <p>Toggle between drawing and selection mode (ESC to deselect)</p>
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>

@@ -53,6 +53,7 @@ const Index = () => {
   
   // UI state
   const [showLibrary, setShowLibrary] = useState<boolean>(false);
+  const [isDrawingMode, setIsDrawingMode] = useState<boolean>(true);
   
   // Resize canvas based on window size
   useEffect(() => {
@@ -121,6 +122,17 @@ const Index = () => {
     toast({
       title: 'Image Removed',
       description: 'Background reference image has been removed.'
+    });
+  };
+  
+  // Toggle drawing mode
+  const handleToggleDrawingMode = () => {
+    setIsDrawingMode(!isDrawingMode);
+    toast({
+      title: `${!isDrawingMode ? 'Drawing' : 'Selection'} Mode Activated`,
+      description: !isDrawingMode 
+        ? 'You can now add and modify curve points.' 
+        : 'You can now select and move existing points.'
     });
   };
   
@@ -298,6 +310,8 @@ const Index = () => {
         onSaveDesign={handleSaveDesign}
         onLoadDesigns={() => setShowLibrary(true)}
         onExportSVG={handleExportSVG}
+        isDrawingMode={isDrawingMode}
+        onToggleDrawingMode={handleToggleDrawingMode}
       />
       
       <div className="flex flex-1 overflow-hidden">
@@ -318,6 +332,7 @@ const Index = () => {
             scaleY={scaleY}
             backgroundImage={backgroundImage}
             backgroundOpacity={backgroundOpacity}
+            isDrawingMode={isDrawingMode}
           />
         </div>
         
