@@ -21,6 +21,8 @@ interface ZoomPanReturn {
   setIsCanvasDragging: (isDragging: boolean) => void;
   setDragStart: (point: Point) => void;
   updatePanOffset: (deltaX: number, deltaY: number) => void;
+  setZoom: (zoom: number) => void;
+  setPanOffset: (offset: Point) => void;
 }
 
 export function useZoomPan(): ZoomPanReturn {
@@ -119,6 +121,8 @@ export function useZoomPan(): ZoomPanReturn {
     setIsSpacePressed,
     setIsCanvasDragging,
     setDragStart,
-    updatePanOffset
+    updatePanOffset,
+    setZoom,
+    setPanOffset
   };
 }
