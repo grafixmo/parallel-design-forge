@@ -1,6 +1,6 @@
 
 import React, { useRef, useEffect, useState } from 'react';
-import { ControlPoint, Point, ControlPointType } from '@/types/bezier';
+import { ControlPoint, Point, ControlPointType, PointGroup } from '@/types/bezier';
 import { toast } from '@/components/ui/use-toast';
 import { Undo, ZoomIn, ZoomOut, Plus } from 'lucide-react';
 
@@ -25,6 +25,7 @@ import {
 } from '@/utils/canvas/drawHelpers';
 
 import { screenToCanvas } from '@/utils/canvas/interactionHelpers';
+import { generateId } from '@/utils/bezierUtils';
 
 interface BezierCanvasProps {
   width: number;
@@ -65,6 +66,22 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
+
+  // Convert flat points array to point groups structure
+  const [pointGroups, setPointGroups] = useState<PointGroup[]>([]);
+  
+  // Initialize point groups from flat points array on first render
+  useEffect(() => {
+    if (points.length > 0 && pointGroups.length === 0) {
+      // Initially, put all points in one group
+      setPointGroups([{
+        id: generateId(),
+        points: [...points]
+      }]);
+    }
+  }, [points, pointGroups.length]);
+
+  // Update instruction message based on state
   const [instructionMessage, setInstructionMessage] = useState<string>(
     'Click to place first control point (ESC to cancel)'
   );
@@ -109,7 +126,9 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     saveToHistory,
     startNewObject,
     isNewObjectMode,
-    setIsNewObjectMode
+    setIsNewObjectMode,
+    currentGroupIndex,
+    setCurrentGroupIndex
   } = useDrawing();
 
   const {
@@ -139,8 +158,8 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     addNewPoint,
     handleDoubleClick
   } = useInteraction({
-    points,
-    onPointsChange,
+    pointGroups,
+    onPointsChange: setPointGroups,
     isDrawingMode,
     selectedPointsIndices,
     setSelectedPointsIndices,
@@ -159,19 +178,67 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     clearSelections,
     zoom,
     isNewObjectMode,
-    setIsNewObjectMode
+    setIsNewObjectMode,
+    currentGroupIndex,
+    setCurrentGroupIndex
   });
 
-  // Set up keyboard shortcuts
+  // Helper function to convert point groups to flat array (for backward compatibility)
+  const pointGroupsToFlatArray = (groups: PointGroup[]): ControlPoint[] => {
+    return groups.flatMap(group => group.points);
+  };
+
+  // Update the external points array when point groups change
+  useEffect(() => {
+    if (pointGroups.length > 0) {
+      const flatPoints = pointGroupsToFlatArray(pointGroups);
+      onPointsChange(flatPoints);
+    }
+  }, [pointGroups, onPointsChange]);
+
+  // Set up keyboard shortcuts with adapter for old API
   useKeyboardShortcuts({
-    points,
-    onPointsChange,
-    selectedPointsIndices,
-    setSelectedPointsIndices,
-    selectedPoint,
-    setSelectedPoint,
+    points: pointGroupsToFlatArray(pointGroups),
+    onPointsChange: (newPoints) => {
+      // If all points are deleted, reset point groups
+      if (newPoints.length === 0) {
+        setPointGroups([]);
+      } else {
+        // Not handling complex operations here as they're better handled by the new grouped structure
+        // This is just a compatibility layer for basic keyboard shortcuts
+      }
+    },
+    selectedPointsIndices: selectedPointsIndices.map(idx => idx.pointIndex), // backward compatibility
+    setSelectedPointsIndices: (indices) => {
+      // Convert flat indices to grouped indices (simplified)
+      setSelectedPointsIndices(indices.map(index => ({
+        groupIndex: currentGroupIndex >= 0 ? currentGroupIndex : 0,
+        pointIndex: index
+      })));
+    },
+    selectedPoint: selectedPoint ? {
+      pointIndex: selectedPoint.pointIndex,
+      type: selectedPoint.type
+    } : null,
+    setSelectedPoint: (point) => {
+      if (point) {
+        setSelectedPoint({
+          groupIndex: currentGroupIndex >= 0 ? currentGroupIndex : 0,
+          pointIndex: point.pointIndex,
+          type: point.type
+        });
+      } else {
+        setSelectedPoint(null);
+      }
+    },
     clearSelections,
-    handleUndo: () => handleUndoAction(points, onPointsChange),
+    handleUndo: () => {
+      if (history.length > 0 && currentHistoryIndex > 0) {
+        const prevState = history[currentHistoryIndex - 1];
+        setCurrentHistoryIndex(currentHistoryIndex - 1);
+        setPointGroups(prevState.pointGroups);
+      }
+    },
     clipboard,
     setClipboard,
     isSpacePressed,
@@ -179,19 +246,24 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     canvasRef,
     isDrawingMode,
     zoom,
-    setZoom: (newZoom) => {},
-    setPanOffset: (newOffset) => {}
+    setZoom: () => {}, // Not used
+    setPanOffset: () => {} // Not used
   });
 
   // Update instruction message based on drawing mode and points
   useEffect(() => {
+    const totalPoints = pointGroups.reduce((sum, group) => sum + group.points.length, 0);
+    
     if (isDrawingMode) {
       if (isNewObjectMode) {
         setInstructionMessage('Click to place first control point of a new object (ESC to cancel)');
-      } else if (points.length === 0) {
+      } else if (totalPoints === 0) {
         setInstructionMessage('Click to place first control point (ESC to cancel)');
       } else {
-        setInstructionMessage('Click to add more points, or drag handles to adjust the curve (ESC to exit drawing mode)');
+        const currentObject = currentGroupIndex >= 0 && currentGroupIndex < pointGroups.length 
+          ? `object #${currentGroupIndex + 1}` 
+          : "current object";
+        setInstructionMessage(`Click to add more points to ${currentObject}, or use the "New Object" button to start a new object`);
       }
     } else {
       if (selectedPointsIndices.length > 0) {
@@ -200,7 +272,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         setInstructionMessage('Click to select points or Shift+Drag to select multiple points. Press ESC to deselect.');
       }
     }
-  }, [isDrawingMode, points.length, selectedPointsIndices.length, isNewObjectMode]);
+  }, [isDrawingMode, pointGroups, selectedPointsIndices.length, isNewObjectMode, currentGroupIndex]);
 
   // Effect to handle drawing mode changes
   useEffect(() => {
@@ -224,8 +296,8 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
 
   // Save points to history when they change
   useEffect(() => {
-    saveToHistory(points);
-  }, [points, saveToHistory]);
+    saveToHistory(pointGroups);
+  }, [pointGroups, saveToHistory]);
 
   // Draw the canvas
   useEffect(() => {
@@ -249,38 +321,118 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     // Draw grid
     drawGrid(ctx, canvas.width, canvas.height, zoom, panOffset);
     
-    // Save the context state for transformation
-    ctx.save();
-    
-    // Calculate center point for transformation
-    const sumX = points.reduce((sum, point) => sum + point.x, 0);
-    const sumY = points.reduce((sum, point) => sum + point.y, 0);
-    const centerX = points.length > 0 ? sumX / points.length : canvas.width / (2 * zoom);
-    const centerY = points.length > 0 ? sumY / points.length : canvas.height / (2 * zoom);
-    
-    // Apply transformations
-    ctx.translate(centerX, centerY);
-    ctx.rotate((rotation * Math.PI) / 180);
-    ctx.scale(scaleX, scaleY);
-    ctx.translate(-centerX, -centerY);
-    
-    // Draw curves
-    drawCurves(ctx, points, curveColor, curveWidth, parallelCount, parallelSpacing, parallelColors, parallelWidths, zoom);
-    
-    // Draw handle lines
-    drawHandleLines(ctx, points, isDrawingMode, selectedPoint, selectedPointsIndices, zoom);
-    
-    // Restore the context state (remove transformation)
-    ctx.restore();
-    
-    // Draw control points and handles
-    drawControlPoints(ctx, points, isDrawingMode, selectedPoint, selectedPointsIndices, zoom);
+    // Draw each object group with different visual treatment
+    pointGroups.forEach((group, groupIndex) => {
+      const isCurrentGroup = groupIndex === currentGroupIndex;
+      
+      // Save the context state for transformation
+      ctx.save();
+      
+      // Calculate center point for transformation
+      const sumX = group.points.reduce((sum, point) => sum + point.x, 0);
+      const sumY = group.points.reduce((sum, point) => sum + point.y, 0);
+      const centerX = group.points.length > 0 ? sumX / group.points.length : canvas.width / (2 * zoom);
+      const centerY = group.points.length > 0 ? sumY / group.points.length : canvas.height / (2 * zoom);
+      
+      // Apply transformations
+      ctx.translate(centerX, centerY);
+      ctx.rotate((rotation * Math.PI) / 180);
+      ctx.scale(scaleX, scaleY);
+      ctx.translate(-centerX, -centerY);
+      
+      // Draw object label
+      if (group.points.length > 0) {
+        const firstPoint = group.points[0];
+        ctx.fillStyle = isCurrentGroup ? 'rgba(46, 204, 113, 0.9)' : 'rgba(52, 152, 219, 0.7)';
+        ctx.font = `bold ${14 / zoom}px Arial`;
+        ctx.fillText(`Object #${groupIndex + 1}`, firstPoint.x - 20, firstPoint.y - 20);
+      }
+      
+      // Draw curves with different opacity for non-current groups in drawing mode
+      if (isDrawingMode && !isCurrentGroup) {
+        ctx.globalAlpha = 0.5; // Set reduced opacity for non-current groups
+      }
+      
+      // Draw curves for this group
+      drawCurves(
+        ctx, 
+        group.points, 
+        isCurrentGroup ? curveColor : '#999999', 
+        curveWidth, 
+        parallelCount, 
+        parallelSpacing, 
+        isCurrentGroup ? parallelColors : parallelColors.map(() => '#999999'), 
+        parallelWidths, 
+        zoom
+      );
+      
+      // Reset opacity
+      ctx.globalAlpha = 1.0;
+      
+      // Draw handle lines for this group
+      drawHandleLines(
+        ctx, 
+        group.points, 
+        isDrawingMode, 
+        selectedPoint?.groupIndex === groupIndex ? selectedPoint : null, 
+        selectedPointsIndices.filter(idx => idx.groupIndex === groupIndex).map(idx => idx.pointIndex),
+        zoom
+      );
+      
+      // Restore the context state (remove transformation)
+      ctx.restore();
+      
+      // Draw control points and handles for this group (without transformation)
+      drawControlPoints(
+        ctx, 
+        group.points, 
+        isDrawingMode && isCurrentGroup, 
+        selectedPoint?.groupIndex === groupIndex ? selectedPoint : null, 
+        selectedPointsIndices.filter(idx => idx.groupIndex === groupIndex).map(idx => idx.pointIndex),
+        zoom,
+        isCurrentGroup
+      );
+      
+      // Draw a highlight around the current group in drawing mode
+      if (isDrawingMode && isCurrentGroup && group.points.length > 0) {
+        // Find min/max bounds of group points
+        const minX = Math.min(...group.points.map(p => p.x));
+        const minY = Math.min(...group.points.map(p => p.y));
+        const maxX = Math.max(...group.points.map(p => p.x));
+        const maxY = Math.max(...group.points.map(p => p.y));
+        const padding = 30 / zoom;
+        
+        // Draw dashed rectangle around current group
+        ctx.strokeStyle = 'rgba(46, 204, 113, 0.8)';
+        ctx.lineWidth = 2 / zoom;
+        ctx.setLineDash([5 / zoom, 3 / zoom]);
+        
+        ctx.beginPath();
+        ctx.rect(
+          minX - padding, 
+          minY - padding, 
+          maxX - minX + (padding * 2), 
+          maxY - minY + (padding * 2)
+        );
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    });
     
     // Draw selection rectangle if selecting
     drawSelectionRect(ctx, isSelecting, selectionRect, zoom);
     
-    // Draw multi-selection indicator
-    drawMultiSelectionIndicator(ctx, isDrawingMode, selectedPointsIndices, points, zoom);
+    // Draw multi-selection indicator (adapting the old function for now)
+    if (selectedPointsIndices.length > 0) {
+      // Get the actual selected points from different groups
+      const selectedPoints = selectedPointsIndices.map(({ groupIndex, pointIndex }) => 
+        groupIndex >= 0 && groupIndex < pointGroups.length && 
+        pointIndex >= 0 && pointIndex < pointGroups[groupIndex].points.length ? 
+          pointGroups[groupIndex].points[pointIndex] : null
+      ).filter(Boolean) as ControlPoint[];
+      
+      drawMultiSelectionIndicator(ctx, isDrawingMode, selectedPoints.length > 0, selectedPoints, zoom);
+    }
     
     // Draw UI indicators
     drawUIIndicators(
@@ -288,7 +440,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       zoom, 
       isDrawingMode, 
       isMultiDragging, 
-      selectedPointsIndices, 
+      selectedPointsIndices.map(idx => idx.pointIndex), // backward compatibility 
       mousePos, 
       isSpacePressed, 
       isCanvasDragging,
@@ -317,9 +469,17 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       ctx.setLineDash([]);
     }
     
+    // Draw current object indicator
+    if (isDrawingMode && !isNewObjectMode && currentGroupIndex >= 0) {
+      ctx.fillStyle = 'rgba(46, 204, 113, 0.6)';
+      ctx.font = `${14 / zoom}px Arial`;
+      const currentObjectText = `Editing Object #${currentGroupIndex + 1}`;
+      ctx.fillText(currentObjectText, 10 / zoom, 100 / zoom);
+    }
+    
     ctx.restore();
   }, [
-    points, 
+    pointGroups, 
     selectedPoint, 
     curveWidth, 
     curveColor, 
@@ -342,7 +502,8 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     mousePos,
     isDrawingMode,
     isMultiDragging,
-    isNewObjectMode
+    isNewObjectMode,
+    currentGroupIndex
   ]);
 
   // Handle mouse down
@@ -446,7 +607,8 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     }
     
     if (isSelecting && selectionRect) {
-      finalizeSelection(points);
+      // For backward compatibility, adapt the finalizeSelection function
+      finalizeSelection(pointGroups.flatMap(group => group.points));
     }
     
     setIsDragging(false);
@@ -474,7 +636,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
                 ? 'bg-green-500 text-white hover:bg-green-600' 
                 : 'bg-white bg-opacity-70 hover:bg-opacity-100'
             }`}
-            onClick={() => startNewObject(onPointsChange)}
+            onClick={() => startNewObject(pointGroups, setPointGroups)}
             title="Start New Object"
           >
             <Plus size={16} />
@@ -483,7 +645,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         )}
         <button
           className="p-1 bg-white bg-opacity-70 rounded hover:bg-opacity-100 transition-colors"
-          onClick={() => handleUndoAction(points, onPointsChange)}
+          onClick={() => handleUndoAction(pointGroups, setPointGroups)}
           title="Undo (Ctrl+Z)"
         >
           <Undo size={16} />

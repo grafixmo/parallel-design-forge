@@ -1,3 +1,4 @@
+
 export interface Point {
   x: number;
   y: number;
@@ -9,6 +10,12 @@ export interface ControlPoint {
   handleIn: Point;
   handleOut: Point;
   id: string;
+}
+
+// New type to represent a group of points (a single object)
+export interface PointGroup {
+  id: string;
+  points: ControlPoint[];
 }
 
 export interface CurveStyle {
@@ -34,7 +41,7 @@ export interface TransformSettings {
 }
 
 export interface DesignData {
-  points: ControlPoint[];
+  pointGroups: PointGroup[];
   curveConfig: CurveConfig;
   transform: TransformSettings;
   backgroundImage?: BackgroundImage;
@@ -56,6 +63,7 @@ export enum ControlPointType {
 }
 
 export interface SelectedPoint {
+  groupIndex: number;
   pointIndex: number;
   type: ControlPointType;
 }
@@ -79,6 +87,6 @@ export interface ClipboardData {
 }
 
 export interface HistoryState {
-  points: ControlPoint[];
+  pointGroups: PointGroup[];
   timestamp: number;
 }

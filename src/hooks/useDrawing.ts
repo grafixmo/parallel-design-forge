@@ -1,13 +1,8 @@
 
 import { useState, useCallback } from 'react';
-import { ControlPoint, Point } from '@/types/bezier';
+import { ControlPoint, Point, PointGroup, HistoryState } from '@/types/bezier';
 import { toast } from '@/components/ui/use-toast';
 import { generateId } from '@/utils/bezierUtils';
-
-interface HistoryState {
-  points: ControlPoint[];
-  timestamp: number;
-}
 
 interface UseDrawingReturn {
   history: HistoryState[];
@@ -16,12 +11,14 @@ interface UseDrawingReturn {
   setCurrentHistoryIndex: (index: number) => void;
   clipboard: ControlPoint[];
   setClipboard: (points: ControlPoint[]) => void;
-  addPointToCanvas: (x: number, y: number, points: ControlPoint[]) => ControlPoint[];
-  handleUndo: (points: ControlPoint[], onPointsChange: (points: ControlPoint[]) => void) => void;
-  saveToHistory: (points: ControlPoint[]) => void;
-  startNewObject: (onPointsChange: (points: ControlPoint[]) => void) => void;
+  addPointToCanvas: (x: number, y: number, pointGroups: PointGroup[], currentGroupIndex: number) => PointGroup[];
+  handleUndo: (pointGroups: PointGroup[], onPointsChange: (pointGroups: PointGroup[]) => void) => void;
+  saveToHistory: (pointGroups: PointGroup[]) => void;
+  startNewObject: (pointGroups: PointGroup[], onPointsChange: (pointGroups: PointGroup[]) => void) => void;
   isNewObjectMode: boolean;
   setIsNewObjectMode: (isNewObjectMode: boolean) => void;
+  currentGroupIndex: number;
+  setCurrentGroupIndex: (index: number) => void;
 }
 
 export function useDrawing(): UseDrawingReturn {
@@ -29,10 +26,16 @@ export function useDrawing(): UseDrawingReturn {
   const [currentHistoryIndex, setCurrentHistoryIndex] = useState<number>(-1);
   const [clipboard, setClipboard] = useState<ControlPoint[]>([]);
   const [isNewObjectMode, setIsNewObjectMode] = useState<boolean>(true);
+  const [currentGroupIndex, setCurrentGroupIndex] = useState<number>(-1);
   const MAX_HISTORY_SIZE = 50;
 
   // Add a new point to the canvas
-  const addPointToCanvas = useCallback((x: number, y: number, points: ControlPoint[]): ControlPoint[] => {
+  const addPointToCanvas = useCallback((
+    x: number, 
+    y: number, 
+    pointGroups: PointGroup[], 
+    currentGroupIndex: number
+  ): PointGroup[] => {
     const newPoint: ControlPoint = {
       x,
       y,
@@ -41,18 +44,39 @@ export function useDrawing(): UseDrawingReturn {
       id: generateId()
     };
     
-    return [...points, newPoint];
+    // Create a copy of the pointGroups
+    const updatedPointGroups = [...pointGroups];
+    
+    // If we have a valid group index, add to that group
+    if (currentGroupIndex >= 0 && currentGroupIndex < updatedPointGroups.length) {
+      const updatedGroup = { 
+        ...updatedPointGroups[currentGroupIndex],
+        points: [...updatedPointGroups[currentGroupIndex].points, newPoint]
+      };
+      updatedPointGroups[currentGroupIndex] = updatedGroup;
+    } else {
+      // If no valid group index, create a new group
+      const newGroup: PointGroup = {
+        id: generateId(),
+        points: [newPoint]
+      };
+      updatedPointGroups.push(newGroup);
+      // Update current group index to point to the new group
+      setCurrentGroupIndex(updatedPointGroups.length - 1);
+    }
+    
+    return updatedPointGroups;
   }, []);
 
   // Undo function
   const handleUndo = useCallback((
-    points: ControlPoint[], 
-    onPointsChange: (points: ControlPoint[]) => void
+    pointGroups: PointGroup[], 
+    onPointsChange: (pointGroups: PointGroup[]) => void
   ) => {
     if (currentHistoryIndex > 0) {
       const prevState = history[currentHistoryIndex - 1];
       setCurrentHistoryIndex(currentHistoryIndex - 1);
-      onPointsChange(prevState.points);
+      onPointsChange(prevState.pointGroups);
       
       toast({
         title: 'Undo',
@@ -68,12 +92,12 @@ export function useDrawing(): UseDrawingReturn {
   }, [history, currentHistoryIndex]);
 
   // Save points to history
-  const saveToHistory = useCallback((points: ControlPoint[]) => {
-    if (points.length > 0) {
+  const saveToHistory = useCallback((pointGroups: PointGroup[]) => {
+    if (pointGroups.length > 0) {
       // Only add to history if this is a new state (not an undo/redo)
       if (currentHistoryIndex === history.length - 1 || currentHistoryIndex === -1) {
         const newHistoryState: HistoryState = {
-          points: JSON.parse(JSON.stringify(points)), // Deep clone to avoid reference issues
+          pointGroups: JSON.parse(JSON.stringify(pointGroups)), // Deep clone to avoid reference issues
           timestamp: Date.now()
         };
         
@@ -85,10 +109,16 @@ export function useDrawing(): UseDrawingReturn {
     }
   }, [history, currentHistoryIndex]);
 
-  // Start a new object - this function now explicitly sets new object mode
-  const startNewObject = useCallback((onPointsChange: (points: ControlPoint[]) => void) => {
-    // We don't actually clear points here, just set the mode to create a new object
+  // Start a new object - create a new group and set it as current
+  const startNewObject = useCallback((
+    pointGroups: PointGroup[],
+    onPointsChange: (pointGroups: PointGroup[]) => void
+  ) => {
+    // Set new object mode
     setIsNewObjectMode(true);
+    
+    // When creating a new object, we'll actually add the new group when the first point is added
+    // This ensures we don't create empty groups
     
     toast({
       title: 'New Object Mode',
@@ -108,6 +138,8 @@ export function useDrawing(): UseDrawingReturn {
     saveToHistory,
     startNewObject,
     isNewObjectMode,
-    setIsNewObjectMode
+    setIsNewObjectMode,
+    currentGroupIndex,
+    setCurrentGroupIndex
   };
 }

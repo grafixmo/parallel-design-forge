@@ -1,6 +1,6 @@
 
 import { useCallback } from 'react';
-import { ControlPoint, ControlPointType, Point } from '@/types/bezier';
+import { ControlPoint, ControlPointType, Point, PointGroup } from '@/types/bezier';
 import { toast } from '@/components/ui/use-toast';
 import { 
   findPointNearCoordinates, 
@@ -11,13 +11,13 @@ import {
 } from '@/utils/canvas/interactionHelpers';
 
 interface UseInteractionProps {
-  points: ControlPoint[];
-  onPointsChange: (points: ControlPoint[]) => void;
+  pointGroups: PointGroup[];
+  onPointsChange: (pointGroups: PointGroup[]) => void;
   isDrawingMode: boolean;
-  selectedPointsIndices: number[];
-  setSelectedPointsIndices: (indices: number[]) => void;
-  selectedPoint: { pointIndex: number; type: ControlPointType } | null;
-  setSelectedPoint: (point: { pointIndex: number; type: ControlPointType } | null) => void;
+  selectedPointsIndices: { groupIndex: number; pointIndex: number }[];
+  setSelectedPointsIndices: (indices: { groupIndex: number; pointIndex: number }[]) => void;
+  selectedPoint: { groupIndex: number; pointIndex: number; type: ControlPointType } | null;
+  setSelectedPoint: (point: { groupIndex: number; pointIndex: number; type: ControlPointType } | null) => void;
   isDragging: boolean;
   setIsDragging: (dragging: boolean) => void;
   isMultiDragging: boolean;
@@ -32,6 +32,8 @@ interface UseInteractionProps {
   zoom: number;
   isNewObjectMode: boolean;
   setIsNewObjectMode: (isNewObjectMode: boolean) => void;
+  currentGroupIndex: number;
+  setCurrentGroupIndex: (index: number) => void;
 }
 
 interface UseInteractionReturn {
@@ -45,7 +47,7 @@ interface UseInteractionReturn {
 }
 
 export function useInteraction({
-  points,
+  pointGroups,
   onPointsChange,
   isDrawingMode,
   selectedPointsIndices,
@@ -65,7 +67,9 @@ export function useInteraction({
   clearSelections,
   zoom,
   isNewObjectMode,
-  setIsNewObjectMode
+  setIsNewObjectMode,
+  currentGroupIndex,
+  setCurrentGroupIndex
 }: UseInteractionProps): UseInteractionReturn {
   const POINT_RADIUS = 8;
   const HANDLE_RADIUS = 6;
@@ -74,7 +78,9 @@ export function useInteraction({
   const handlePointSelection = useCallback((x: number, y: number, shiftKey: boolean): boolean => {
     // Check if clicking within the bounds of selected points
     if (!isDrawingMode && selectedPointsIndices.length > 0) {
-      const selectedPoints = selectedPointsIndices.map(index => points[index]);
+      const selectedPoints = selectedPointsIndices.map(({ groupIndex, pointIndex }) => 
+        pointGroups[groupIndex]?.points[pointIndex]
+      ).filter(Boolean);
       
       if (isClickWithinSelectedPointsBounds(x, y, selectedPoints, 20 / zoom)) {
         setIsMultiDragging(true);
@@ -88,39 +94,60 @@ export function useInteraction({
       return false;
     }
     
-    // Check if clicking on a control point or handle
-    const result = findPointNearCoordinates(
-      x, y, points, POINT_RADIUS, HANDLE_RADIUS, zoom, isDrawingMode, selectedPointsIndices
-    );
-    
-    if (result && result.found) {
-      // When we select a point in drawing mode, we're no longer in new object mode
-      if (isDrawingMode) {
-        setIsNewObjectMode(false);
-      }
+    // Check if clicking on a control point or handle in any group
+    for (let groupIndex = 0; groupIndex < pointGroups.length; groupIndex++) {
+      const group = pointGroups[groupIndex];
       
-      if (!isDrawingMode && !shiftKey && !selectedPointsIndices.includes(result.pointIndex)) {
-        // In selection mode, clicking on a point selects just that point
-        setSelectedPointsIndices([result.pointIndex]);
-      } else if (!isDrawingMode && shiftKey) {
-        // Add/remove from selection with shift
-        if (selectedPointsIndices.includes(result.pointIndex)) {
-          setSelectedPointsIndices(selectedPointsIndices.filter(idx => idx !== result.pointIndex));
-        } else {
-          setSelectedPointsIndices([...selectedPointsIndices, result.pointIndex]);
+      // Skip empty groups
+      if (!group || !group.points || group.points.length === 0) continue;
+      
+      const result = findPointNearCoordinates(
+        x, y, group.points, POINT_RADIUS, HANDLE_RADIUS, zoom, isDrawingMode, 
+        selectedPointsIndices.filter(idx => idx.groupIndex === groupIndex).map(idx => idx.pointIndex)
+      );
+      
+      if (result && result.found) {
+        // When we select a point in drawing mode, we're no longer in new object mode
+        if (isDrawingMode) {
+          setIsNewObjectMode(false);
+          setCurrentGroupIndex(groupIndex);
         }
-      } else {
-        setSelectedPoint({ pointIndex: result.pointIndex, type: result.type });
+        
+        if (!isDrawingMode && !shiftKey) {
+          // In selection mode, clicking on a point selects just that point
+          const alreadySelected = selectedPointsIndices.some(
+            idx => idx.groupIndex === groupIndex && idx.pointIndex === result.pointIndex
+          );
+          
+          if (!alreadySelected) {
+            setSelectedPointsIndices([{ groupIndex, pointIndex: result.pointIndex }]);
+          }
+        } else if (!isDrawingMode && shiftKey) {
+          // Add/remove from selection with shift
+          const existingIndex = selectedPointsIndices.findIndex(
+            idx => idx.groupIndex === groupIndex && idx.pointIndex === result.pointIndex
+          );
+          
+          if (existingIndex >= 0) {
+            // Remove from selection
+            setSelectedPointsIndices(selectedPointsIndices.filter((_, i) => i !== existingIndex));
+          } else {
+            // Add to selection
+            setSelectedPointsIndices([...selectedPointsIndices, { groupIndex, pointIndex: result.pointIndex }]);
+          }
+        } else {
+          setSelectedPoint({ groupIndex, pointIndex: result.pointIndex, type: result.type });
+        }
+        
+        setIsDragging(true);
+        setLastDragPosition({ x, y });
+        return true;
       }
-      
-      setIsDragging(true);
-      setLastDragPosition({ x, y });
-      return true;
     }
     
     return false;
   }, [
-    points, 
+    pointGroups, 
     isDrawingMode, 
     selectedPointsIndices, 
     zoom,
@@ -130,31 +157,47 @@ export function useInteraction({
     setIsMultiDragging,
     setLastDragPosition,
     isNewObjectMode,
-    setIsNewObjectMode
+    setIsNewObjectMode,
+    currentGroupIndex,
+    setCurrentGroupIndex
   ]);
 
   // Handle dragging a single point or handle
   const handlePointDrag = useCallback((x: number, y: number) => {
     if (!isDragging || !selectedPoint || !lastDragPosition) return;
     
-    const { pointIndex, type } = selectedPoint;
+    const { groupIndex, pointIndex, type } = selectedPoint;
+    
+    // Make sure the group and point exist
+    if (groupIndex < 0 || groupIndex >= pointGroups.length) return;
+    
+    const group = pointGroups[groupIndex];
+    if (!group || pointIndex < 0 || pointIndex >= group.points.length) return;
+    
+    // Update the point
+    const updatedGroups = [...pointGroups];
     const updatedPoints = updatePointDuringDrag(
-      points, 
-      pointIndex, 
-      type, 
-      x, y, 
-      lastDragPosition.x, 
+      group.points,
+      pointIndex,
+      type,
+      x, y,
+      lastDragPosition.x,
       lastDragPosition.y
     );
     
-    onPointsChange(updatedPoints);
+    updatedGroups[groupIndex] = {
+      ...group,
+      points: updatedPoints
+    };
+    
+    onPointsChange(updatedGroups);
     setLastDragPosition({ x, y });
   }, [
-    isDragging, 
-    selectedPoint, 
-    lastDragPosition, 
-    points, 
-    onPointsChange, 
+    isDragging,
+    selectedPoint,
+    lastDragPosition,
+    pointGroups,
+    onPointsChange,
     setLastDragPosition
   ]);
 
@@ -165,21 +208,49 @@ export function useInteraction({
     const deltaX = x - lastDragPosition.x;
     const deltaY = y - lastDragPosition.y;
     
-    const updatedPoints = updateMultiplePointsDuringDrag(
-      points, 
-      selectedPointsIndices, 
-      deltaX, 
-      deltaY
-    );
+    // Group the selected points by their group index
+    const groupedSelection: Record<number, number[]> = {};
     
-    onPointsChange(updatedPoints);
+    selectedPointsIndices.forEach(({ groupIndex, pointIndex }) => {
+      if (!groupedSelection[groupIndex]) {
+        groupedSelection[groupIndex] = [];
+      }
+      groupedSelection[groupIndex].push(pointIndex);
+    });
+    
+    // Create a copy of point groups
+    const updatedGroups = [...pointGroups];
+    
+    // Update each group separately
+    Object.entries(groupedSelection).forEach(([groupIdxStr, pointIndices]) => {
+      const groupIdx = parseInt(groupIdxStr);
+      
+      if (groupIdx < 0 || groupIdx >= updatedGroups.length) return;
+      
+      const group = updatedGroups[groupIdx];
+      if (!group) return;
+      
+      const updatedPoints = updateMultiplePointsDuringDrag(
+        group.points,
+        pointIndices,
+        deltaX,
+        deltaY
+      );
+      
+      updatedGroups[groupIdx] = {
+        ...group,
+        points: updatedPoints
+      };
+    });
+    
+    onPointsChange(updatedGroups);
     setLastDragPosition({ x, y });
   }, [
-    isMultiDragging, 
-    lastDragPosition, 
-    selectedPointsIndices, 
-    points, 
-    onPointsChange, 
+    isMultiDragging,
+    lastDragPosition,
+    selectedPointsIndices,
+    pointGroups,
+    onPointsChange,
     setLastDragPosition
   ]);
 
@@ -211,54 +282,143 @@ export function useInteraction({
     
     // Create a new point with the createNewControlPoint helper
     const newPoint = createNewControlPoint(x, y);
-    const updatedPoints = [...points, newPoint];
-    onPointsChange(updatedPoints);
     
-    // After adding the first point of a new object, we're no longer in new object mode
-    setIsNewObjectMode(false);
+    // Create a copy of the pointGroups
+    let updatedPointGroups = [...pointGroups];
+    
+    // If we're in new object mode, create a new group
+    if (isNewObjectMode) {
+      // Create a new point group
+      const newGroup: PointGroup = {
+        id: generateId(),
+        points: [newPoint]
+      };
+      
+      updatedPointGroups.push(newGroup);
+      // Update current group index to point to the new group
+      setCurrentGroupIndex(updatedPointGroups.length - 1);
+      
+      // After adding the first point of a new object, we're no longer in new object mode
+      setIsNewObjectMode(false);
+      
+      toast({
+        title: 'New Object Started',
+        description: 'First point of new object added. Continue adding points to this object.'
+      });
+    } else {
+      // Add to existing group
+      if (currentGroupIndex >= 0 && currentGroupIndex < updatedPointGroups.length) {
+        const currentGroup = updatedPointGroups[currentGroupIndex];
+        const updatedPoints = [...currentGroup.points, newPoint];
+        
+        updatedPointGroups[currentGroupIndex] = {
+          ...currentGroup,
+          points: updatedPoints
+        };
+        
+        toast({
+          title: 'Point Added',
+          description: `Added point to object #${currentGroupIndex + 1}`
+        });
+      } else {
+        // Fall back to creating a new group if current index is invalid
+        const newGroup: PointGroup = {
+          id: generateId(),
+          points: [newPoint]
+        };
+        
+        updatedPointGroups.push(newGroup);
+        setCurrentGroupIndex(updatedPointGroups.length - 1);
+        
+        toast({
+          title: 'New Object Created',
+          description: 'First point added to a new object'
+        });
+      }
+    }
+    
+    onPointsChange(updatedPointGroups);
+    
+    // Set selected point to the newly added point
+    const groupIndex = currentGroupIndex >= 0 ? currentGroupIndex : updatedPointGroups.length - 1;
+    const pointIndex = updatedPointGroups[groupIndex].points.length - 1;
     
     setSelectedPoint({ 
-      pointIndex: updatedPoints.length - 1, 
+      groupIndex,
+      pointIndex, 
       type: ControlPointType.MAIN 
     });
+    
     setIsDragging(true);
     setLastDragPosition({ x, y });
-    
-    toast({
-      title: 'Point Added',
-      description: 'Click to add more points to this object or use the + button to start a new object'
-    });
   }, [
-    isDrawingMode, 
-    points, 
-    onPointsChange, 
-    setSelectedPoint, 
-    setIsDragging, 
+    isDrawingMode,
+    pointGroups,
+    onPointsChange,
+    setSelectedPoint,
+    setIsDragging,
     setLastDragPosition,
-    setIsNewObjectMode
+    isNewObjectMode,
+    setIsNewObjectMode,
+    currentGroupIndex,
+    setCurrentGroupIndex
   ]);
 
   // Handle double click to delete a point
   const handleDoubleClick = useCallback((x: number, y: number) => {
     if (!isDrawingMode) return;
     
-    for (let i = 0; i < points.length; i++) {
-      const point = points[i];
+    for (let groupIndex = 0; groupIndex < pointGroups.length; groupIndex++) {
+      const group = pointGroups[groupIndex];
+      if (!group) continue;
       
-      if (Math.sqrt(Math.pow(point.x - x, 2) + Math.pow(point.y - y, 2)) <= POINT_RADIUS / zoom) {
-        // Remove the point
-        const updatedPoints = points.filter((_, index) => index !== i);
-        onPointsChange(updatedPoints);
+      for (let pointIndex = 0; pointIndex < group.points.length; pointIndex++) {
+        const point = group.points[pointIndex];
         
-        toast({
-          title: "Point removed",
-          description: `Point ${i + 1} has been deleted`
-        });
-        
-        break;
+        if (Math.sqrt(Math.pow(point.x - x, 2) + Math.pow(point.y - y, 2)) <= POINT_RADIUS / zoom) {
+          // Create a copy of the pointGroups
+          const updatedPointGroups = [...pointGroups];
+          
+          // Remove the point
+          const updatedPoints = group.points.filter((_, idx) => idx !== pointIndex);
+          
+          if (updatedPoints.length > 0) {
+            // Update the group with remaining points
+            updatedPointGroups[groupIndex] = {
+              ...group,
+              points: updatedPoints
+            };
+          } else {
+            // If the group is now empty, remove it
+            updatedPointGroups.splice(groupIndex, 1);
+            
+            // Update current group index if needed
+            if (currentGroupIndex === groupIndex) {
+              setCurrentGroupIndex(-1);
+            } else if (currentGroupIndex > groupIndex) {
+              setCurrentGroupIndex(currentGroupIndex - 1);
+            }
+          }
+          
+          onPointsChange(updatedPointGroups);
+          
+          toast({
+            title: "Point removed",
+            description: `Point ${pointIndex + 1} has been deleted from object ${groupIndex + 1}`
+          });
+          
+          return;
+        }
       }
     }
-  }, [isDrawingMode, points, zoom, onPointsChange]);
+  }, [
+    isDrawingMode, 
+    pointGroups, 
+    zoom, 
+    onPointsChange, 
+    currentGroupIndex, 
+    setCurrentGroupIndex
+  ]);
 
   return {
     handlePointSelection,
