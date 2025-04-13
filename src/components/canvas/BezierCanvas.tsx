@@ -1,4 +1,3 @@
-
 import React, { useRef, useEffect, useState } from 'react';
 import { ControlPoint, Point, ControlPointType, PointGroup } from '@/types/bezier';
 import { toast } from '@/components/ui/use-toast';

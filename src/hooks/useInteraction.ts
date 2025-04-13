@@ -1,4 +1,3 @@
-
 import { useCallback } from 'react';
 import { ControlPoint, ControlPointType, Point, PointGroup } from '@/types/bezier';
 import { toast } from '@/components/ui/use-toast';
@@ -9,6 +8,7 @@ import {
   updateMultiplePointsDuringDrag,
   createNewControlPoint
 } from '@/utils/canvas/interactionHelpers';
+import { generateId } from '@/utils/bezierUtils';
 
 interface UseInteractionProps {
   pointGroups: PointGroup[];
