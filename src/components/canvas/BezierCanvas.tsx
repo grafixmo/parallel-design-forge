@@ -359,7 +359,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         ctx.globalAlpha = 0.5; // Set reduced opacity for non-current groups
       }
       
-      // Fix: Fix the arguments for drawCurves
+      // Fix the arguments for drawCurves
       drawCurves(
         ctx, 
         group.points, 
