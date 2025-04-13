@@ -15,6 +15,7 @@ import {
   isPointInSelectionRect
 } from '../utils/bezierUtils';
 import { toast } from '@/components/ui/use-toast';
+import { Copy, Cut, ZoomIn, ZoomOut } from 'lucide-react';
 
 interface BezierCanvasProps {
   width: number;
@@ -64,12 +65,20 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
   );
   const [backgroundImageObj, setBackgroundImageObj] = useState<HTMLImageElement | null>(null);
   
+  // Add zoom state
+  const [zoom, setZoom] = useState<number>(1);
+  const [panOffset, setPanOffset] = useState<Point>({ x: 0, y: 0 });
+  
+  // Add clipboard state
+  const [clipboard, setClipboard] = useState<ControlPoint[]>([]);
+  
   const POINT_RADIUS = 8;
   const HANDLE_RADIUS = 6;
   const POINT_COLOR = '#3498db'; // Blue
   const CONTROL_POINT_COLOR = '#2ecc71'; // Green
   const SELECTED_COLOR = '#e74c3c'; // Red
   const HANDLE_LINE_COLOR = 'rgba(52, 152, 219, 0.5)';
+  const ZOOM_FACTOR = 0.1; // Zoom in/out factor
   
   // Initialize background image if URL is provided
   useEffect(() => {
@@ -84,6 +93,22 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     }
   }, [backgroundImage]);
   
+  // Convert screen coordinates to canvas coordinates (accounting for zoom)
+  const screenToCanvas = (x: number, y: number): Point => {
+    return {
+      x: (x - panOffset.x) / zoom,
+      y: (y - panOffset.y) / zoom
+    };
+  };
+  
+  // Convert canvas coordinates to screen coordinates
+  const canvasToScreen = (x: number, y: number): Point => {
+    return {
+      x: x * zoom + panOffset.x,
+      y: y * zoom + panOffset.y
+    };
+  };
+  
   // Draw the canvas
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -95,6 +120,11 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
+    // Apply zoom and pan transformations
+    ctx.save();
+    ctx.translate(panOffset.x, panOffset.y);
+    ctx.scale(zoom, zoom);
+    
     // Draw background image if available
     if (backgroundImageObj) {
       ctx.globalAlpha = backgroundOpacity;
@@ -103,13 +133,13 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       const scale = Math.min(
         canvas.width / backgroundImageObj.width,
         canvas.height / backgroundImageObj.height
-      );
+      ) / zoom; // Adjust for zoom
       
       const scaledWidth = backgroundImageObj.width * scale;
       const scaledHeight = backgroundImageObj.height * scale;
       
-      const x = (canvas.width - scaledWidth) / 2;
-      const y = (canvas.height - scaledHeight) / 2;
+      const x = (canvas.width / zoom - scaledWidth) / 2;
+      const y = (canvas.height / zoom - scaledHeight) / 2;
       
       ctx.drawImage(backgroundImageObj, x, y, scaledWidth, scaledHeight);
       ctx.globalAlpha = 1.0;
@@ -117,21 +147,31 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     
     // Draw grid
     ctx.strokeStyle = '#f0f0f0';
-    ctx.lineWidth = 1;
+    ctx.lineWidth = 1 / zoom; // Adjust line width for zoom
     
     const gridSize = 20;
+    const visibleWidth = canvas.width / zoom;
+    const visibleHeight = canvas.height / zoom;
+    const offsetX = -panOffset.x / zoom;
+    const offsetY = -panOffset.y / zoom;
     
-    for (let x = 0; x < canvas.width; x += gridSize) {
+    // Calculate grid bounds
+    const startX = Math.floor(offsetX / gridSize) * gridSize;
+    const startY = Math.floor(offsetY / gridSize) * gridSize;
+    const endX = offsetX + visibleWidth;
+    const endY = offsetY + visibleHeight;
+    
+    for (let x = startX; x < endX; x += gridSize) {
       ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, canvas.height);
+      ctx.moveTo(x, offsetY);
+      ctx.lineTo(x, offsetY + visibleHeight);
       ctx.stroke();
     }
     
-    for (let y = 0; y < canvas.height; y += gridSize) {
+    for (let y = startY; y < endY; y += gridSize) {
       ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(canvas.width, y);
+      ctx.moveTo(offsetX, y);
+      ctx.lineTo(offsetX + visibleWidth, y);
       ctx.stroke();
     }
     
@@ -141,8 +181,8 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     // Calculate center point for transformation
     const sumX = points.reduce((sum, point) => sum + point.x, 0);
     const sumY = points.reduce((sum, point) => sum + point.y, 0);
-    const centerX = points.length > 0 ? sumX / points.length : canvas.width / 2;
-    const centerY = points.length > 0 ? sumY / points.length : canvas.height / 2;
+    const centerX = points.length > 0 ? sumX / points.length : canvas.width / (2 * zoom);
+    const centerY = points.length > 0 ? sumY / points.length : canvas.height / (2 * zoom);
     
     // Apply transformations
     ctx.translate(centerX, centerY);
@@ -159,7 +199,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         const width = parallelWidths[p - 1] || parallelWidths[0] || curveWidth;
         
         ctx.strokeStyle = color;
-        ctx.lineWidth = width;
+        ctx.lineWidth = width / zoom; // Adjust for zoom
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
         
@@ -198,7 +238,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       
       // Draw main curve
       ctx.strokeStyle = curveColor;
-      ctx.lineWidth = curveWidth;
+      ctx.lineWidth = curveWidth / zoom; // Adjust for zoom
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
       
@@ -223,7 +263,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     
     // Draw handle lines
     ctx.strokeStyle = HANDLE_LINE_COLOR;
-    ctx.lineWidth = 1;
+    ctx.lineWidth = 1 / zoom; // Adjust for zoom
     
     for (let i = 0; i < points.length; i++) {
       const point = points[i];
@@ -252,7 +292,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       
       // Handle In
       ctx.beginPath();
-      ctx.arc(point.handleIn.x, point.handleIn.y, HANDLE_RADIUS, 0, Math.PI * 2);
+      ctx.arc(point.handleIn.x, point.handleIn.y, HANDLE_RADIUS / zoom, 0, Math.PI * 2);
       if (selectedPoint && selectedPoint.pointIndex === i && selectedPoint.type === ControlPointType.HANDLE_IN) {
         ctx.fillStyle = SELECTED_COLOR;
       } else {
@@ -262,7 +302,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       
       // Handle Out
       ctx.beginPath();
-      ctx.arc(point.handleOut.x, point.handleOut.y, HANDLE_RADIUS, 0, Math.PI * 2);
+      ctx.arc(point.handleOut.x, point.handleOut.y, HANDLE_RADIUS / zoom, 0, Math.PI * 2);
       if (selectedPoint && selectedPoint.pointIndex === i && selectedPoint.type === ControlPointType.HANDLE_OUT) {
         ctx.fillStyle = SELECTED_COLOR;
       } else {
@@ -272,7 +312,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       
       // Draw main point
       ctx.beginPath();
-      ctx.arc(point.x, point.y, POINT_RADIUS, 0, Math.PI * 2);
+      ctx.arc(point.x, point.y, POINT_RADIUS / zoom, 0, Math.PI * 2);
       
       // Change color if selected
       if (selectedPoint && selectedPoint.pointIndex === i && selectedPoint.type === ControlPointType.MAIN) {
@@ -290,7 +330,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     if (isSelecting && selectionRect) {
       ctx.strokeStyle = 'rgba(52, 152, 219, 0.8)';
       ctx.fillStyle = 'rgba(52, 152, 219, 0.2)';
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 2 / zoom; // Adjust for zoom
       
       ctx.beginPath();
       ctx.rect(
@@ -302,6 +342,12 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       ctx.fill();
       ctx.stroke();
     }
+    
+    // Draw zoom level indicator
+    ctx.restore(); // Restore original context without zoom
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.font = '12px Arial';
+    ctx.fillText(`Zoom: ${Math.round(zoom * 100)}%`, 10, 20);
     
   }, [
     points, 
@@ -319,7 +365,9 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     isSelecting,
     selectedPointsIndices,
     backgroundImageObj,
-    backgroundOpacity
+    backgroundOpacity,
+    zoom,
+    panOffset
   ]);
   
   // Handle mouse down
@@ -328,8 +376,13 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     if (!canvas) return;
     
     const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const screenX = e.clientX - rect.left;
+    const screenY = e.clientY - rect.top;
+    
+    // Convert to canvas coordinates
+    const canvasCoords = screenToCanvas(screenX, screenY);
+    const x = canvasCoords.x;
+    const y = canvasCoords.y;
     
     setMousePos({ x, y });
     
@@ -340,7 +393,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       const point = points[i];
       
       // Check main point
-      if (isPointNear({ x, y }, point, POINT_RADIUS)) {
+      if (isPointNear({ x, y }, point, POINT_RADIUS / zoom)) {
         setSelectedPoint({ pointIndex: i, type: ControlPointType.MAIN });
         setIsDragging(true);
         found = true;
@@ -348,7 +401,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       }
       
       // Check handle in
-      if (isPointNear({ x, y }, point.handleIn, HANDLE_RADIUS)) {
+      if (isPointNear({ x, y }, point.handleIn, HANDLE_RADIUS / zoom)) {
         setSelectedPoint({ pointIndex: i, type: ControlPointType.HANDLE_IN });
         setIsDragging(true);
         found = true;
@@ -356,7 +409,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       }
       
       // Check handle out
-      if (isPointNear({ x, y }, point.handleOut, HANDLE_RADIUS)) {
+      if (isPointNear({ x, y }, point.handleOut, HANDLE_RADIUS / zoom)) {
         setSelectedPoint({ pointIndex: i, type: ControlPointType.HANDLE_OUT });
         setIsDragging(true);
         found = true;
@@ -414,8 +467,13 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     if (!canvas) return;
     
     const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const screenX = e.clientX - rect.left;
+    const screenY = e.clientY - rect.top;
+    
+    // Convert to canvas coordinates
+    const canvasCoords = screenToCanvas(screenX, screenY);
+    const x = canvasCoords.x;
+    const y = canvasCoords.y;
     
     setMousePos({ x, y });
     
@@ -492,14 +550,19 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     if (!canvas) return;
     
     const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const screenX = e.clientX - rect.left;
+    const screenY = e.clientY - rect.top;
+    
+    // Convert to canvas coordinates
+    const canvasCoords = screenToCanvas(screenX, screenY);
+    const x = canvasCoords.x;
+    const y = canvasCoords.y;
     
     // Check if double-clicking on a control point
     for (let i = 0; i < points.length; i++) {
       const point = points[i];
       
-      if (isPointNear({ x, y }, point, POINT_RADIUS)) {
+      if (isPointNear({ x, y }, point, POINT_RADIUS / zoom)) {
         // Remove the point
         const updatedPoints = points.filter((_, index) => index !== i);
         onPointsChange(updatedPoints);
@@ -514,11 +577,159 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     }
   };
   
-  // Handle keyboard events for deleting selected points
+  // Handle mouse wheel for zoom
+  const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    
+    // Calculate zoom direction
+    const delta = e.deltaY < 0 ? 1 : -1;
+    const newZoom = Math.max(0.1, Math.min(5, zoom * (1 + delta * ZOOM_FACTOR)));
+    
+    // Calculate new offset to zoom centered on mouse position
+    const zoomRatio = newZoom / zoom;
+    
+    // Set new zoom and offset
+    setZoom(newZoom);
+    
+    toast({
+      title: `Zoom: ${Math.round(newZoom * 100)}%`,
+      description: "Use mouse wheel to zoom in/out"
+    });
+  };
+  
+  // Copy selected points to clipboard
+  const copySelectedPoints = () => {
+    if (selectedPointsIndices.length > 0) {
+      const pointsToCopy = selectedPointsIndices.map(index => ({
+        ...points[index],
+        id: generateId() // Generate new IDs for copied points
+      }));
+      setClipboard(pointsToCopy);
+      
+      toast({
+        title: "Copied points",
+        description: `${pointsToCopy.length} points copied to clipboard`
+      });
+    } else if (selectedPoint) {
+      const pointToCopy = { 
+        ...points[selectedPoint.pointIndex],
+        id: generateId() // Generate new ID for copied point
+      };
+      setClipboard([pointToCopy]);
+      
+      toast({
+        title: "Copied point",
+        description: "1 point copied to clipboard"
+      });
+    }
+  };
+  
+  // Cut selected points to clipboard
+  const cutSelectedPoints = () => {
+    if (selectedPointsIndices.length > 0) {
+      // First copy
+      const pointsToCut = selectedPointsIndices.map(index => ({
+        ...points[index],
+        id: generateId() // Generate new IDs for cut points
+      }));
+      setClipboard(pointsToCut);
+      
+      // Then delete
+      const updatedPoints = points.filter((_, index) => !selectedPointsIndices.includes(index));
+      onPointsChange(updatedPoints);
+      setSelectedPointsIndices([]);
+      
+      toast({
+        title: "Cut points",
+        description: `${pointsToCut.length} points cut to clipboard`
+      });
+    } else if (selectedPoint) {
+      // First copy
+      const pointToCut = { 
+        ...points[selectedPoint.pointIndex],
+        id: generateId() // Generate new ID for cut point
+      };
+      setClipboard([pointToCut]);
+      
+      // Then delete
+      const updatedPoints = points.filter((_, index) => index !== selectedPoint.pointIndex);
+      onPointsChange(updatedPoints);
+      setSelectedPoint(null);
+      
+      toast({
+        title: "Cut point",
+        description: "1 point cut to clipboard"
+      });
+    }
+  };
+  
+  // Paste points from clipboard
+  const pastePoints = () => {
+    if (clipboard.length > 0) {
+      // Calculate paste position - offset from original position
+      const offset = 20; // Pixels to offset
+      
+      const pastedPoints = clipboard.map(point => ({
+        ...point,
+        x: point.x + offset,
+        y: point.y + offset,
+        handleIn: {
+          x: point.handleIn.x + offset,
+          y: point.handleIn.y + offset
+        },
+        handleOut: {
+          x: point.handleOut.x + offset,
+          y: point.handleOut.y + offset
+        },
+        id: generateId() // Generate new IDs for pasted points
+      }));
+      
+      // Add pasted points to canvas
+      const updatedPoints = [...points, ...pastedPoints];
+      onPointsChange(updatedPoints);
+      
+      // Select newly pasted points
+      const newSelectionIndices = pastedPoints.map((_, i) => points.length + i);
+      setSelectedPointsIndices(newSelectionIndices);
+      
+      toast({
+        title: "Pasted points",
+        description: `${pastedPoints.length} points pasted from clipboard`
+      });
+    }
+  };
+  
+  // Handle keyboard events
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Copy (Ctrl+C or Cmd+C)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+        e.preventDefault();
+        copySelectedPoints();
+      }
+      
+      // Cut (Ctrl+X or Cmd+X)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'x') {
+        e.preventDefault();
+        cutSelectedPoints();
+      }
+      
+      // Paste (Ctrl+V or Cmd+V)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+        e.preventDefault();
+        pastePoints();
+      }
+      
       // Delete selected points when Delete or Backspace is pressed
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedPointsIndices.length > 0) {
+        e.preventDefault();
         const updatedPoints = points.filter((_, index) => !selectedPointsIndices.includes(index));
         onPointsChange(updatedPoints);
         setSelectedPointsIndices([]);
@@ -531,17 +742,59 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       
       // Cancel current operation when Escape is pressed
       if (e.key === 'Escape') {
+        e.preventDefault();
         setSelectedPoint(null);
         setIsDragging(false);
         setIsSelecting(false);
         setSelectionRect(null);
         setSelectedPointsIndices([]);
+        
+        toast({
+          title: "Selection cleared",
+          description: "All selected points have been deselected"
+        });
+      }
+      
+      // Reset zoom with 0 key
+      if (e.key === '0' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        setZoom(1);
+        setPanOffset({ x: 0, y: 0 });
+        
+        toast({
+          title: "Zoom reset",
+          description: "View has been reset to 100%"
+        });
+      }
+      
+      // Zoom in with + key
+      if (e.key === '+' || e.key === '=') {
+        e.preventDefault();
+        const newZoom = Math.min(5, zoom * (1 + ZOOM_FACTOR));
+        setZoom(newZoom);
+        
+        toast({
+          title: `Zoom: ${Math.round(newZoom * 100)}%`,
+          description: "View has been zoomed in"
+        });
+      }
+      
+      // Zoom out with - key
+      if (e.key === '-' || e.key === '_') {
+        e.preventDefault();
+        const newZoom = Math.max(0.1, zoom * (1 - ZOOM_FACTOR));
+        setZoom(newZoom);
+        
+        toast({
+          title: `Zoom: ${Math.round(newZoom * 100)}%`,
+          description: "View has been zoomed out"
+        });
       }
     };
     
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [points, selectedPointsIndices, onPointsChange]);
+  }, [points, selectedPointsIndices, selectedPoint, clipboard, zoom, onPointsChange]);
   
   return (
     <div ref={wrapperRef} className="relative w-full h-full overflow-hidden border border-gray-200 rounded-md bg-white">
@@ -551,6 +804,37 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       
       <div className="absolute bottom-4 left-4 text-xs text-gray-500">
         Shortcuts: Copy (⌘/Ctrl+C) • Cut (⌘/Ctrl+X) • Delete (Del/Backspace) • Cancel/Deselect (ESC) • Multiple Selection (Shift+Drag) • Zoom (Mouse Wheel)
+      </div>
+      
+      <div className="absolute top-4 right-4 flex space-x-2">
+        <button
+          className="p-1 bg-white bg-opacity-70 rounded hover:bg-opacity-100 transition-colors"
+          onClick={() => {
+            setZoom(Math.min(5, zoom * (1 + ZOOM_FACTOR)));
+          }}
+          title="Zoom In"
+        >
+          <ZoomIn size={16} />
+        </button>
+        <button
+          className="p-1 bg-white bg-opacity-70 rounded hover:bg-opacity-100 transition-colors"
+          onClick={() => {
+            setZoom(Math.max(0.1, zoom * (1 - ZOOM_FACTOR)));
+          }}
+          title="Zoom Out"
+        >
+          <ZoomOut size={16} />
+        </button>
+        <button
+          className="p-1 bg-white bg-opacity-70 rounded hover:bg-opacity-100 transition-colors"
+          onClick={() => {
+            setZoom(1);
+            setPanOffset({ x: 0, y: 0 });
+          }}
+          title="Reset Zoom"
+        >
+          100%
+        </button>
       </div>
       
       <canvas
@@ -563,6 +847,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
         onDoubleClick={handleDoubleClick}
+        onWheel={handleWheel}
       />
     </div>
   );

@@ -67,3 +67,14 @@ export interface SelectionRect {
   width: number;
   height: number;
 }
+
+export interface ZoomSettings {
+  level: number;
+  offsetX: number;
+  offsetY: number;
+}
+
+export interface ClipboardData {
+  points: ControlPoint[];
+  timestamp: number;
+}
