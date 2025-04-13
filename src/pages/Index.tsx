@@ -40,7 +40,7 @@ const Index = () => {
     createObject,
     selectObject,
     deselectAllObjects,
-    updateObjectPoints,
+    updateObjects, // This will be used instead of updateObjectPoints
     updateObjectCurveConfig,
     updateObjectTransform,
     deleteObject,
@@ -136,13 +136,7 @@ const Index = () => {
   // Handler for updating all objects
   const handleObjectsChange = (updatedObjects: BezierObject[]) => {
     // This is a simplified version - in a real app you'd need to merge with existing objects
-    updatedObjects.forEach(obj => {
-      const existingObj = objects.find(o => o.id === obj.id);
-      if (existingObj) {
-        // Just update points for now - this is called during dragging
-        updateObjectPoints(obj.id, obj.points);
-      }
-    });
+    updateObjects(updatedObjects); // Use updateObjects instead of updateObjectPoints
   };
   
   // Export design as SVG
