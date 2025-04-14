@@ -1,4 +1,5 @@
-import { useState, useEffect, RefObject } from 'react';
+
+import { useState, useEffect, RefObject, useCallback } from 'react';
 import { 
   ControlPoint, 
   Point, 
@@ -31,6 +32,9 @@ interface CanvasHandlersProps {
   isDrawingMode: boolean;
   currentDrawingObjectId: string | null;
   setCurrentDrawingObjectId: (id: string | null) => void;
+  setMousePos: (pos: Point) => void;
+  screenToCanvas: (x: number, y: number) => Point;
+  renderCanvas: () => void;
 }
 
 export const useCanvasHandlers = ({
@@ -48,14 +52,16 @@ export const useCanvasHandlers = ({
   setPanOffset,
   isDrawingMode,
   currentDrawingObjectId,
-  setCurrentDrawingObjectId
+  setCurrentDrawingObjectId,
+  setMousePos,
+  screenToCanvas,
+  renderCanvas
 }: CanvasHandlersProps) => {
   // State for handling interactions
   const [isDragging, setIsDragging] = useState(false);
   const [isMultiDragging, setIsMultiDragging] = useState(false);
   const [lastDragPosition, setLastDragPosition] = useState<Point | null>(null);
   const [selectedPoint, setSelectedPoint] = useState<SelectedPoint | null>(null);
-  const [mousePos, setMousePos] = useState<Point>({ x: 0, y: 0 });
   const [isSelecting, setIsSelecting] = useState(false);
   const [selectionRect, setSelectionRect] = useState<SelectionRect | null>(null);
   const [isCanvasDragging, setIsCanvasDragging] = useState<boolean>(false);
@@ -66,26 +72,18 @@ export const useCanvasHandlers = ({
   const HANDLE_RADIUS = 6;
   const ZOOM_FACTOR = 0.1;
   
-  // Convert screen coordinates to canvas coordinates
-  const screenToCanvas = (x: number, y: number): Point => {
-    return {
-      x: (x - panOffset.x) / zoom,
-      y: (y - panOffset.y) / zoom
-    };
-  };
-  
   // Clear all selections and reset drag states
-  const clearSelections = () => {
+  const clearSelections = useCallback(() => {
     setSelectedPoint(null);
     setIsDragging(false);
     setIsMultiDragging(false);
     setIsSelecting(false);
     setSelectionRect(null);
     setLastDragPosition(null);
-  };
+  }, []);
   
   // Complete and finalize the current drawing object
-  const finalizeDrawingObject = () => {
+  const finalizeDrawingObject = useCallback(() => {
     if (currentDrawingObjectId) {
       // Find the current drawing object
       const drawingObject = objects.find(obj => obj.id === currentDrawingObjectId);
@@ -112,10 +110,10 @@ export const useCanvasHandlers = ({
         });
       }
     }
-  };
+  }, [currentDrawingObjectId, objects, onSaveState, setCurrentDrawingObjectId, onObjectSelect]);
   
   // Cancel the current drawing
-  const cancelDrawing = () => {
+  const cancelDrawing = useCallback(() => {
     if (currentDrawingObjectId) {
       // Remove the partial object
       onObjectsChange(objects.filter(obj => obj.id !== currentDrawingObjectId));
@@ -126,10 +124,10 @@ export const useCanvasHandlers = ({
         description: "The current drawing has been discarded"
       });
     }
-  };
+  }, [currentDrawingObjectId, objects, onObjectsChange, setCurrentDrawingObjectId]);
   
   // Handle mouse down event
-  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const handleMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     
@@ -224,8 +222,12 @@ export const useCanvasHandlers = ({
       
       if (currentDrawingObjectId) {
         // We're already drawing an object, add a new point to it
+        console.log(`Adding point to existing object: ${currentDrawingObjectId}`);
         const objectIndex = objects.findIndex(obj => obj.id === currentDrawingObjectId);
-        if (objectIndex === -1) return;
+        if (objectIndex === -1) {
+          console.error(`Object with ID ${currentDrawingObjectId} not found`);
+          return;
+        }
         
         const object = objects[objectIndex];
         
@@ -302,10 +304,30 @@ export const useCanvasHandlers = ({
         onObjectSelect('', false); // Deselect all objects
       }
     }
-  };
+    
+    // Force render to update the canvas
+    renderCanvas();
+  }, [
+    canvasRef, 
+    screenToCanvas, 
+    setMousePos, 
+    currentDrawingObjectId, 
+    isSpacePressed, 
+    objects, 
+    selectedObjectIds,
+    zoom, 
+    selectedPoint, 
+    onObjectSelect, 
+    isDrawingMode, 
+    onObjectsChange, 
+    onCreateObject, 
+    setCurrentDrawingObjectId, 
+    finalizeDrawingObject,
+    renderCanvas
+  ]);
   
   // Handle mouse move event
-  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     
@@ -332,6 +354,9 @@ export const useCanvasHandlers = ({
       }));
       
       setDragStart({ x: screenX, y: screenY });
+      
+      // Force render to update the canvas
+      renderCanvas();
       return;
     }
     
@@ -364,6 +389,9 @@ export const useCanvasHandlers = ({
       
       onObjectsChange(updatedObjects);
       setLastDragPosition({ x, y });
+      
+      // Force render to update the canvas
+      renderCanvas();
       return;
     }
     
@@ -411,6 +439,9 @@ export const useCanvasHandlers = ({
       onObjectsChange(updatedObjects);
       
       setLastDragPosition({ x, y });
+      
+      // Force render to update the canvas
+      renderCanvas();
     } else if (isSelecting && selectionRect) {
       // Update selection rectangle
       setSelectionRect({
@@ -418,6 +449,9 @@ export const useCanvasHandlers = ({
         width: x - selectionRect.startX,
         height: y - selectionRect.startY
       });
+      
+      // Force render to update the canvas
+      renderCanvas();
     }
     
     // Update cursor based on context
@@ -432,10 +466,32 @@ export const useCanvasHandlers = ({
         canvas.style.cursor = 'default';
       }
     }
-  };
+    
+    // Force render to update the canvas with mouse position
+    renderCanvas();
+  }, [
+    canvasRef, 
+    screenToCanvas, 
+    setMousePos, 
+    isCanvasDragging, 
+    isMultiDragging, 
+    isDragging, 
+    isSelecting,
+    selectedPoint, 
+    lastDragPosition, 
+    dragStart, 
+    objects, 
+    selectedObjectIds, 
+    setPanOffset,
+    onObjectsChange, 
+    selectionRect, 
+    isSpacePressed, 
+    isDrawingMode,
+    renderCanvas
+  ]);
   
   // Handle mouse up event
-  const handleMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const handleMouseUp = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     // Handle canvas dragging
     if (isCanvasDragging) {
       setIsCanvasDragging(false);
@@ -495,20 +551,37 @@ export const useCanvasHandlers = ({
     setIsSelecting(false);
     setSelectionRect(null);
     setLastDragPosition(null);
-  };
+    
+    // Force render to update the canvas
+    renderCanvas();
+  }, [
+    isCanvasDragging, 
+    isDragging, 
+    isMultiDragging, 
+    isSelecting, 
+    selectionRect,
+    objects, 
+    selectedObjectIds, 
+    onSaveState, 
+    onObjectSelect,
+    renderCanvas
+  ]);
   
   // Handle context menu (right-click)
-  const handleContextMenu = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const handleContextMenu = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     e.preventDefault(); // Prevent the browser context menu
     
     // If in drawing mode with an active drawing, finalize the object
     if (isDrawingMode && currentDrawingObjectId) {
       finalizeDrawingObject();
+      
+      // Force render to update the canvas
+      renderCanvas();
     }
-  };
+  }, [isDrawingMode, currentDrawingObjectId, finalizeDrawingObject, renderCanvas]);
   
   // Handle double click to add points to an existing object, finalize drawing, or delete points
-  const handleDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const handleDoubleClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     
@@ -524,6 +597,9 @@ export const useCanvasHandlers = ({
     // If in drawing mode with an active drawing, finalize the object
     if (isDrawingMode && currentDrawingObjectId) {
       finalizeDrawingObject();
+      
+      // Force render to update the canvas
+      renderCanvas();
       return;
     }
     
@@ -605,10 +681,25 @@ export const useCanvasHandlers = ({
         });
       }
     }
-  };
+    
+    // Force render to update the canvas
+    renderCanvas();
+  }, [
+    canvasRef, 
+    screenToCanvas, 
+    isDrawingMode, 
+    currentDrawingObjectId, 
+    objects,
+    selectedObjectIds, 
+    onObjectsChange, 
+    onSaveState, 
+    zoom, 
+    finalizeDrawingObject,
+    renderCanvas
+  ]);
   
   // Handle mouse wheel for zoom
-  const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
+  const handleWheel = useCallback((e: React.WheelEvent<HTMLCanvasElement>) => {
     e.preventDefault(); // This is necessary for the zoom behavior, but it may trigger a passive event warning
     
     const canvas = canvasRef.current;
@@ -622,44 +713,17 @@ export const useCanvasHandlers = ({
     const delta = e.deltaY < 0 ? 1 : -1;
     const newZoom = Math.max(0.1, Math.min(5, zoom * (1 + delta * ZOOM_FACTOR)));
     
-    // Calculate new offset to zoom centered on mouse position
-    const zoomRatio = newZoom / zoom;
-    
+    // Set new zoom
     setZoom(newZoom);
     
     toast({
       title: `Zoom: ${Math.round(newZoom * 100)}%`,
       description: 'Use mouse wheel to zoom in and out'
     });
-  };
-  
-  // Setup wheel event with passive: false
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
     
-    const handleWheelEvent = (e: WheelEvent) => {
-      e.preventDefault();
-      
-      const rect = canvas.getBoundingClientRect();
-      const mouseX = e.clientX - rect.left;
-      const mouseY = e.clientY - rect.top;
-      
-      // Calculate zoom direction
-      const delta = e.deltaY < 0 ? 1 : -1;
-      const newZoom = Math.max(0.1, Math.min(5, zoom * (1 + delta * ZOOM_FACTOR)));
-      
-      // Set new zoom
-      setZoom(newZoom);
-    };
-    
-    // Add wheel event with passive false to prevent console errors
-    canvas.addEventListener('wheel', handleWheelEvent, { passive: false });
-    
-    return () => {
-      canvas.removeEventListener('wheel', handleWheelEvent);
-    };
-  }, [canvasRef, zoom, setZoom]);
+    // Force render to update the canvas
+    renderCanvas();
+  }, [canvasRef, zoom, setZoom, renderCanvas]);
   
   // Handle keyboard events
   useEffect(() => {
@@ -676,6 +740,9 @@ export const useCanvasHandlers = ({
             onObjectSelect('', false);
           }
         }
+        
+        // Force render to update the canvas
+        renderCanvas();
       }
       
       // Delete key to delete selected objects
@@ -690,6 +757,9 @@ export const useCanvasHandlers = ({
       // Enter key to finalize drawing
       if (e.key === 'Enter' && currentDrawingObjectId) {
         finalizeDrawingObject();
+        
+        // Force render to update the canvas
+        renderCanvas();
       }
       
       // Ctrl+Z for undo
@@ -702,6 +772,12 @@ export const useCanvasHandlers = ({
       if (e.key === ' ' && !e.repeat) {
         e.preventDefault();
         setIsSpacePressed(true);
+        
+        // Update canvas cursor
+        const canvas = canvasRef.current;
+        if (canvas) {
+          canvas.style.cursor = 'grab';
+        }
       }
     };
     
@@ -709,6 +785,12 @@ export const useCanvasHandlers = ({
       // Space to disable panning
       if (e.key === ' ') {
         setIsSpacePressed(false);
+        
+        // Update canvas cursor
+        const canvas = canvasRef.current;
+        if (canvas) {
+          canvas.style.cursor = isDrawingMode ? 'crosshair' : 'default';
+        }
       }
     };
     
@@ -719,35 +801,56 @@ export const useCanvasHandlers = ({
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [selectedObjectIds, isDrawingMode, onUndo, currentDrawingObjectId, objects]);
+  }, [
+    selectedObjectIds, 
+    isDrawingMode, 
+    onUndo, 
+    currentDrawingObjectId, 
+    objects,
+    canvasRef, 
+    cancelDrawing, 
+    clearSelections, 
+    onObjectSelect, 
+    finalizeDrawingObject,
+    renderCanvas
+  ]);
   
   // Helper functions for external components to use
-  const handleZoomIn = () => {
+  const handleZoomIn = useCallback(() => {
     const newZoom = Math.min(5, zoom * (1 + ZOOM_FACTOR));
     setZoom(newZoom);
     toast({
       title: `Zoom: ${Math.round(newZoom * 100)}%`,
       description: 'Zoomed in'
     });
-  };
+    
+    // Force render to update the canvas
+    renderCanvas();
+  }, [zoom, setZoom, renderCanvas]);
 
-  const handleZoomOut = () => {
+  const handleZoomOut = useCallback(() => {
     const newZoom = Math.max(0.1, zoom * (1 - ZOOM_FACTOR));
     setZoom(newZoom);
     toast({
       title: `Zoom: ${Math.round(newZoom * 100)}%`,
       description: 'Zoomed out'
     });
-  };
+    
+    // Force render to update the canvas
+    renderCanvas();
+  }, [zoom, setZoom, renderCanvas]);
 
-  const handleResetView = () => {
+  const handleResetView = useCallback(() => {
     setZoom(1);
     setPanOffset({ x: 0, y: 0 });
     toast({
       title: 'View Reset',
       description: 'Zoom and pan have been reset'
     });
-  };
+    
+    // Force render to update the canvas
+    renderCanvas();
+  }, [setZoom, setPanOffset, renderCanvas]);
   
   return {
     handleMouseDown,
@@ -760,7 +863,6 @@ export const useCanvasHandlers = ({
     handleZoomOut,
     handleResetView,
     selectedPoint,
-    mousePos,
     isSelecting,
     selectionRect,
     isCanvasDragging,

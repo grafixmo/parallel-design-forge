@@ -52,7 +52,8 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     currentDrawingObjectId,
     setCurrentDrawingObjectId,
     backgroundImageObj,
-    screenToCanvas
+    screenToCanvas,
+    renderCanvas
   } = useCanvasSetup({
     canvasRef,
     wrapperRef,
@@ -60,7 +61,9 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     height,
     isDrawingMode,
     backgroundImage,
-    backgroundOpacity
+    backgroundOpacity,
+    objects,
+    selectedObjectIds
   });
   
   const {
@@ -88,8 +91,27 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     setPanOffset,
     isDrawingMode,
     currentDrawingObjectId,
-    setCurrentDrawingObjectId
+    setCurrentDrawingObjectId,
+    setMousePos,
+    screenToCanvas,
+    renderCanvas
   });
+
+  // Request animation frame for continuous rendering
+  useEffect(() => {
+    let animationFrameId: number;
+    
+    const render = () => {
+      renderCanvas();
+      animationFrameId = window.requestAnimationFrame(render);
+    };
+    
+    render();
+    
+    return () => {
+      window.cancelAnimationFrame(animationFrameId);
+    };
+  }, [renderCanvas]);
 
   // To avoid passive event issues, we'll handle the actual canvas click events
   useEffect(() => {
