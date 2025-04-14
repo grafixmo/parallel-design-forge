@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, memo } from 'react';
 import { 
   Dialog, 
@@ -272,15 +271,17 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
     setLoadDialogOpen(true);
   }, []);
   
-  const confirmLoadTemplate = useCallback(async (shouldClearCanvas: boolean) => {
+  const confirmLoadTemplate = useCallback(async (shouldClearCanvas: boolean = true) => {
     if (!templateToLoad) return;
+    
+    let progressInterval: NodeJS.Timeout | null = null; // Declare progressInterval here
     
     try {
       setLoadingTemplate(true);
       setLoadingProgress(0);
       
       // Start the loading progress animation
-      const progressInterval = setInterval(() => {
+      progressInterval = setInterval(() => {
         setLoadingProgress(prev => {
           const newProgress = prev + 5;
           return newProgress > 90 ? 90 : newProgress; // Cap at 90% until complete
@@ -309,7 +310,7 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
       
       // Complete the loading process
       setLoadingProgress(100);
-      clearInterval(progressInterval);
+      if (progressInterval) clearInterval(progressInterval);
       
       // Allow a brief moment to show 100% completion
       await new Promise(resolve => setTimeout(resolve, 200));
@@ -336,7 +337,9 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
       }, 300);
     } catch (error) {
       console.error('Error loading template:', error);
-      setTemplateLoadError(error instanceof Error ? error.message : 'Unknown error loading template');
+      
+      // Clear interval in case of error
+      if (progressInterval) clearInterval(progressInterval);
       
       toast({
         title: 'Error Loading Template',
@@ -345,7 +348,6 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
       });
       
       setLoadingTemplate(false);
-      clearInterval(progressInterval); // Fixed: Added the interval parameter
     }
   }, [templateToLoad, onSelectTemplate, toast, onClose]);
   
