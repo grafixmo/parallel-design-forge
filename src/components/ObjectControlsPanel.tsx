@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Slider } from '@/components/ui/slider';
 import { Input } from '@/components/ui/input';
@@ -42,45 +41,28 @@ import { ColorPicker } from '@/components/ui/color-picker';
 import { cn } from '@/lib/utils';
 
 interface ObjectControlsPanelProps {
-  selectedObjects: BezierObject[];
-  allObjects: BezierObject[];
+  objects: BezierObject[];
   selectedObjectIds: string[];
-  onCreateObject: () => void;
-  onSelectObject: (objectId: string, multiSelect: boolean) => void;
-  onDeleteObject: (objectId: string) => void;
-  onRenameObject: (objectId: string, name: string) => void;
   onUpdateCurveConfig: (objectId: string, config: CurveConfig) => void;
   onUpdateTransform: (objectId: string, transform: TransformSettings) => void;
-  backgroundImage?: string;
-  backgroundOpacity: number;
-  onBackgroundOpacityChange: (opacity: number) => void;
-  onUploadImage: (event: React.ChangeEvent<HTMLInputElement>) => void;
-  onRemoveImage: () => void;
+  onRenameObject: (objectId: string, name: string) => void;
+  onDeleteObject: (objectId: string) => void;
+  onDeleteSelectedObjects: () => void;
 }
 
 const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
-  selectedObjects,
-  allObjects,
+  objects,
   selectedObjectIds,
-  onCreateObject,
-  onSelectObject,
-  onDeleteObject,
-  onRenameObject,
   onUpdateCurveConfig,
   onUpdateTransform,
-  backgroundImage,
-  backgroundOpacity,
-  onBackgroundOpacityChange,
-  onUploadImage,
-  onRemoveImage
+  onRenameObject,
+  onDeleteObject,
+  onDeleteSelectedObjects
 }) => {
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   
-  // If no objects are selected or multiple objects are selected, return a message
-  const showGenericControls = selectedObjects.length !== 1;
-  
-  // Get the currently selected object (if only one is selected)
-  const selectedObject = selectedObjects[0];
+  // Get the selected objects
+  const selectedObjects = objects.filter(obj => selectedObjectIds.includes(obj.id));
   
   const handleParallelCountChange = (objectId: string, value: string) => {
     const count = parseInt(value);
@@ -192,6 +174,12 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
     </div>
   );
   
+  // If no objects are selected or multiple objects are selected, return a message
+  const showGenericControls = selectedObjects.length !== 1;
+  
+  // Get the currently selected object (if only one is selected)
+  const selectedObject = selectedObjects[0];
+  
   return (
     <Card className="p-4 overflow-y-auto max-h-[calc(100vh-100px)]">
       <div className="flex items-center justify-between mb-4">
@@ -201,16 +189,13 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
       <div className="space-y-4">
         {/* Objects Panel */}
         <ObjectsPanel 
-          objects={allObjects}
+          objects={objects}
           selectedObjectIds={selectedObjectIds}
-          onCreateObject={onCreateObject}
-          onSelectObject={onSelectObject}
+          onCreateObject={() => {}}
+          onSelectObject={() => {}}
           onDeleteObject={onDeleteObject}
           onRenameObject={onRenameObject}
-          onDeleteSelectedObjects={() => {
-            // Call onDeleteObject for each selected object
-            selectedObjectIds.forEach(id => onDeleteObject(id));
-          }}
+          onDeleteSelectedObjects={onDeleteSelectedObjects}
         />
         
         {/* Controls for individual object or message */}

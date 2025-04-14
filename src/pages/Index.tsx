@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback } from 'react';
 import { 
   ControlPoint, 
@@ -181,9 +180,10 @@ const Index = () => {
   // Import SVG content
   const handleImportSVG = async (svgContent: string) => {
     try {
-      const importedObjects = await parseSVGContent(svgContent);
+      const importedObjectsResult = await parseSVGContent(svgContent);
       
-      if (importedObjects.length === 0) {
+      // Check if importedObjectsResult is an array or has the expected properties
+      if (!importedObjectsResult || !Array.isArray(importedObjectsResult)) {
         toast({
           title: "Import Failed",
           description: "No valid paths found in the SVG",
@@ -193,12 +193,12 @@ const Index = () => {
       }
       
       // Add the imported objects to the canvas
-      setAllObjects([...objects, ...importedObjects]);
+      setAllObjects([...objects, ...importedObjectsResult]);
       saveCurrentState();
       
       toast({
         title: "SVG Imported",
-        description: `${importedObjects.length} paths imported successfully`
+        description: `${importedObjectsResult.length} paths imported successfully`
       });
     } catch (error) {
       console.error('Error importing SVG:', error);
@@ -230,9 +230,9 @@ const Index = () => {
   }, [selectedObjectIds, isDrawingMode, deleteSelectedObjects]);
   
   // Optimized Template Loading with error handling
-  const handleLoadTemplate = useCallback(async (templateData: string, shouldClearCanvas: boolean = false) => {
+  const handleLoadTemplate = useCallback(async (templateData: string) => {
     try {
-      console.log('Loading template, clear canvas:', shouldClearCanvas);
+      console.log('Loading template');
       
       // Parse the template data
       const parsedData = JSON.parse(templateData);
@@ -242,7 +242,7 @@ const Index = () => {
       }
       
       // Process and load the objects
-      loadObjectsFromTemplate(parsedData, shouldClearCanvas);
+      loadObjectsFromTemplate(parsedData, true); // Pass true to clear canvas
       
       toast({
         title: "Template Loaded",
@@ -256,10 +256,19 @@ const Index = () => {
         variant: "destructive"
       });
     }
-  }, [loadObjectsFromTemplate]);
+  }, [loadObjectsFromTemplate, toast]);
   
   // Calculate disabled state for certain actions
   const isDeleteDisabled = selectedObjectIds.length === 0 || isDrawingMode;
+  
+  // Handle loading a design from the library
+  const handleLoadDesign = (design: DesignData) => {
+    setLoadedDesign(design);
+    if (design.objects && Array.isArray(design.objects)) {
+      loadObjectsFromTemplate(design.objects, true);
+    }
+    setIsPanelOpen(false);
+  };
   
   return (
     <div className="flex flex-col h-screen">
@@ -317,13 +326,7 @@ const Index = () => {
       <LibraryPanel
         isOpen={isPanelOpen}
         onClose={() => setIsPanelOpen(false)}
-        onLoadDesign={(design) => {
-          setLoadedDesign(design);
-          if (design.objects && Array.isArray(design.objects)) {
-            loadObjectsFromTemplate(design.objects, true);
-          }
-          setIsPanelOpen(false);
-        }}
+        onLoadDesign={handleLoadDesign}
         setBackgroundImage={setBackgroundImage}
         setBackgroundOpacity={setBackgroundOpacity}
       />
