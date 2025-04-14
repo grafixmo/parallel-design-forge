@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { 
   Dialog, 
@@ -24,7 +25,7 @@ import {
   PopoverContent,
   PopoverTrigger
 } from '@/components/ui/popover';
-import { Trash2, Heart, Edit, Loader2, Search, X, ExternalLink } from 'lucide-react';
+import { Trash2, Heart, Edit, Loader2, Search, X, ExternalLink, AlertTriangle } from 'lucide-react';
 import { 
   getTemplates, 
   getTemplatesByCategory, 
@@ -52,9 +53,11 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [loadDialogOpen, setLoadDialogOpen] = useState(false);
+  const [loadingTemplate, setLoadingTemplate] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDescription, setNewDescription] = useState('');
   const [templateToLoad, setTemplateToLoad] = useState<Template | null>(null);
+  const [templateLoadError, setTemplateLoadError] = useState<string | null>(null);
   
   // Fetch templates when the gallery is opened or category changes
   useEffect(() => {
@@ -62,6 +65,20 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
       fetchTemplates();
     }
   }, [open, activeCategory]);
+  
+  // Cleanup effect when gallery is closed
+  useEffect(() => {
+    if (!open) {
+      // Reset state to avoid memory leaks and stale data
+      setSelectedTemplate(null);
+      setLoadDialogOpen(false);
+      setDeleteDialogOpen(false);
+      setRenameDialogOpen(false);
+      setTemplateToLoad(null);
+      setTemplateLoadError(null);
+      setLoadingTemplate(false);
+    }
+  }, [open]);
   
   const fetchTemplates = async () => {
     setIsLoading(true);
@@ -74,14 +91,24 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
         throw new Error(response.error.message);
       }
       
-      setTemplates(response.data || []);
+      // Process templates - ensure they have valid thumbnails and other required properties
+      const validTemplates = (response.data || []).map(template => ({
+        ...template,
+        // Ensure the thumbnail exists, otherwise use a placeholder
+        thumbnail: template.thumbnail || 'placeholder.svg',
+        // Ensure likes property is defined
+        likes: template.likes || 0
+      }));
+      
+      setTemplates(validTemplates);
     } catch (error) {
       console.error('Error fetching templates:', error);
       toast({
         title: 'Error',
-        description: 'Failed to load templates',
+        description: 'Failed to load templates. Please try again.',
         variant: 'destructive'
       });
+      setTemplates([]);
     } finally {
       setIsLoading(false);
     }
@@ -92,14 +119,29 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
   };
   
   const handleSelectTemplate = (template: Template) => {
+    // Clear any previous errors
+    setTemplateLoadError(null);
     setTemplateToLoad(template);
     setLoadDialogOpen(true);
   };
   
-  const confirmLoadTemplate = (shouldClearCanvas: boolean) => {
+  const confirmLoadTemplate = async (shouldClearCanvas: boolean) => {
     if (!templateToLoad) return;
     
     try {
+      setLoadingTemplate(true);
+      
+      // Validate the design data before passing it to onSelectTemplate
+      if (!templateToLoad.design_data) {
+        throw new Error("Template has no design data");
+      }
+      
+      // Simple validation check
+      const parsedData = JSON.parse(templateToLoad.design_data);
+      if (!Array.isArray(parsedData)) {
+        throw new Error("Invalid template format");
+      }
+      
       onSelectTemplate(templateToLoad.design_data, shouldClearCanvas);
       onClose();
       
@@ -109,14 +151,15 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
       });
     } catch (error) {
       console.error('Error loading template:', error);
+      setTemplateLoadError(error instanceof Error ? error.message : 'Unknown error loading template');
+      
       toast({
         title: 'Error Loading Template',
         description: 'There was a problem processing the template data',
         variant: 'destructive'
       });
     } finally {
-      setLoadDialogOpen(false);
-      setTemplateToLoad(null);
+      setLoadingTemplate(false);
     }
   };
   
@@ -311,6 +354,10 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
                             src={template.thumbnail} 
                             alt={template.name}
                             className="w-full h-full object-contain"
+                            onError={(e) => {
+                              // Fallback for broken image links
+                              (e.target as HTMLImageElement).src = '/placeholder.svg';
+                            }}
                           />
                         ) : (
                           <ExternalLink className="h-8 w-8 text-gray-300" />
@@ -403,24 +450,52 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
           <AlertDialogHeader>
             <AlertDialogTitle>Load Template</AlertDialogTitle>
             <AlertDialogDescription>
-              Do you want to replace the current canvas contents or add this template to the existing canvas?
+              {templateLoadError ? (
+                <div className="text-destructive flex items-start space-x-2 my-2">
+                  <AlertTriangle className="h-5 w-5 flex-shrink-0 mt-0.5" />
+                  <span>{templateLoadError}</span>
+                </div>
+              ) : (
+                <>
+                  Do you want to replace the current canvas contents or add this template to the existing canvas?
+                </>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="flex-col space-y-2 sm:space-y-0 sm:flex-row">
             <AlertDialogCancel onClick={() => {
               setLoadDialogOpen(false);
               setTemplateToLoad(null);
+              setTemplateLoadError(null);
             }}>
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction 
               onClick={() => confirmLoadTemplate(true)} 
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={!!templateLoadError || loadingTemplate}
             >
-              Replace Canvas
+              {loadingTemplate ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Loading...
+                </>
+              ) : (
+                'Replace Canvas'
+              )}
             </AlertDialogAction>
-            <AlertDialogAction onClick={() => confirmLoadTemplate(false)}>
-              Add to Canvas
+            <AlertDialogAction 
+              onClick={() => confirmLoadTemplate(false)}
+              disabled={!!templateLoadError || loadingTemplate}
+            >
+              {loadingTemplate ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Loading...
+                </>
+              ) : (
+                'Add to Canvas'
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
