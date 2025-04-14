@@ -1,3 +1,4 @@
+
 // SVG Worker file for processing SVG paths in a separate thread
 // This version is optimized to prevent freezing during complex SVG imports
 
@@ -858,4 +859,18 @@ function convertPathToPoints(path, simplify = false) {
             };
             
             // Update the in handle of first point to match the curve
-            firstPoint.handleIn
+            firstPoint.handleIn = {
+              x: firstPoint.x - normalizedDx * handleDist,
+              y: firstPoint.y - normalizedDy * handleDist
+            };
+          }
+        }
+      }
+    }
+    
+    return points;
+  } catch (error) {
+    console.error('Error parsing SVG path:', error);
+    return [];
+  }
+}

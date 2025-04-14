@@ -264,9 +264,12 @@ export const transformImportedObjects = (
     const heightRatio = targetHeight / objectsHeight;
     
     // Use the smaller ratio to ensure it fits entirely
-    const scaleFactor = Math.min(widthRatio, heightRatio);
+    const scaleFactor = options?.maintainAspectRatio !== false
+      ? Math.min(widthRatio, heightRatio)
+      : widthRatio;
+    
     scaleX = scaleFactor;
-    scaleY = scaleFactor;
+    scaleY = options?.maintainAspectRatio !== false ? scaleFactor : heightRatio;
   }
   
   // Calculate offsets for centering

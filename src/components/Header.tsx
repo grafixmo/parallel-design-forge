@@ -547,6 +547,23 @@ const Header: React.FC<HeaderProps> = ({
                   
                   <div className="flex items-center space-x-2">
                     <Checkbox 
+                      id="maintain-aspect-ratio" 
+                      checked={importOptions.maintainAspectRatio !== false}
+                      onCheckedChange={(checked) => 
+                        setImportOptions({
+                          ...importOptions,
+                          maintainAspectRatio: checked === true
+                        })
+                      }
+                      disabled={isImporting || !importOptions.fitToCanvas}
+                    />
+                    <Label htmlFor="maintain-aspect-ratio" className={!importOptions.fitToCanvas ? "text-gray-400" : ""}>
+                      Maintain aspect ratio
+                    </Label>
+                  </div>
+                  
+                  <div className="flex items-center space-x-2">
+                    <Checkbox 
                       id="center-on-canvas" 
                       checked={importOptions.centerOnCanvas}
                       onCheckedChange={(checked) => 

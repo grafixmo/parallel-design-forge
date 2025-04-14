@@ -1,4 +1,3 @@
-
 export interface Point {
   x: number;
   y: number;
@@ -108,10 +107,11 @@ export interface SVGImportOptions {
   importStyle: boolean;
   simplifyPaths?: boolean;
   preserveViewBox?: boolean;
-  fitToCanvas?: boolean; // New option to fit imported SVG to canvas
-  centerOnCanvas?: boolean; // New option to center the imported SVG
-  targetWidth?: number; // Optional target width for scaling
-  targetHeight?: number; // Optional target height for scaling
+  fitToCanvas?: boolean;
+  centerOnCanvas?: boolean;
+  targetWidth?: number;
+  targetHeight?: number;
+  maintainAspectRatio?: boolean;
 }
 
 export interface SVGExportOptions {
