@@ -1,4 +1,3 @@
-
 import { useState, useEffect, RefObject } from 'react';
 import { 
   ControlPoint, 
@@ -28,7 +27,7 @@ interface CanvasHandlersProps {
   zoom: number;
   panOffset: Point;
   setZoom: (zoom: number) => void;
-  setPanOffset: (offset: Point) => void;
+  setPanOffset: (offset: Point | ((prev: Point) => Point)) => void;
   isDrawingMode: boolean;
   currentDrawingObjectId: string | null;
   setCurrentDrawingObjectId: (id: string | null) => void;

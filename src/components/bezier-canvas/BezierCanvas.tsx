@@ -1,5 +1,5 @@
 
-import React, { useRef } from 'react';
+import React, { useRef, useEffect } from 'react';
 import { BezierObject } from '@/types/bezier';
 import { useCanvasHandlers } from './hooks/useCanvasHandlers';
 import { useCanvasSetup } from './hooks/useCanvasSetup';
@@ -97,13 +97,15 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     if (!canvas) return;
     
     // We need to add passive: false to prevent default behavior for wheel events
-    canvas.addEventListener('wheel', (e) => {
+    const wheelHandler = (e: WheelEvent) => {
       e.preventDefault();
       handleWheel(e as unknown as React.WheelEvent<HTMLCanvasElement>);
-    }, { passive: false });
+    };
+    
+    canvas.addEventListener('wheel', wheelHandler, { passive: false });
     
     return () => {
-      canvas.removeEventListener('wheel', handleWheel as any);
+      canvas.removeEventListener('wheel', wheelHandler);
     };
   }, [handleWheel]);
 
