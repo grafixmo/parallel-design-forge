@@ -12,7 +12,6 @@ interface SVGImportResult {
   objects: BezierObject[];
   width: number;
   height: number;
-  viewBox?: { minX: number, minY: number, width: number, height: number };
 }
 
 // Parse SVG string into BezierObject objects
@@ -34,26 +33,9 @@ export const parseSVGContent = (svgContent: string): SVGImportResult => {
       throw new Error('No SVG element found');
     }
     
-    // Get SVG dimensions and viewBox
+    // Get SVG dimensions
     const width = parseFloat(svgElement.getAttribute('width') || '800');
     const height = parseFloat(svgElement.getAttribute('height') || '600');
-    
-    // Get viewBox attribute if it exists
-    let viewBox = undefined;
-    const viewBoxAttr = svgElement.getAttribute('viewBox');
-    
-    if (viewBoxAttr) {
-      const viewBoxValues = viewBoxAttr.split(/\s+|,/).map(parseFloat);
-      if (viewBoxValues.length === 4) {
-        viewBox = {
-          minX: viewBoxValues[0],
-          minY: viewBoxValues[1],
-          width: viewBoxValues[2],
-          height: viewBoxValues[3]
-        };
-        console.log("Found viewBox:", viewBox);
-      }
-    }
     
     // Find all path elements
     const pathElements = svgDoc.querySelectorAll('path');
@@ -74,49 +56,11 @@ export const parseSVGContent = (svgContent: string): SVGImportResult => {
       }
     });
     
-    // Calculate appropriate scale and offset to center the design
-    let scale = 1.0;
-    let offsetX = 0;
-    let offsetY = 0;
-    
-    // If we have viewBox, use it to calculate scale and offset
-    if (viewBox) {
-      // Calculate scale to fit the design in canvas while maintaining aspect ratio
-      // We'll scale to 80% of the canvas size to leave some margin
-      const canvasWidth = 800; // Default canvas width
-      const canvasHeight = 600; // Default canvas height
-      
-      const scaleX = (canvasWidth * 0.8) / viewBox.width;
-      const scaleY = (canvasHeight * 0.8) / viewBox.height;
-      
-      // Use the smaller scale to fit the design fully within the canvas
-      scale = Math.min(scaleX, scaleY);
-      
-      // Center the design in the canvas
-      offsetX = (canvasWidth - viewBox.width * scale) / 2 - viewBox.minX * scale;
-      offsetY = (canvasHeight - viewBox.height * scale) / 2 - viewBox.minY * scale;
-    }
-    
-    console.log(`Calculated scale: ${scale}, offsetX: ${offsetX}, offsetY: ${offsetY}`);
-    
     // Convert paths to BezierObjects
     const objects: BezierObject[] = pathsData.map((pathData, index) => {
-      // Get points, applying the scale and offset
-      const points = convertPathToPoints(pathData.path, scale, offsetX, offsetY);
+      const points = convertPathToPoints(pathData.path);
       
-      // If points are at the wrong size or position, log info
-      if (points.length > 0) {
-        const xValues = points.map(p => p.x);
-        const yValues = points.map(p => p.y);
-        const minX = Math.min(...xValues);
-        const minY = Math.min(...yValues);
-        const maxX = Math.max(...xValues);
-        const maxY = Math.max(...yValues);
-        
-        console.log(`Path ${index+1} bounds: (${minX},${minY}) - (${maxX},${maxY}), size: ${maxX-minX}x${maxY-minY}`);
-      }
-      
-      // Create curve config - preserve original SVG styling
+      // Create curve config
       const curveConfig: CurveConfig = {
         styles: [
           { color: pathData.color, width: pathData.width }
@@ -138,16 +82,15 @@ export const parseSVGContent = (svgContent: string): SVGImportResult => {
         points,
         curveConfig,
         transform,
-        name: `SVG Path ${index + 1}`,
-        isSelected: index === 0 // Select the first imported path by default
+        name: `Imported Path ${index + 1}`,
+        isSelected: false
       };
     });
     
     return {
       objects,
       width,
-      height,
-      viewBox
+      height
     };
   } catch (error) {
     console.error('Error parsing SVG:', error);
@@ -156,12 +99,7 @@ export const parseSVGContent = (svgContent: string): SVGImportResult => {
 };
 
 // Convert SVG path string to ControlPoint objects
-const convertPathToPoints = (
-  path: string, 
-  scale: number = 1.0, 
-  offsetX: number = 0, 
-  offsetY: number = 0
-): ControlPoint[] => {
+const convertPathToPoints = (path: string): ControlPoint[] => {
   const points: ControlPoint[] = [];
   
   try {
@@ -183,11 +121,11 @@ const convertPathToPoints = (
       if ((type === 'M' || type === 'm') && args.length >= 2) {
         // Move command
         if (type === 'M') {
-          currentX = args[0] * scale + offsetX;
-          currentY = args[1] * scale + offsetY;
+          currentX = args[0];
+          currentY = args[1];
         } else {
-          currentX += args[0] * scale;
-          currentY += args[1] * scale;
+          currentX += args[0];
+          currentY += args[1];
         }
         
         // Add first point
@@ -203,19 +141,19 @@ const convertPathToPoints = (
         let control1X, control1Y, control2X, control2Y, endX, endY;
         
         if (type === 'C') {
-          control1X = args[0] * scale + offsetX;
-          control1Y = args[1] * scale + offsetY;
-          control2X = args[2] * scale + offsetX;
-          control2Y = args[3] * scale + offsetY;
-          endX = args[4] * scale + offsetX;
-          endY = args[5] * scale + offsetY;
+          control1X = args[0];
+          control1Y = args[1];
+          control2X = args[2];
+          control2Y = args[3];
+          endX = args[4];
+          endY = args[5];
         } else {
-          control1X = currentX + args[0] * scale;
-          control1Y = currentY + args[1] * scale;
-          control2X = currentX + args[2] * scale;
-          control2Y = currentY + args[3] * scale;
-          endX = currentX + args[4] * scale;
-          endY = currentY + args[5] * scale;
+          control1X = currentX + args[0];
+          control1Y = currentY + args[1];
+          control2X = currentX + args[2];
+          control2Y = currentY + args[3];
+          endX = currentX + args[4];
+          endY = currentY + args[5];
         }
         
         // Update the handle of the last point
@@ -240,11 +178,11 @@ const convertPathToPoints = (
         let endX, endY;
         
         if (type === 'L') {
-          endX = args[0] * scale + offsetX;
-          endY = args[1] * scale + offsetY;
+          endX = args[0];
+          endY = args[1];
         } else {
-          endX = currentX + args[0] * scale;
-          endY = currentY + args[1] * scale;
+          endX = currentX + args[0];
+          endY = currentY + args[1];
         }
         
         // Add new point (for lines, handles are aligned with the line)
