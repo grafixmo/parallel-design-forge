@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { 
   ControlPoint, 
@@ -430,18 +431,30 @@ const Index = () => {
   };
   
   // Load a template from the gallery
-  const handleLoadTemplate = (templateData: string) => {
+  const handleLoadTemplate = (templateData: string, shouldClearCanvas: boolean = true) => {
     try {
       const parsedData: DesignData = JSON.parse(templateData);
       
-      // Clear current objects
-      objects.forEach(obj => deleteObject(obj.id));
+      // Clear current objects if requested
+      if (shouldClearCanvas) {
+        objects.forEach(obj => deleteObject(obj.id));
+      }
       
       // Check if data has objects array (new format) or just points (old format)
       if (parsedData.objects && parsedData.objects.length > 0) {
         // New format with objects
         parsedData.objects.forEach(obj => {
-          createObject(obj.points, obj.name);
+          // Create object with preserved curve configuration and transform settings
+          const newObjectId = createObject(obj.points, obj.name);
+          
+          // Update the object with the original curve configuration and transform if present
+          if (obj.curveConfig) {
+            updateObjectCurveConfig(newObjectId, obj.curveConfig);
+          }
+          
+          if (obj.transform) {
+            updateObjectTransform(newObjectId, obj.transform);
+          }
         });
       } else if (parsedData.points && parsedData.points.length > 0) {
         // Old format with just points, create a single object
@@ -465,6 +478,10 @@ const Index = () => {
         setBackgroundImage(parsedData.backgroundImage.url);
         setBackgroundOpacity(parsedData.backgroundImage.opacity);
       }
+      
+      // Save the current state for undo/redo
+      saveCurrentState();
+      
     } catch (err) {
       console.error('Error loading template:', err);
       toast({

@@ -40,7 +40,7 @@ import { format } from 'date-fns';
 interface TemplateGalleryProps {
   open: boolean;
   onClose: () => void;
-  onSelectTemplate: (templateData: string) => void;
+  onSelectTemplate: (templateData: string, shouldClearCanvas: boolean) => void;
 }
 
 const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSelectTemplate }) => {
@@ -52,8 +52,10 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
+  const [loadDialogOpen, setLoadDialogOpen] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDescription, setNewDescription] = useState('');
+  const [templateToLoad, setTemplateToLoad] = useState<Template | null>(null);
   
   // Fetch templates when the gallery is opened or category changes
   useEffect(() => {
@@ -91,12 +93,23 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
   };
   
   const handleSelectTemplate = (template: Template) => {
-    onSelectTemplate(template.design_data);
+    setTemplateToLoad(template);
+    setLoadDialogOpen(true);
+  };
+  
+  const confirmLoadTemplate = (shouldClearCanvas: boolean) => {
+    if (!templateToLoad) return;
+    
+    onSelectTemplate(templateToLoad.design_data, shouldClearCanvas);
     onClose();
+    
     toast({
       title: 'Template Loaded',
-      description: `"${template.name}" has been loaded to the canvas`
+      description: `"${templateToLoad.name}" has been loaded to the canvas`
     });
+    
+    setLoadDialogOpen(false);
+    setTemplateToLoad(null);
   };
   
   const handleDeleteTemplate = async () => {
@@ -371,6 +384,35 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
             <AlertDialogCancel onClick={() => setSelectedTemplate(null)}>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleDeleteTemplate} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
               Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      
+      {/* Load confirmation dialog */}
+      <AlertDialog open={loadDialogOpen} onOpenChange={setLoadDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Load Template</AlertDialogTitle>
+            <AlertDialogDescription>
+              Do you want to replace the current canvas contents or add this template to the existing canvas?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col space-y-2 sm:space-y-0 sm:flex-row">
+            <AlertDialogCancel onClick={() => {
+              setLoadDialogOpen(false);
+              setTemplateToLoad(null);
+            }}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={() => confirmLoadTemplate(true)} 
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Replace Canvas
+            </AlertDialogAction>
+            <AlertDialogAction onClick={() => confirmLoadTemplate(false)}>
+              Add to Canvas
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
