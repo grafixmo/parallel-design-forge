@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+
+import React, { useState, useEffect, useCallback, memo } from 'react';
 import { 
   Dialog, 
   DialogContent, 
@@ -42,6 +43,100 @@ interface TemplateGalleryProps {
   onSelectTemplate: (templateData: string, shouldClearCanvas: boolean) => void;
 }
 
+// Memoized template card component to prevent unnecessary re-renders
+const TemplateCard = memo(({ 
+  template, 
+  onSelect, 
+  onLike, 
+  onEdit, 
+  onDelete, 
+  formatDate 
+}: { 
+  template: Template, 
+  onSelect: (template: Template) => void,
+  onLike: (template: Template, e: React.MouseEvent) => void,
+  onEdit: (template: Template, e: React.MouseEvent) => void,
+  onDelete: (template: Template, e: React.MouseEvent) => void,
+  formatDate: (date?: string) => string
+}) => {
+  return (
+    <div 
+      key={template.id}
+      onClick={() => onSelect(template)}
+      className="group border rounded-md p-3 hover:shadow-md transition-all cursor-pointer bg-white flex flex-col"
+    >
+      <div className="aspect-video mb-2 bg-gray-100 rounded flex items-center justify-center overflow-hidden relative">
+        {template.thumbnail ? (
+          <img 
+            src={template.thumbnail} 
+            alt={template.name}
+            className="w-full h-full object-contain"
+            onError={(e) => {
+              // Fallback for broken image links
+              (e.target as HTMLImageElement).src = '/placeholder.svg';
+            }}
+            loading="lazy" // Add lazy loading for images
+          />
+        ) : (
+          <ExternalLink className="h-8 w-8 text-gray-300" />
+        )}
+        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-all flex items-center justify-center opacity-0 group-hover:opacity-100">
+          <span className="text-xs font-medium text-white bg-black bg-opacity-70 px-2 py-1 rounded">
+            Click to load
+          </span>
+        </div>
+      </div>
+      
+      <div className="flex-1">
+        <h3 className="font-medium text-sm truncate" title={template.name}>{template.name}</h3>
+        {template.description && (
+          <p className="text-xs text-gray-500 truncate mt-1" title={template.description}>
+            {template.description}
+          </p>
+        )}
+      </div>
+      
+      <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100">
+        <div className="flex items-center space-x-1 text-xs text-muted-foreground">
+          <button 
+            onClick={(e) => onLike(template, e)}
+            className="text-muted-foreground hover:text-red-500 transition-colors"
+            title="Like this template"
+          >
+            <Heart className="h-3.5 w-3.5" fill={template.likes && template.likes > 0 ? "currentColor" : "none"} />
+          </button>
+          <span>{template.likes || 0}</span>
+        </div>
+        
+        <div className="flex items-center space-x-1">
+          <button 
+            onClick={(e) => onEdit(template, e)} 
+            className="text-muted-foreground hover:text-primary transition-colors"
+            title="Edit template"
+          >
+            <Edit className="h-3.5 w-3.5" />
+          </button>
+          <button 
+            onClick={(e) => onDelete(template, e)}
+            className="text-muted-foreground hover:text-destructive transition-colors"
+            title="Delete template"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
+      
+      <div className="mt-1">
+        <span className="text-[10px] text-muted-foreground">
+          {formatDate(template.created_at)}
+        </span>
+      </div>
+    </div>
+  );
+});
+
+TemplateCard.displayName = 'TemplateCard';
+
 const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSelectTemplate }) => {
   const { toast } = useToast();
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -59,29 +154,56 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
   const [templateToLoad, setTemplateToLoad] = useState<Template | null>(null);
   const [templateLoadError, setTemplateLoadError] = useState<string | null>(null);
   
-  // Fetch templates when the gallery is opened or category changes
+  // Fetch templates when the gallery is opened or category changes, with debounce
   useEffect(() => {
+    let isMounted = true;
+    
     if (open) {
-      fetchTemplates();
+      // Use a timeout to prevent rapid refetching
+      const timer = setTimeout(() => {
+        if (isMounted) {
+          fetchTemplates();
+        }
+      }, 300);
+      
+      return () => {
+        clearTimeout(timer);
+        isMounted = false;
+      };
     }
   }, [open, activeCategory]);
   
-  // Cleanup effect when gallery is closed
+  // Progressive cleanup effect when gallery is closed
   useEffect(() => {
     if (!open) {
-      // Reset state to avoid memory leaks and stale data
-      setSelectedTemplate(null);
+      // First, close any open dialogs
       setLoadDialogOpen(false);
       setDeleteDialogOpen(false);
       setRenameDialogOpen(false);
-      setTemplateToLoad(null);
-      setTemplateLoadError(null);
-      setLoadingTemplate(false);
-      setLoadingProgress(0);
+      
+      // After a delay, reset state to avoid memory leaks
+      const timer = setTimeout(() => {
+        setSelectedTemplate(null);
+        setTemplateToLoad(null);
+        setTemplateLoadError(null);
+        setLoadingTemplate(false);
+        setLoadingProgress(0);
+      }, 500);
+      
+      return () => clearTimeout(timer);
     }
   }, [open]);
   
-  const fetchTemplates = async () => {
+  // Memory management - clear templates when component unmounts
+  useEffect(() => {
+    return () => {
+      setTemplates([]);
+    };
+  }, []);
+  
+  const fetchTemplates = useCallback(async () => {
+    if (!open) return; // Don't fetch if gallery is closed
+    
     setIsLoading(true);
     try {
       const response = activeCategory === 'all' 
@@ -92,16 +214,41 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
         throw new Error(response.error.message);
       }
       
-      // Process templates - ensure they have valid thumbnails and other required properties
-      const validTemplates = (response.data || []).map(template => ({
-        ...template,
-        // Ensure the thumbnail exists, otherwise use a placeholder
-        thumbnail: template.thumbnail || 'placeholder.svg',
-        // Ensure likes property is defined
-        likes: template.likes || 0
-      }));
+      // Process templates in chunks to prevent UI freezing
+      const processTemplatesInChunks = (allTemplates: Template[], chunkSize = 20) => {
+        let processed = 0;
+        
+        const processNextChunk = () => {
+          if (processed >= allTemplates.length) {
+            setIsLoading(false);
+            return;
+          }
+          
+          const chunk = allTemplates.slice(processed, processed + chunkSize);
+          
+          // Process templates - ensure they have valid thumbnails and other required properties
+          const validTemplates = chunk.map(template => ({
+            ...template,
+            // Ensure the thumbnail exists, otherwise use a placeholder
+            thumbnail: template.thumbnail || 'placeholder.svg',
+            // Ensure likes property is defined
+            likes: template.likes || 0
+          }));
+          
+          setTemplates(prev => [...prev, ...validTemplates]);
+          processed += chunkSize;
+          
+          // Process next chunk in next tick
+          setTimeout(processNextChunk, 0);
+        };
+        
+        // Start processing
+        setTemplates([]);
+        processNextChunk();
+      };
       
-      setTemplates(validTemplates);
+      // Start processing templates
+      processTemplatesInChunks(response.data || []);
     } catch (error) {
       console.error('Error fetching templates:', error);
       toast({
@@ -110,23 +257,22 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
         variant: 'destructive'
       });
       setTemplates([]);
-    } finally {
       setIsLoading(false);
     }
-  };
+  }, [activeCategory, open, toast]);
   
   const handleCategoryChange = (category: string) => {
     setActiveCategory(category);
   };
   
-  const handleSelectTemplate = (template: Template) => {
+  const handleSelectTemplate = useCallback((template: Template) => {
     // Clear any previous errors
     setTemplateLoadError(null);
     setTemplateToLoad(template);
     setLoadDialogOpen(true);
-  };
+  }, []);
   
-  const confirmLoadTemplate = async (shouldClearCanvas: boolean) => {
+  const confirmLoadTemplate = useCallback(async (shouldClearCanvas: boolean) => {
     if (!templateToLoad) return;
     
     try {
@@ -168,13 +314,26 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
       // Allow a brief moment to show 100% completion
       await new Promise(resolve => setTimeout(resolve, 200));
       
-      onSelectTemplate(templateToLoad.design_data, shouldClearCanvas);
-      onClose();
+      // First close dialog and clean up
+      setLoadDialogOpen(false);
       
-      toast({
-        title: 'Template Loaded',
-        description: `"${templateToLoad.name}" has been loaded to the canvas`
-      });
+      // Then with a small delay to prevent UI freeze, load the template
+      setTimeout(() => {
+        onSelectTemplate(templateToLoad.design_data, shouldClearCanvas);
+        
+        toast({
+          title: 'Template Loaded',
+          description: `"${templateToLoad.name}" has been loaded to the canvas`
+        });
+        
+        // Clean up after loading
+        setTemplateToLoad(null);
+        setLoadingTemplate(false);
+        setLoadingProgress(0);
+        
+        // Finally close the gallery
+        onClose();
+      }, 300);
     } catch (error) {
       console.error('Error loading template:', error);
       setTemplateLoadError(error instanceof Error ? error.message : 'Unknown error loading template');
@@ -184,10 +343,11 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
         description: 'There was a problem processing the template data',
         variant: 'destructive'
       });
-    } finally {
+      
       setLoadingTemplate(false);
+      clearInterval();
     }
-  };
+  }, [templateToLoad, onSelectTemplate, toast, onClose]);
   
   const handleDeleteTemplate = async () => {
     if (!selectedTemplate) return;
@@ -280,19 +440,19 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
     }
   };
   
-  const handleOpenDeleteDialog = (template: Template, e: React.MouseEvent) => {
+  const handleOpenDeleteDialog = useCallback((template: Template, e: React.MouseEvent) => {
     e.stopPropagation(); // Prevent template selection
     setSelectedTemplate(template);
     setDeleteDialogOpen(true);
-  };
+  }, []);
   
-  const handleOpenRenameDialog = (template: Template, e: React.MouseEvent) => {
+  const handleOpenRenameDialog = useCallback((template: Template, e: React.MouseEvent) => {
     e.stopPropagation(); // Prevent template selection
     setSelectedTemplate(template);
     setNewName(template.name);
     setNewDescription(template.description || '');
     setRenameDialogOpen(true);
-  };
+  }, []);
   
   // Filter templates by search query
   const filteredTemplates = templates.filter(template => 
@@ -301,14 +461,14 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
   );
   
   // Format date for display
-  const formatDate = (dateString?: string) => {
+  const formatDate = useCallback((dateString?: string) => {
     if (!dateString) return 'Unknown date';
     try {
       return format(new Date(dateString), 'MMM d, yyyy');
     } catch (error) {
       return 'Invalid date';
     }
-  };
+  }, []);
   
   return (
     <>
@@ -369,77 +529,15 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
               ) : (
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 p-1">
                   {filteredTemplates.map((template) => (
-                    <div 
+                    <TemplateCard
                       key={template.id}
-                      onClick={() => handleSelectTemplate(template)}
-                      className="group border rounded-md p-3 hover:shadow-md transition-all cursor-pointer bg-white flex flex-col"
-                    >
-                      <div className="aspect-video mb-2 bg-gray-100 rounded flex items-center justify-center overflow-hidden relative">
-                        {template.thumbnail ? (
-                          <img 
-                            src={template.thumbnail} 
-                            alt={template.name}
-                            className="w-full h-full object-contain"
-                            onError={(e) => {
-                              // Fallback for broken image links
-                              (e.target as HTMLImageElement).src = '/placeholder.svg';
-                            }}
-                          />
-                        ) : (
-                          <ExternalLink className="h-8 w-8 text-gray-300" />
-                        )}
-                        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-all flex items-center justify-center opacity-0 group-hover:opacity-100">
-                          <span className="text-xs font-medium text-white bg-black bg-opacity-70 px-2 py-1 rounded">
-                            Click to load
-                          </span>
-                        </div>
-                      </div>
-                      
-                      <div className="flex-1">
-                        <h3 className="font-medium text-sm truncate" title={template.name}>{template.name}</h3>
-                        {template.description && (
-                          <p className="text-xs text-gray-500 truncate mt-1" title={template.description}>
-                            {template.description}
-                          </p>
-                        )}
-                      </div>
-                      
-                      <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100">
-                        <div className="flex items-center space-x-1 text-xs text-muted-foreground">
-                          <button 
-                            onClick={(e) => handleLikeTemplate(template, e)}
-                            className="text-muted-foreground hover:text-red-500 transition-colors"
-                            title="Like this template"
-                          >
-                            <Heart className="h-3.5 w-3.5" fill={template.likes && template.likes > 0 ? "currentColor" : "none"} />
-                          </button>
-                          <span>{template.likes || 0}</span>
-                        </div>
-                        
-                        <div className="flex items-center space-x-1">
-                          <button 
-                            onClick={(e) => handleOpenRenameDialog(template, e)} 
-                            className="text-muted-foreground hover:text-primary transition-colors"
-                            title="Edit template"
-                          >
-                            <Edit className="h-3.5 w-3.5" />
-                          </button>
-                          <button 
-                            onClick={(e) => handleOpenDeleteDialog(template, e)}
-                            className="text-muted-foreground hover:text-destructive transition-colors"
-                            title="Delete template"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                      
-                      <div className="mt-1">
-                        <span className="text-[10px] text-muted-foreground">
-                          {formatDate(template.created_at)}
-                        </span>
-                      </div>
-                    </div>
+                      template={template}
+                      onSelect={handleSelectTemplate}
+                      onLike={handleLikeTemplate}
+                      onEdit={handleOpenRenameDialog}
+                      onDelete={handleOpenDeleteDialog}
+                      formatDate={formatDate}
+                    />
                   ))}
                 </div>
               )}

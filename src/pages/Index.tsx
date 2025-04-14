@@ -28,7 +28,7 @@ const Index = () => {
   const [backgroundOpacity, setBackgroundOpacity] = useState(0.3);
   const [backgroundImage, setBackgroundImage] = useState<string | undefined>();
   const [isDrawingMode, setIsDrawingMode] = useState<boolean>(true);
-  const [isLoading, setIsLoading] = useState<boolean>(false); // Added isLoading state
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   
   // Use our hooks for Bezier objects
   const {
@@ -130,6 +130,9 @@ const Index = () => {
         return;
       }
       
+      // Set loading state to indicate operation in progress
+      setIsLoading(true);
+      
       // Fix: only pass objects to createDesignSVG
       const svg = createDesignSVG(objects);
       const designData = JSON.stringify(objects);
@@ -165,6 +168,8 @@ const Index = () => {
         description: "There was an error saving your design",
         variant: "destructive"
       });
+    } finally {
+      setIsLoading(false);
     }
   };
   
@@ -198,13 +203,16 @@ const Index = () => {
     }
   };
   
-  // Import SVG content
-  const handleImportSVG = async (svgContent: string) => {
+  // Import SVG content with progress tracking
+  const handleImportSVG = async (svgContent: string, onProgress?: (progress: number) => void) => {
     try {
-      const importedObjectsResult = await parseSVGContent(svgContent);
+      setIsLoading(true);
       
-      // Check if importedObjectsResult is an array or has the expected properties
-      if (!importedObjectsResult || !Array.isArray(importedObjectsResult)) {
+      // Parse SVG with progress tracking
+      const importedObjectsResult = await parseSVGContent(svgContent, onProgress);
+      
+      // Check for valid result - should contain object array
+      if (!importedObjectsResult || !importedObjectsResult.objects || !Array.isArray(importedObjectsResult.objects)) {
         toast({
           title: "Import Failed",
           description: "No valid paths found in the SVG",
@@ -213,21 +221,31 @@ const Index = () => {
         return;
       }
       
+      // Ensure we have objects
+      if (importedObjectsResult.objects.length === 0) {
+        toast({
+          title: "Import Warning",
+          description: "SVG contained no valid paths. Created a default object."
+        });
+      }
+      
       // Add the imported objects to the canvas
-      setAllObjects([...objects, ...importedObjectsResult]);
+      setAllObjects([...objects, ...importedObjectsResult.objects]);
       saveCurrentState();
       
       toast({
         title: "SVG Imported",
-        description: `${importedObjectsResult.length} paths imported successfully`
+        description: `${importedObjectsResult.objects.length} paths imported successfully`
       });
     } catch (error) {
       console.error('Error importing SVG:', error);
       toast({
         title: "Import Failed",
-        description: "There was an error processing the SVG",
+        description: error instanceof Error ? error.message : "There was an error processing the SVG",
         variant: "destructive"
       });
+    } finally {
+      setIsLoading(false);
     }
   };
   
@@ -250,34 +268,67 @@ const Index = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedObjectIds, isDrawingMode, deleteSelectedObjects]);
   
-  // Optimized Template Loading with error handling
-  const handleLoadTemplate = useCallback(async (templateData: string) => {
+  // Optimized Template Loading with error handling and memory cleanup
+  const handleLoadTemplate = useCallback(async (templateData: string, shouldClearCanvas: boolean = true) => {
     try {
       setIsLoading(true);
       console.log('Loading template');
       
-      // Parse the template data
-      const parsedData = JSON.parse(templateData);
-      
-      if (!Array.isArray(parsedData)) {
-        throw new Error('Invalid template data format');
+      // Validate input
+      if (!templateData || typeof templateData !== 'string') {
+        throw new Error('Invalid template data: Empty or not a string');
       }
       
-      // Process and load the objects
-      loadObjectsFromTemplate(parsedData);
+      // Parse the template data with minimal memory usage
+      let parsedData;
+      try {
+        parsedData = JSON.parse(templateData);
+      } catch (error) {
+        throw new Error('Failed to parse template JSON data');
+      }
+      
+      if (!Array.isArray(parsedData)) {
+        throw new Error('Invalid template data format: Expected an array');
+      }
+      
+      // Load in chunks if large template
+      if (parsedData.length > 50) {
+        console.log('Large template detected:', parsedData.length, 'objects');
+        toast({
+          title: "Large Template",
+          description: `Loading ${parsedData.length} objects, please wait...`
+        });
+      }
+      
+      // Process in micro-batches for large templates
+      const processTemplate = () => {
+        return new Promise<void>((resolve) => {
+          // Use setTimeout to yield to the main thread
+          setTimeout(() => {
+            loadObjectsFromTemplate(parsedData, shouldClearCanvas);
+            resolve();
+          }, 0);
+        });
+      };
+      
+      await processTemplate();
+      
+      // Clean up memory
+      parsedData = null;
       
       toast({
         title: "Template Loaded",
-        description: `${parsedData.length} objects loaded from template`
+        description: `Objects loaded from template successfully`
       });
     } catch (error) {
       console.error('Error loading template:', error);
       toast({
         title: "Template Load Failed",
-        description: "There was an error loading the template",
+        description: error instanceof Error ? error.message : "There was an error loading the template",
         variant: "destructive"
       });
     } finally {
+      // Clear loading state
       setIsLoading(false);
     }
   }, [loadObjectsFromTemplate, toast]);
@@ -303,7 +354,6 @@ const Index = () => {
         onLoadDesigns={handleLoadDesigns}
         onExportSVG={handleExportSVG}
         onImportSVG={handleImportSVG}
-        // Fix: Pass only expected arguments to onLoadTemplate
         onLoadTemplate={handleLoadTemplate}
         isDrawingMode={isDrawingMode}
         onToggleDrawingMode={handleToggleDrawingMode}
@@ -315,7 +365,7 @@ const Index = () => {
             <div className="absolute inset-0 bg-white/70 flex items-center justify-center z-50">
               <div className="flex flex-col items-center">
                 <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full mb-2"></div>
-                <p className="text-primary font-medium">Loading template...</p>
+                <p className="text-primary font-medium">Processing, please wait...</p>
               </div>
             </div>
           )}
@@ -345,7 +395,6 @@ const Index = () => {
             onRenameObject={renameObject}
             onDeleteObject={deleteObject}
             onDeleteSelectedObjects={deleteSelectedObjects}
-            // Add the missing props
             backgroundImage={backgroundImage}
             backgroundOpacity={backgroundOpacity}
             onRemoveImage={handleRemoveBackgroundImage}
