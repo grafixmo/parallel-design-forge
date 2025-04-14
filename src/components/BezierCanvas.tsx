@@ -902,23 +902,24 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     };
   }, [selectedObjectIds, isDrawingMode, onUndo, currentDrawingObjectId, objects]);
   
-  return (
-    <div ref={wrapperRef} className="relative w-full h-full overflow-hidden">
-      <canvas
-        ref={canvasRef}
-        width={width}
-        height={height}
-        className="w-full h-full bg-white"
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onDoubleClick={handleDoubleClick}
-        onWheel={handleWheel}
-        onContextMenu={handleContextMenu}
-      />
-      
-      <div className="absolute bottom-4 left-4 text-sm text-gray-500 bg-white/80 px-3 py-1 rounded shadow">
-        {instructionMessage}
-      </div>
-      
-      <div className="absolute top-4 right-4 flex space-x-
+  // Handle zoom in function
+  const handleZoomIn = () => {
+    const newZoom = Math.min(5, zoom * (1 + ZOOM_FACTOR));
+    setZoom(newZoom);
+    toast({
+      title: `Zoom: ${Math.round(newZoom * 100)}%`,
+      description: 'Zoomed in'
+    });
+  };
+
+  // Handle zoom out function
+  const handleZoomOut = () => {
+    const newZoom = Math.max(0.1, zoom * (1 - ZOOM_FACTOR));
+    setZoom(newZoom);
+    toast({
+      title: `Zoom: ${Math.round(newZoom * 100)}%`,
+      description: 'Zoomed out'
+    });
+  };
+
+  // Handle reset view function
