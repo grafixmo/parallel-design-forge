@@ -1,4 +1,3 @@
-
 import React, { useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { PenLine, Trash2, Upload, Save, Database, MousePointer, Image, Import, FileUp, Download } from 'lucide-react';
@@ -97,6 +96,12 @@ const Header: React.FC<HeaderProps> = ({
     }
     
     try {
+      // Show loading toast
+      toast({
+        title: "Reading SVG File",
+        description: "Preparing to import your SVG design...",
+      });
+      
       // Read file content
       const reader = new FileReader();
       reader.onload = (event) => {

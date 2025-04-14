@@ -1,4 +1,3 @@
-
 import React, { useRef, useEffect, useState } from 'react';
 import { 
   ControlPoint, 
@@ -271,7 +270,10 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     }
     
     // Draw all bezier objects
-    for (const object of objects) {
+    // Draw objects in reverse order so the first objects (which are usually imported ones)
+    // appear on top for easier selection
+    for (let i = objects.length - 1; i >= 0; i--) {
+      const object = objects[i];
       const isObjectSelected = selectedObjectIds.includes(object.id);
       const isDrawingObject = object.id === currentDrawingObjectId;
       
@@ -902,135 +904,4 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // ESC key to exit drawing mode or clear selections
-      if (e.key === 'Escape') {
-        if (currentDrawingObjectId) {
-          // Cancel the current drawing
-          cancelDrawing();
-        } else {
-          clearSelections();
-          // Also clear object selection when pressing ESC
-          if (selectedObjectIds.length > 0) {
-            onObjectSelect('', false);
-          }
-        }
-      }
-      
-      // Delete key to delete selected objects
-      if (e.key === 'Delete' && !isDrawingMode && selectedObjectIds.length > 0) {
-        // This would be handled by the parent component
-        toast({
-          title: `${selectedObjectIds.length} objects deleted`,
-          description: 'Selected objects have been removed'
-        });
-      }
-      
-      // Enter key to finalize drawing
-      if (e.key === 'Enter' && currentDrawingObjectId) {
-        finalizeDrawingObject();
-      }
-      
-      // Ctrl+Z for undo
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
-        e.preventDefault();
-        onUndo();
-      }
-      
-      // Space to enable panning
-      if (e.key === ' ' && !e.repeat) {
-        e.preventDefault();
-        setIsSpacePressed(true);
-      }
-    };
-    
-    const handleKeyUp = (e: KeyboardEvent) => {
-      // Space to disable panning
-      if (e.key === ' ') {
-        setIsSpacePressed(false);
-      }
-    };
-    
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
-    
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
-    };
-  }, [selectedObjectIds, isDrawingMode, onUndo, currentDrawingObjectId, objects]);
-  
-  // Handle zoom in function
-  const handleZoomIn = () => {
-    const newZoom = Math.min(5, zoom * (1 + ZOOM_FACTOR));
-    setZoom(newZoom);
-    toast({
-      title: `Zoom: ${Math.round(newZoom * 100)}%`,
-      description: 'Zoomed in'
-    });
-  };
-
-  // Handle zoom out function
-  const handleZoomOut = () => {
-    const newZoom = Math.max(0.1, zoom * (1 - ZOOM_FACTOR));
-    setZoom(newZoom);
-    toast({
-      title: `Zoom: ${Math.round(newZoom * 100)}%`,
-      description: 'Zoomed out'
-    });
-  };
-
-  // Handle reset view
-  const handleResetView = () => {
-    setZoom(1);
-    setPanOffset({ x: 0, y: 0 });
-    toast({
-      title: 'View Reset',
-      description: 'Zoom and pan have been reset'
-    });
-  };
-
-  return (
-    <div ref={wrapperRef} className="relative w-full h-full">
-      <canvas
-        ref={canvasRef}
-        width={width || 800}
-        height={height || 600}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onDoubleClick={handleDoubleClick}
-        onContextMenu={handleContextMenu}
-        onWheel={handleWheel}
-        className="border border-gray-300 w-full h-full"
-        style={{ minWidth: "400px", minHeight: "300px" }}
-      />
-
-      {/* Toolbar buttons */}
-      <div className="absolute top-2 left-2 z-10 flex gap-2 bg-white/90 backdrop-blur-sm p-1 rounded shadow">
-        <Button size="icon" onClick={handleZoomIn} title="Zoom In">
-          <ZoomIn className="w-4 h-4" />
-        </Button>
-        <Button size="icon" onClick={handleZoomOut} title="Zoom Out">
-          <ZoomOut className="w-4 h-4" />
-        </Button>
-        <Button size="icon" onClick={handleResetView} title="Reset View">
-          <RotateCcw className="w-4 h-4" />
-        </Button>
-        <Button size="icon" onClick={onUndo} title="Undo">
-          <Undo className="w-4 h-4" />
-        </Button>
-      </div>
-
-      {/* Instruction message */}
-      <div className="absolute bottom-2 left-2 text-sm text-gray-700 bg-white/80 px-2 py-1 rounded shadow">
-        {instructionMessage}
-      </div>
-      
-      {/* Canvas size debug info */}
-      <div className="absolute bottom-2 right-2 text-xs text-gray-500 bg-white/50 px-1 py-0.5 rounded">
-        Canvas: {width}x{height}
-      </div>
-    </div>
-  );
-};
-
-export default BezierCanvas;
+      if (e.

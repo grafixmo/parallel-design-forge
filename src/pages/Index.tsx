@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { 
   ControlPoint, 
@@ -211,12 +210,20 @@ const Index = () => {
         }
       });
       
+      // Select the first imported object automatically to make it easier to find
+      if (importResult.objects.length > 0) {
+        setTimeout(() => {
+          selectObject(objects[0]?.id, false);
+        }, 500);
+      }
+      
       // Save current state for undo/redo
       saveCurrentState();
       
       toast({
         title: 'Import Successful',
-        description: `Imported ${importResult.objects.length} objects from SVG`
+        description: `Imported ${importResult.objects.length} objects from SVG. The first object has been selected for you.`,
+        duration: 5000
       });
       
       // Switch to selection mode to interact with imported objects
@@ -289,7 +296,7 @@ const Index = () => {
         category,
         description,
         hasDesignData: !!template.design_data,
-        hasThumbnail: !!thumbnail,
+        hasThumbnail: !!svgContent,
         hasSvgContent: !!svgContent
       });
       
