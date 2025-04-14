@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Slider } from '@/components/ui/slider';
 import { Input } from '@/components/ui/input';
@@ -50,7 +49,6 @@ interface ObjectControlsPanelProps {
   onRenameObject: (objectId: string, name: string) => void;
   onDeleteObject: (objectId: string) => void;
   onDeleteSelectedObjects: () => void;
-  // Add missing props for background image functionality
   backgroundImage?: string;
   backgroundOpacity: number;
   onRemoveImage: () => void;
@@ -94,11 +92,15 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
           newStyles.push({ ...baseStyle });
         }
         
+        // Make sure we have a valid spacing value
+        const spacing = object.curveConfig.spacing || 10;
+        
         // Update the curve config with new count and ensure styles
         onUpdateCurveConfig(objectId, {
           ...object.curveConfig,
           parallelCount: count,
-          styles: newStyles
+          styles: newStyles,
+          spacing: spacing
         });
       }
     }
@@ -346,7 +348,7 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
                       </Label>
                       <Slider
                         id="curve-spacing"
-                        value={[selectedObject.curveConfig.spacing]}
+                        value={[selectedObject.curveConfig.spacing || 10]}
                         min={2}
                         max={50}
                         step={1}
@@ -359,7 +361,7 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
                     <div className="space-y-2 pt-2">
                       <p className="text-xs text-gray-500">Individual Curve Styles</p>
                       
-                      {Array.from({ length: Math.min(selectedObject.curveConfig.parallelCount, 4) }).map((_, i) => (
+                      {Array.from({ length: selectedObject.curveConfig.parallelCount }).map((_, i) => (
                         <div key={i} className={cn(
                           "p-2 border border-gray-100 rounded-md",
                           i === 0 ? "bg-gray-50" : ""
@@ -376,7 +378,7 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
                                 <ColorPicker 
                                   color={selectedObject.curveConfig.styles[i]?.color || '#000000'}
                                   onChange={(color) => handleParallelStyleChange(selectedObject.id, i, {
-                                    ...selectedObject.curveConfig.styles[i],
+                                    ...(selectedObject.curveConfig.styles[i] || { width: 2 }),
                                     color
                                   })}
                                   className="h-6 w-6"
@@ -390,7 +392,7 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
                                 type="number"
                                 value={selectedObject.curveConfig.styles[i]?.width || 2}
                                 onChange={(e) => handleParallelStyleChange(selectedObject.id, i, {
-                                  ...selectedObject.curveConfig.styles[i],
+                                  ...(selectedObject.curveConfig.styles[i] || { color: '#000000' }),
                                   width: Number(e.target.value)
                                 })}
                                 min={1}

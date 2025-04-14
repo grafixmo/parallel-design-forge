@@ -82,7 +82,7 @@ export class BezierObjectRenderer {
     console.log(`Rendering object ${object.id} with parallelCount: ${parallelCount}, spacing: ${spacing}`);
     console.log(`Styles:`, styles);
     
-    // If there are no parallel curves (single curve)
+    // Draw curves according to parallelCount
     if (parallelCount <= 1) {
       // Draw just the main curve with the first style
       const mainStyle = styles[0] || { color: '#000000', width: 2 };
@@ -93,27 +93,11 @@ export class BezierObjectRenderer {
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
       
-      this.drawBezierPath(ctx, 0);
+      this.drawBezierPath(ctx);
       ctx.stroke();
     } else {
       // Draw multiple parallel curves
-      // Calculate offsets for parallel curves centered around the main curve
-      const totalCurves = Math.min(parallelCount, styles.length);
-      const offsets = [];
-      
-      if (totalCurves % 2 === 0) {
-        // Even number of curves
-        const halfCount = totalCurves / 2;
-        for (let i = 0; i < totalCurves; i++) {
-          offsets.push((i - halfCount + 0.5) * spacing);
-        }
-      } else {
-        // Odd number of curves (center one is at offset 0)
-        const halfCount = Math.floor(totalCurves / 2);
-        for (let i = -halfCount; i <= halfCount; i++) {
-          offsets.push(i * spacing);
-        }
-      }
+      const offsets = this.calculateParallelOffsets(parallelCount, spacing);
       
       // Draw each parallel curve with its style
       offsets.forEach((offset, index) => {
@@ -147,8 +131,33 @@ export class BezierObjectRenderer {
     ctx.restore();
   }
   
+  // Calculate offsets for parallel curves
+  private calculateParallelOffsets(count: number, spacing: number): number[] {
+    const offsets: number[] = [];
+    
+    if (count <= 1) {
+      return [0]; // Just the main curve
+    }
+    
+    if (count % 2 === 0) {
+      // Even number of curves
+      const halfCount = count / 2;
+      for (let i = 0; i < count; i++) {
+        offsets.push((i - halfCount + 0.5) * spacing);
+      }
+    } else {
+      // Odd number of curves (center one is at offset 0)
+      const halfCount = Math.floor(count / 2);
+      for (let i = -halfCount; i <= halfCount; i++) {
+        offsets.push(i * spacing);
+      }
+    }
+    
+    return offsets;
+  }
+  
   // Draw the bezier path for the main curve
-  private drawBezierPath(ctx: CanvasRenderingContext2D, offset: number): void {
+  private drawBezierPath(ctx: CanvasRenderingContext2D): void {
     const { points } = this.object;
     if (points.length < 2) return;
     
@@ -176,27 +185,26 @@ export class BezierObjectRenderer {
     const { points } = this.object;
     if (points.length < 2) return;
     
-    // For parallel paths, we need to calculate offset points
-    const steps = 50; // Number of points to sample along the curve
-    
-    // Get first point
-    let prevPoint = null;
-    
-    // Sample the bezier curve and create a parallel curve
-    for (let t = 0; t <= 1; t += 1/steps) {
-      // For each segment
-      for (let i = 0; i < points.length - 1; i++) {
-        const p0 = points[i];
-        const p1 = points[i].handleOut;
-        const p2 = points[i+1].handleIn;
-        const p3 = points[i+1];
-        
+    // For each segment in the curve
+    for (let i = 0; i < points.length - 1; i++) {
+      const p0 = points[i];
+      const p1 = points[i].handleOut;
+      const p2 = points[i+1].handleIn;
+      const p3 = points[i+1];
+      
+      // Calculate parallel curve points
+      const steps = 30; // Number of points to approximate the curve
+      let prevPoint: Point | null = null;
+      
+      for (let t = 0; t <= 1; t += 1/steps) {
         // Get point on parallel curve
         const point = calculateParallelPoint(p0, p1, p2, p3, t, offset);
         
-        if (prevPoint === null) {
+        if (t === 0) {
+          // For first point, just move to it
           ctx.moveTo(point.x, point.y);
         } else {
+          // For subsequent points, draw line
           ctx.lineTo(point.x, point.y);
         }
         

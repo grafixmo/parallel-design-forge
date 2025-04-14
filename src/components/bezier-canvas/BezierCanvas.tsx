@@ -1,4 +1,3 @@
-
 import React, { useRef, useEffect, useCallback } from 'react';
 import { BezierObject, SelectedPoint, ControlPointType, Point } from '@/types/bezier';
 import { useCanvasHandlers } from './hooks/useCanvasHandlers';
