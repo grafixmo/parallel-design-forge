@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
   ControlPoint, 
@@ -135,7 +134,7 @@ const Index = () => {
       const designData = JSON.stringify(objects);
       
       // Generate a thumbnail
-      const thumbnail = await generateThumbnailFromSVG(svg, 300, 200);
+      const thumbnail = await generateThumbnailFromSVG(svg);
       
       // Create template object
       const template: Template = {
