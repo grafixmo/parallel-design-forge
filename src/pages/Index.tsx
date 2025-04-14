@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback } from 'react';
 import { 
   ControlPoint, 
@@ -179,7 +180,8 @@ const Index = () => {
         return;
       }
       
-      const svg = await exportAsSVG(objects, canvasWidth, canvasHeight);
+      // Fix: The function expects the objects array and canvas dimensions, not individual values
+      const svg = await createDesignSVG(objects, canvasWidth, canvasHeight);
       downloadSVG(svg, 'qordatta-design.svg');
       
       toast({
