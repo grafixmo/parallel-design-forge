@@ -14,6 +14,7 @@ import { SavedDesign, BezierObject, DesignData } from '@/types/bezier';
 import { getDesigns, getDesignsByCategory } from '@/services/supabaseClient';
 import { X } from 'lucide-react';
 import { convertShapesDataToObjects } from '@/utils/bezierUtils';
+import { useToast } from '@/hooks/use-toast';
 
 interface LibraryPanelProps {
   onClose: () => void;
@@ -25,6 +26,7 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign }) 
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
 
   useEffect(() => {
     fetchDesigns();
@@ -82,27 +84,52 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign }) 
         throw new Error('Design contains no data');
       }
       
-      // Pre-process the design data to check its format
+      // Parse the design data
       const parsedData = JSON.parse(design.shapes_data);
+      console.log('Design data format:', parsedData);
       
-      // Test if we can process the data - this will convert it if it's in a compatible format
+      // Validate the data before proceeding
+      let validFormat = false;
+      let objectCount = 0;
+      
+      // Check if we have an array of shapes or objects
       if (Array.isArray(parsedData)) {
+        // Try to pre-process the data with our utility function
         const objects = convertShapesDataToObjects(parsedData);
-        console.log(`Converted design ${design.id} to ${objects.length} objects`);
+        objectCount = objects.length;
+        validFormat = objects.length > 0;
         
-        // Only proceed if we could extract some objects
-        if (objects.length === 0) {
-          console.warn(`Design ${design.id} could not be converted to any objects`);
+        console.log(`Converted design to ${objectCount} objects`);
+      } 
+      // Check if it's an object with the DesignData structure
+      else if (typeof parsedData === 'object' && parsedData !== null) {
+        if (parsedData.objects && Array.isArray(parsedData.objects)) {
+          objectCount = parsedData.objects.length;
+          validFormat = objectCount > 0;
+        } else if (parsedData.points && Array.isArray(parsedData.points)) {
+          objectCount = 1; // Legacy format with just points
+          validFormat = parsedData.points.length > 0;
         }
       }
       
-      // If we got here, either the data is in a format our Index component can handle,
-      // or we've converted it to a format that can be handled
-      onSelectDesign(design);
-      onClose();
+      // If the format is valid, proceed with selecting the design
+      if (validFormat) {
+        onSelectDesign(design);
+        onClose();
+        return;
+      }
+      
+      // If we couldn't validate the format, show an error
+      throw new Error(`Could not process design format. Object count: ${objectCount}`);
     } catch (err) {
       console.error('Error validating design:', err);
       setError(`Failed to load design "${design.name}". The format may be incompatible.`);
+      
+      toast({
+        title: 'Format Error',
+        description: `Design "${design.name}" has an incompatible format. Please try another design.`,
+        variant: 'destructive'
+      });
     }
   };
 
