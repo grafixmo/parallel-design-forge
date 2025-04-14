@@ -923,3 +923,53 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
   };
 
   // Handle reset
+// Handle reset view
+  const handleResetView = () => {
+    setZoom(1);
+    setPanOffset({ x: 0, y: 0 });
+    toast({
+      title: 'View Reset',
+      description: 'Zoom and pan have been reset'
+    });
+  };
+
+  return (
+    <div ref={wrapperRef} className="relative w-full h-full">
+      <canvas
+        ref={canvasRef}
+        width={width}
+        height={height}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onDoubleClick={handleDoubleClick}
+        onContextMenu={handleContextMenu}
+        onWheel={handleWheel}
+        className="border border-gray-300 w-full h-full"
+      />
+
+      {/* Toolbar buttons */}
+      <div className="absolute top-2 left-2 z-10 flex gap-2 bg-white/90 backdrop-blur-sm p-1 rounded shadow">
+        <Button size="icon" onClick={handleZoomIn} title="Zoom In">
+          <ZoomIn className="w-4 h-4" />
+        </Button>
+        <Button size="icon" onClick={handleZoomOut} title="Zoom Out">
+          <ZoomOut className="w-4 h-4" />
+        </Button>
+        <Button size="icon" onClick={handleResetView} title="Reset View">
+          <RotateCcw className="w-4 h-4" />
+        </Button>
+        <Button size="icon" onClick={onUndo} title="Undo">
+          <Undo className="w-4 h-4" />
+        </Button>
+      </div>
+
+      {/* Instruction message */}
+      <div className="absolute bottom-2 left-2 text-sm text-gray-700 bg-white/80 px-2 py-1 rounded shadow">
+        {instructionMessage}
+      </div>
+    </div>
+  );
+};
+
+export default BezierCanvas;
