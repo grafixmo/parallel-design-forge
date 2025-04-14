@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { 
   ControlPoint, 
@@ -114,7 +115,7 @@ const Index = () => {
       title: `${!isDrawingMode ? 'Drawing' : 'Selection'} Mode Activated`,
       description: !isDrawingMode 
         ? 'You can now add and modify curve points.' 
-        : 'You can now select and move existing points.'
+        : 'You can now select and move existing objects.'
     });
   };
   
@@ -135,8 +136,7 @@ const Index = () => {
   
   // Handler for updating all objects
   const handleObjectsChange = (updatedObjects: BezierObject[]) => {
-    // This is a simplified version - in a real app you'd need to merge with existing objects
-    updateObjects(updatedObjects); // Use updateObjects instead of updateObjectPoints
+    updateObjects(updatedObjects);
   };
   
   // Export design as SVG
@@ -245,7 +245,7 @@ const Index = () => {
   const handleSelectDesign = (design: SavedDesign) => {
     try {
       if (!design.shapes_data) {
-        throw new Error('Design data is empty');
+        throw new Error('Design contains no data');
       }
       
       let parsedData;
@@ -284,7 +284,7 @@ const Index = () => {
         if (parsedData.objects && Array.isArray(parsedData.objects)) {
           // Standard DesignData format
           console.log('Processing DesignData with objects array');
-          bezierObjects = convertShapesDataToObjects(parsedData.objects);
+          bezierObjects = parsedData.objects;
         } else if (parsedData.points && Array.isArray(parsedData.points)) {
           // Legacy format with just points
           console.log('Processing legacy format with points array');
@@ -322,9 +322,42 @@ const Index = () => {
       // If we have objects to add, create them
       if (bezierObjects.length > 0) {
         console.log(`Creating ${bezierObjects.length} objects`);
+        
+        // Determine if we should preserve original properties
+        const preserveOriginal = design.preserveOriginalProperties === true;
+        
         bezierObjects.forEach(obj => {
           if (obj.points && obj.points.length > 0) {
-            createObject(obj.points, obj.name);
+            // Create object with original properties if this is an imported design
+            const objId = createObject(obj.points, obj.name || 'Imported Object');
+            
+            // If preserving original properties, update the object's config
+            if (preserveOriginal && objId) {
+              // Find the created object and update its properties
+              const createdObjIndex = objects.findIndex(o => o.id === objId);
+              if (createdObjIndex !== -1) {
+                // Create a copy of objects array
+                const updatedObjects = [...objects];
+                // Update the object to use the original styling and config
+                updatedObjects[createdObjIndex] = {
+                  ...updatedObjects[createdObjIndex],
+                  curveConfig: {
+                    ...obj.curveConfig,
+                    // Ensure no parallel curves for imported SVGs
+                    parallelCount: 0,
+                    spacing: 0
+                  },
+                  transform: obj.transform || {
+                    rotation: 0,
+                    scaleX: 1.0,
+                    scaleY: 1.0
+                  }
+                };
+                
+                // Update the objects
+                updateObjects(updatedObjects);
+              }
+            }
           } else {
             console.warn('Skipping object with no points:', obj);
           }

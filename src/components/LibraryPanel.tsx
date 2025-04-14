@@ -127,7 +127,7 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign }) 
       // Check if it's an object with the DesignData structure
       else if (typeof parsedData === 'object' && parsedData !== null) {
         if (parsedData.objects && Array.isArray(parsedData.objects)) {
-          bezierObjects = convertShapesDataToObjects(parsedData.objects);
+          bezierObjects = parsedData.objects;
           objectCount = bezierObjects.length;
           validFormat = objectCount > 0;
         } else if (parsedData.points && Array.isArray(parsedData.points)) {
@@ -139,6 +139,8 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign }) 
       
       // If the format is valid, proceed with selecting the design
       if (validFormat) {
+        // Add preserveOriginalProperties flag to indicate this is an imported design
+        design.preserveOriginalProperties = true;
         onSelectDesign(design);
         onClose();
         return;
