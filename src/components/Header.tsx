@@ -1,3 +1,4 @@
+
 import React, { useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { PenLine, Trash2, Upload, Save, Database, MousePointer, Image, FileUp, Download } from 'lucide-react';
@@ -35,7 +36,7 @@ interface HeaderProps {
   onSaveDesign: (name: string, category: string, description?: string) => void;
   onLoadDesigns: () => void;
   onExportSVG: () => void;
-  onImportSVG?: (svgContent: string) => void;
+  onImportSVG?: (svgContent: string, onProgress?: (progress: number) => void) => void;
   onLoadTemplate?: (templateData: string, shouldClearCanvas?: boolean) => void;
   isDrawingMode?: boolean;
   onToggleDrawingMode?: () => void;
@@ -57,6 +58,7 @@ const Header: React.FC<HeaderProps> = ({
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const categories = getTemplateCategories();
   
@@ -97,8 +99,10 @@ const Header: React.FC<HeaderProps> = ({
     }
     
     try {
-      // Show importing toast
+      // Show importing toast and reset progress
       setIsImporting(true);
+      setImportProgress(0);
+      
       toast({
         title: "Importing SVG",
         description: "Please wait while we process your SVG file...",
@@ -110,7 +114,11 @@ const Header: React.FC<HeaderProps> = ({
         const content = event.target?.result as string;
         if (content && onImportSVG) {
           try {
-            onImportSVG(content);
+            // Pass the progress callback to track import progress
+            onImportSVG(content, (progress) => {
+              setImportProgress(progress);
+            });
+            
             toast({
               title: "SVG Imported Successfully",
               description: "Your SVG file has been imported and rendered on the canvas.",
@@ -125,6 +133,7 @@ const Header: React.FC<HeaderProps> = ({
             });
           } finally {
             setIsImporting(false);
+            setImportProgress(0);
           }
         }
       };
@@ -136,6 +145,7 @@ const Header: React.FC<HeaderProps> = ({
           variant: "destructive"
         });
         setIsImporting(false);
+        setImportProgress(0);
       };
       
       reader.readAsText(file);
@@ -150,7 +160,16 @@ const Header: React.FC<HeaderProps> = ({
         variant: "destructive"
       });
       setIsImporting(false);
+      setImportProgress(0);
     }
+  };
+  
+  // Generate button label based on import progress
+  const importButtonLabel = () => {
+    if (!isImporting) return 'SVG Actions';
+    if (importProgress === 0) return 'Preparing...';
+    if (importProgress >= 100) return 'Finalizing...';
+    return `Importing ${Math.round(importProgress)}%`;
   };
   
   return (
@@ -299,12 +318,24 @@ const Header: React.FC<HeaderProps> = ({
           </DialogContent>
         </Dialog>
         
-        {/* SVG Import/Export Dropdown */}
+        {/* SVG Import/Export Dropdown with Progress Indicator */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="default" className="bg-indigo-600 hover:bg-indigo-700" disabled={isImporting}>
-              <Database className="h-4 w-4 mr-2" />
-              {isImporting ? 'Importing...' : 'SVG Actions'}
+            <Button variant="default" className="bg-indigo-600 hover:bg-indigo-700 relative" disabled={isImporting}>
+              {isImporting && (
+                <div className="absolute inset-0 flex items-center justify-center bg-indigo-600 rounded">
+                  <div className="flex items-center">
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    <span className="text-xs">{importButtonLabel()}</span>
+                  </div>
+                </div>
+              )}
+              {!isImporting && (
+                <>
+                  <Database className="h-4 w-4 mr-2" />
+                  SVG Actions
+                </>
+              )}
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent>

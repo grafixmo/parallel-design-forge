@@ -27,24 +27,48 @@ interface SVGImportResult {
 }
 
 // Maximum number of paths to process at once
-const MAX_PATHS_PER_BATCH = 15;
+const MAX_PATHS_PER_BATCH = 10;
 // Maximum allowed SVG size in MB
 const MAX_SVG_SIZE_MB = 5;
 // Maximum number of paths allowed in an SVG
 const MAX_SVG_PATHS = 500;
+// Delay between processing batches (ms)
+const BATCH_PROCESSING_DELAY = 50;
+
+// Event emitter for progress updates
+type ProgressCallback = (progress: number) => void;
 
 // Parse SVG string into BezierObject objects with improved attribute preservation
-export const parseSVGContent = async (svgContent: string): Promise<SVGImportResult> => {
+export const parseSVGContent = async (
+  svgContent: string, 
+  onProgress?: ProgressCallback
+): Promise<SVGImportResult> => {
   try {
+    // Initial progress update
+    onProgress?.(0);
+    
     // Check SVG size
     const svgSizeInMB = new Blob([svgContent]).size / (1024 * 1024);
     if (svgSizeInMB > MAX_SVG_SIZE_MB) {
       throw new Error(`SVG file is too large (${svgSizeInMB.toFixed(2)}MB). Maximum allowed size is ${MAX_SVG_SIZE_MB}MB.`);
     }
     
+    // Validate SVG format
+    if (!svgContent.includes('<svg') || !svgContent.includes('</svg>')) {
+      throw new Error('Invalid SVG format: Not a valid SVG file');
+    }
+    
     // Create a DOM parser
     const parser = new DOMParser();
-    const svgDoc = parser.parseFromString(svgContent, 'image/svg+xml');
+    
+    // Use try-catch to catch parsing errors
+    let svgDoc;
+    try {
+      svgDoc = parser.parseFromString(svgContent, 'image/svg+xml');
+    } catch (error) {
+      console.error('SVG parsing error:', error);
+      throw new Error('Failed to parse SVG: Malformed SVG content');
+    }
     
     // Check for parsing errors
     const parserError = svgDoc.querySelector('parsererror');
@@ -125,6 +149,10 @@ export const parseSVGContent = async (svgContent: string): Promise<SVGImportResu
       }
     });
     
+    // More precise progress tracking
+    const totalBatches = Math.ceil(pathsData.length / MAX_PATHS_PER_BATCH);
+    let completedBatches = 0;
+    
     // Process paths in batches to prevent UI freezing
     for (let i = 0; i < pathsData.length; i += MAX_PATHS_PER_BATCH) {
       const batch = pathsData.slice(i, i + MAX_PATHS_PER_BATCH);
@@ -180,17 +208,26 @@ export const parseSVGContent = async (svgContent: string): Promise<SVGImportResu
       const batchObjects = await batchPromise;
       objects.push(...batchObjects);
       
-      // Log progress
-      console.log(`Processed batch ${i / MAX_PATHS_PER_BATCH + 1}/${Math.ceil(pathsData.length / MAX_PATHS_PER_BATCH)}`);
+      // Update progress
+      completedBatches++;
+      const progressPercent = (completedBatches / totalBatches) * 90; // Up to 90% for parsing
+      onProgress?.(progressPercent);
       
-      // Yield to browser to prevent freezing
-      await new Promise(resolve => setTimeout(resolve, 10));
+      // Log progress
+      console.log(`Processed batch ${completedBatches}/${totalBatches} (${progressPercent.toFixed(1)}%)`);
+      
+      // Yield to browser to prevent freezing - longer delay between batches
+      await new Promise(resolve => setTimeout(resolve, BATCH_PROCESSING_DELAY));
     }
     
     console.log(`SVG import complete: ${objects.length} objects created`);
     
     // Position imported objects to maintain original positions
+    onProgress?.(95); // 95% for positioning
     await positionImportedObjects(objects, { width, height, viewBox });
+    
+    // Complete!
+    onProgress?.(100);
     
     return {
       objects,

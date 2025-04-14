@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { 
   Dialog, 
@@ -54,6 +53,7 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [loadDialogOpen, setLoadDialogOpen] = useState(false);
   const [loadingTemplate, setLoadingTemplate] = useState(false);
+  const [loadingProgress, setLoadingProgress] = useState(0);
   const [newName, setNewName] = useState('');
   const [newDescription, setNewDescription] = useState('');
   const [templateToLoad, setTemplateToLoad] = useState<Template | null>(null);
@@ -77,6 +77,7 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
       setTemplateToLoad(null);
       setTemplateLoadError(null);
       setLoadingTemplate(false);
+      setLoadingProgress(0);
     }
   }, [open]);
   
@@ -130,6 +131,15 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
     
     try {
       setLoadingTemplate(true);
+      setLoadingProgress(0);
+      
+      // Start the loading progress animation
+      const progressInterval = setInterval(() => {
+        setLoadingProgress(prev => {
+          const newProgress = prev + 5;
+          return newProgress > 90 ? 90 : newProgress; // Cap at 90% until complete
+        });
+      }, 100);
       
       // Validate the design data before passing it to onSelectTemplate
       if (!templateToLoad.design_data) {
@@ -137,10 +147,26 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
       }
       
       // Simple validation check
-      const parsedData = JSON.parse(templateToLoad.design_data);
-      if (!Array.isArray(parsedData)) {
-        throw new Error("Invalid template format");
+      let parsedData;
+      try {
+        parsedData = JSON.parse(templateToLoad.design_data);
+      } catch (error) {
+        throw new Error("Invalid JSON format in template");
       }
+      
+      if (!Array.isArray(parsedData)) {
+        throw new Error("Invalid template format: expected an array");
+      }
+      
+      // Add slight delay to allow UI to update and show loading progress
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Complete the loading process
+      setLoadingProgress(100);
+      clearInterval(progressInterval);
+      
+      // Allow a brief moment to show 100% completion
+      await new Promise(resolve => setTimeout(resolve, 200));
       
       onSelectTemplate(templateToLoad.design_data, shouldClearCanvas);
       onClose();
@@ -462,6 +488,21 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          
+          {loadingTemplate && (
+            <div className="mb-4">
+              <div className="text-sm text-center mb-2">
+                {loadingProgress === 100 ? 'Completed!' : 'Loading template...'}
+              </div>
+              <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-blue-500 transition-all duration-300" 
+                  style={{ width: `${loadingProgress}%` }}
+                />
+              </div>
+            </div>
+          )}
+          
           <AlertDialogFooter className="flex-col space-y-2 sm:space-y-0 sm:flex-row">
             <AlertDialogCancel onClick={() => {
               setLoadDialogOpen(false);
