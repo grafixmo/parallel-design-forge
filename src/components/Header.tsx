@@ -1,3 +1,4 @@
+
 import React, { useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { PenLine, Trash2, Upload, Save, Database, MousePointer, Image, FileUp, Download, Copy, Clipboard } from 'lucide-react';
@@ -33,6 +34,7 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
+import { cancelSVGParsing } from '@/utils/svgImporter';
 
 interface HeaderProps {
   onClearCanvas: () => void;
@@ -68,8 +70,10 @@ const Header: React.FC<HeaderProps> = ({
   const [importOptions, setImportOptions] = useState<SVGImportOptions>({
     replaceExisting: true,
     importStyle: true,
-    simplifyPaths: false,
-    preserveViewBox: true
+    simplifyPaths: true,
+    preserveViewBox: true,
+    fitToCanvas: false,
+    centerOnCanvas: false
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -126,6 +130,11 @@ const Header: React.FC<HeaderProps> = ({
   };
   
   const handleImportCancel = () => {
+    if (isImporting) {
+      // Cancel the SVG parsing if it's in progress
+      cancelSVGParsing();
+    }
+    
     setIsImporting(false);
     setImportDialogOpen(false);
     setSelectedFile(null);
@@ -162,7 +171,7 @@ const Header: React.FC<HeaderProps> = ({
           if (!svgContent) throw new Error("Failed to read SVG file");
           
           // Quick size validation
-          if (svgContent.length > 5000000) { // 5MB limit
+          if (svgContent.length > 10000000) { // 10MB limit
             throw new Error("SVG file is too large to process");
           }
           
@@ -519,6 +528,36 @@ const Header: React.FC<HeaderProps> = ({
                       disabled={isImporting}
                     />
                     <Label htmlFor="simplify-paths">Simplify complex paths (reduces points)</Label>
+                  </div>
+                  
+                  <div className="flex items-center space-x-2">
+                    <Checkbox 
+                      id="fit-to-canvas" 
+                      checked={importOptions.fitToCanvas}
+                      onCheckedChange={(checked) => 
+                        setImportOptions({
+                          ...importOptions,
+                          fitToCanvas: checked === true
+                        })
+                      }
+                      disabled={isImporting}
+                    />
+                    <Label htmlFor="fit-to-canvas">Fit to canvas (scale to fit)</Label>
+                  </div>
+                  
+                  <div className="flex items-center space-x-2">
+                    <Checkbox 
+                      id="center-on-canvas" 
+                      checked={importOptions.centerOnCanvas}
+                      onCheckedChange={(checked) => 
+                        setImportOptions({
+                          ...importOptions,
+                          centerOnCanvas: checked === true
+                        })
+                      }
+                      disabled={isImporting}
+                    />
+                    <Label htmlFor="center-on-canvas">Center on canvas</Label>
                   </div>
                 </div>
               )}

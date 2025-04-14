@@ -15,9 +15,31 @@ interface SVGImportResult {
   viewBox?: { x: number, y: number, width: number, height: number };
 }
 
+// Track current worker and request
+let currentWorker: Worker | null = null;
+let currentRequestId: string | null = null;
+
 // Create a function to prepare a worker
 const createSVGWorker = () => {
   return new Worker(new URL('./svgWorker.ts', import.meta.url), { type: 'module' });
+};
+
+// Generate a unique request ID
+const generateRequestId = () => {
+  return Date.now().toString() + Math.random().toString(36).substring(2, 9);
+};
+
+// Cancel any in-progress SVG parsing
+export const cancelSVGParsing = () => {
+  if (currentWorker && currentRequestId) {
+    currentWorker.postMessage({
+      type: 'cancel',
+      requestId: currentRequestId
+    });
+    
+    // Don't terminate the worker yet - wait for the cancel confirmation
+    currentRequestId = null;
+  }
 };
 
 // Always use the worker for path processing
@@ -29,8 +51,15 @@ export const parseSVGContent = (
 ): Promise<SVGImportResult> => {
   return new Promise((resolve, reject) => {
     try {
+      // Cancel any in-progress parsing
+      cancelSVGParsing();
+      
       // Report initial progress
-      if (onProgress) onProgress(0.1);
+      if (onProgress) onProgress(0.05);
+      
+      // Generate new request ID
+      const requestId = generateRequestId();
+      currentRequestId = requestId;
       
       // Create a DOM parser
       const parser = new DOMParser();
@@ -69,7 +98,7 @@ export const parseSVGContent = (
         throw new Error('No paths found in the SVG');
       }
       
-      if (onProgress) onProgress(0.2);
+      if (onProgress) onProgress(0.1);
       
       // Extract path data
       const pathsData: SVGPathData[] = [];
@@ -88,17 +117,23 @@ export const parseSVGContent = (
       });
       
       // Progress update for path extraction
-      if (onProgress) onProgress(0.3);
+      if (onProgress) onProgress(0.15);
       
-      // ALWAYS use worker for path processing to prevent freezing
-      const worker = createSVGWorker();
+      // Create a new worker for path processing
+      if (currentWorker) {
+        currentWorker.terminate();
+      }
+      currentWorker = createSVGWorker();
       
-      worker.onmessage = (e) => {
-        const { type, progress, results, error, viewBox: resultViewBox } = e.data;
+      currentWorker.onmessage = (e) => {
+        const { type, progress, results, error, viewBox: resultViewBox, requestId: responseId } = e.data;
+        
+        // Ignore messages for old requests
+        if (responseId !== currentRequestId) return;
         
         if (type === 'progress' && onProgress) {
-          // Scale worker progress from 0.3 to 0.9 in our overall process
-          onProgress(0.3 + (progress * 0.6));
+          // Scale worker progress from 0.2 to 0.9 in our overall process
+          onProgress(0.15 + (progress * 0.8));
         } else if (type === 'complete') {
           // Worker completed processing all paths
           const objects: BezierObject[] = results.map((result, index) => {
@@ -132,8 +167,10 @@ export const parseSVGContent = (
           
           if (onProgress) onProgress(1.0);
           
-          // Terminate the worker
-          worker.terminate();
+          // Terminate the worker and clear tracking variables
+          currentWorker.terminate();
+          currentWorker = null;
+          currentRequestId = null;
           
           resolve({
             objects,
@@ -142,31 +179,126 @@ export const parseSVGContent = (
             viewBox: resultViewBox || viewBox
           });
         } else if (type === 'error') {
-          worker.terminate();
+          currentWorker.terminate();
+          currentWorker = null;
+          currentRequestId = null;
           reject(new Error(error));
+        } else if (type === 'canceled') {
+          currentWorker.terminate();
+          currentWorker = null;
+          reject(new Error('SVG import canceled'));
         }
       };
       
       // Handle worker errors
-      worker.onerror = (err) => {
-        worker.terminate();
+      currentWorker.onerror = (err) => {
+        currentWorker?.terminate();
+        currentWorker = null;
+        currentRequestId = null;
         reject(new Error('Worker error: ' + err.message));
       };
       
       // Start the worker with the path data and viewBox information
-      worker.postMessage({
+      currentWorker.postMessage({
         paths: pathsData,
         options: {
           ...options,
           simplifyPaths: options?.simplifyPaths || (pathsData.length > 20) // Simplify if many paths
         },
-        viewBox
+        viewBox,
+        requestId
       });
     } catch (error) {
       console.error('Error parsing SVG:', error);
       if (onProgress) onProgress(1.0); // Ensure progress completes even on error
       reject(error);
     }
+  });
+};
+
+// Helper function to scale and center objects to fit the canvas
+export const transformImportedObjects = (
+  objects: BezierObject[],
+  viewBox: { x: number, y: number, width: number, height: number },
+  canvasWidth: number,
+  canvasHeight: number,
+  options?: SVGImportOptions
+): BezierObject[] => {
+  
+  // If we should preserve original positioning, return objects as-is
+  if (options?.preserveViewBox === true && !options?.fitToCanvas && !options?.centerOnCanvas) {
+    return objects;
+  }
+  
+  // If no objects, return empty array
+  if (objects.length === 0) {
+    return [];
+  }
+  
+  // Find bounds of all objects
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  
+  objects.forEach(obj => {
+    obj.points.forEach(point => {
+      minX = Math.min(minX, point.x);
+      minY = Math.min(minY, point.y);
+      maxX = Math.max(maxX, point.x);
+      maxY = Math.max(maxY, point.y);
+    });
+  });
+  
+  const objectsWidth = maxX - minX;
+  const objectsHeight = maxY - minY;
+  
+  // Define target dimensions
+  const targetWidth = options?.targetWidth || (canvasWidth * 0.9);
+  const targetHeight = options?.targetHeight || (canvasHeight * 0.9);
+  
+  // Calculate scaling factors
+  let scaleX = 1;
+  let scaleY = 1;
+  
+  if (options?.fitToCanvas) {
+    // Calculate scaling to fit while maintaining aspect ratio
+    const widthRatio = targetWidth / objectsWidth;
+    const heightRatio = targetHeight / objectsHeight;
+    
+    // Use the smaller ratio to ensure it fits entirely
+    const scaleFactor = Math.min(widthRatio, heightRatio);
+    scaleX = scaleFactor;
+    scaleY = scaleFactor;
+  }
+  
+  // Calculate offsets for centering
+  let offsetX = 0;
+  let offsetY = 0;
+  
+  if (options?.centerOnCanvas) {
+    // Center in canvas
+    offsetX = (canvasWidth - objectsWidth * scaleX) / 2 - minX * scaleX;
+    offsetY = (canvasHeight - objectsHeight * scaleY) / 2 - minY * scaleY;
+  }
+  
+  // Transform all objects
+  return objects.map(obj => {
+    const transformedPoints = obj.points.map(point => ({
+      ...point,
+      x: point.x * scaleX + offsetX,
+      y: point.y * scaleY + offsetY,
+      handleIn: {
+        x: point.handleIn.x * scaleX + offsetX,
+        y: point.handleIn.y * scaleY + offsetY
+      },
+      handleOut: {
+        x: point.handleOut.x * scaleX + offsetX,
+        y: point.handleOut.y * scaleY + offsetY
+      }
+    }));
+    
+    return {
+      ...obj,
+      points: transformedPoints
+    };
   });
 };
 

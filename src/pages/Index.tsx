@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { 
   ControlPoint, 
@@ -12,7 +13,7 @@ import Header from '@/components/Header';
 import LibraryPanel from '@/components/LibraryPanel';
 import { generateId } from '@/utils/bezierUtils';
 import { exportAsSVG, downloadSVG, createDesignSVG, exportSVGWithOptions } from '@/utils/svgExporter';
-import { parseSVGContent, readSVGFile } from '@/utils/svgImporter';
+import { parseSVGContent, readSVGFile, transformImportedObjects } from '@/utils/svgImporter';
 import { saveDesign, saveTemplate, Template } from '@/services/supabaseClient';
 import { useToast } from '@/hooks/use-toast';
 import { useBezierObjects } from '@/hooks/useBezierObjects';
@@ -203,15 +204,24 @@ const Index = () => {
         clearAllObjects();
       }
       
+      // Apply transformations based on options (fit to canvas, center, etc.)
+      const transformedObjects = transformImportedObjects(
+        importResult.objects,
+        importResult.viewBox || { x: 0, y: 0, width: importResult.width, height: importResult.height },
+        canvasWidth,
+        canvasHeight,
+        options
+      );
+      
       // Add imported objects to the canvas using the createMultipleObjects method
-      createMultipleObjects(importResult.objects);
+      createMultipleObjects(transformedObjects);
       
       // Save current state for undo/redo
       saveCurrentState();
       
       toast({
         title: 'Import Successful',
-        description: `Imported ${importResult.objects.length} objects from SVG`
+        description: `Imported ${transformedObjects.length} objects from SVG`
       });
       
       // Switch to selection mode to interact with imported objects
