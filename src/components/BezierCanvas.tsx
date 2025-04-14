@@ -14,7 +14,7 @@ import {
   isPointInSelectionRect
 } from '../utils/bezierUtils';
 import { toast } from '@/hooks/use-toast';
-import { ZoomIn, ZoomOut, Undo, Move } from 'lucide-react';
+import { ZoomIn, ZoomOut, Undo, Move, RotateCcw } from 'lucide-react';
 import { BezierObjectRenderer } from './BezierObject';
 import { Button } from '@/components/ui/button';
 
@@ -922,4 +922,4 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     });
   };
 
-  // Handle reset view function
+  // Handle reset
