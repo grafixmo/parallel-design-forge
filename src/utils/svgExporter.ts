@@ -12,7 +12,7 @@ export const exportAsSVG = (
   // Create SVG content
   let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${canvasWidth}" height="${canvasHeight}" viewBox="0 0 ${canvasWidth} ${canvasHeight}">`;
   
-  // Add background
+  // Add background with white fill
   svg += `<rect width="${canvasWidth}" height="${canvasHeight}" fill="white"/>`;
   
   // Calculate the center of all points for transformation
@@ -45,6 +45,9 @@ export const exportAsSVG = (
   
   // Close the transform group
   svg += '</g>';
+  
+  // Add a border for better visibility in thumbnails
+  svg += `<rect width="${canvasWidth}" height="${canvasHeight}" fill="none" stroke="#e2e8f0" stroke-width="1"/>`;
   
   svg += '</svg>';
   

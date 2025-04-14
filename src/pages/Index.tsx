@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { 
   ControlPoint, 
@@ -18,6 +17,7 @@ import { saveDesign, saveTemplate, Template } from '@/services/supabaseClient';
 import { useToast } from '@/hooks/use-toast';
 import { useBezierObjects } from '@/hooks/useBezierObjects';
 import ObjectControlsPanel from '@/components/ObjectControlsPanel';
+import { generateThumbnailFromSVG } from '@/utils/thumbnailGenerator';
 
 const Index = () => {
   const { toast } = useToast();
@@ -41,7 +41,7 @@ const Index = () => {
     createObject,
     selectObject,
     deselectAllObjects,
-    updateObjects, // This will be used instead of updateObjectPoints
+    updateObjects,
     updateObjectCurveConfig,
     updateObjectTransform,
     deleteObject,
@@ -162,13 +162,13 @@ const Index = () => {
     
     // Generate SVG content
     const svgContent = exportAsSVG(
-      objects.flatMap(obj => obj.points), // All points from all objects
-      objects[0]?.curveConfig || { // Use first object's config or default
+      objects.flatMap(obj => obj.points),
+      objects[0]?.curveConfig || {
         styles: [{ color: '#000000', width: 5 }],
         parallelCount: 2,
         spacing: 8
       }, 
-      objects[0]?.transform || { // Use first object's transform or default
+      objects[0]?.transform || {
         rotation: 0,
         scaleX: 1.0,
         scaleY: 1.0
@@ -186,7 +186,7 @@ const Index = () => {
   };
   
   // Save design to Supabase
-  const handleSaveDesign = async (name: string, category: string) => {
+  const handleSaveDesign = async (name: string, category: string, description?: string) => {
     if (objects.length === 0) {
       toast({
         title: 'Cannot Save',
@@ -196,6 +196,12 @@ const Index = () => {
       return;
     }
     
+    // Show loading toast
+    toast({
+      title: 'Saving Design',
+      description: 'Please wait while we process your design...'
+    });
+    
     const designData: DesignData = {
       objects: objects,
       backgroundImage: backgroundImage ? {
@@ -203,6 +209,32 @@ const Index = () => {
         opacity: backgroundOpacity
       } : undefined
     };
+    
+    // Generate SVG content for thumbnail
+    const svgContent = exportAsSVG(
+      objects.flatMap(obj => obj.points),
+      objects[0]?.curveConfig || {
+        styles: [{ color: '#000000', width: 5 }],
+        parallelCount: 2,
+        spacing: 8
+      }, 
+      objects[0]?.transform || {
+        rotation: 0,
+        scaleX: 1.0,
+        scaleY: 1.0
+      },
+      canvasWidth,
+      canvasHeight
+    );
+    
+    // Generate thumbnail from SVG
+    let thumbnail;
+    try {
+      thumbnail = await generateThumbnailFromSVG(svgContent);
+    } catch (err) {
+      console.error('Error generating thumbnail:', err);
+      // Continue without thumbnail if generation fails
+    }
     
     // Save design to the designs table (legacy)
     const design: SavedDesign = {
@@ -223,10 +255,16 @@ const Index = () => {
         name,
         category,
         design_data: JSON.stringify(designData),
-        likes: 0
+        description: description || '',
+        likes: 0,
+        thumbnail: thumbnail || ''
       };
       
-      await saveTemplate(template);
+      const templateResult = await saveTemplate(template);
+      
+      if (templateResult.error) {
+        throw new Error(templateResult.error.message);
+      }
       
       toast({
         title: 'Design Saved',

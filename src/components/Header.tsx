@@ -20,15 +20,17 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
 import TemplateGallery from './TemplateGallery';
+import { getTemplateCategories } from '@/utils/thumbnailGenerator';
 
 interface HeaderProps {
   onClearCanvas: () => void;
-  onSaveDesign: (name: string, category: string) => void;
+  onSaveDesign: (name: string, category: string, description?: string) => void;
   onLoadDesigns: () => void;
   onExportSVG: () => void;
-  onLoadTemplate?: (templateData: string) => void; // New prop for loading templates
+  onLoadTemplate?: (templateData: string) => void;
   isDrawingMode?: boolean;
   onToggleDrawingMode?: () => void;
 }
@@ -43,9 +45,11 @@ const Header: React.FC<HeaderProps> = ({
   onToggleDrawingMode
 }) => {
   const [designName, setDesignName] = useState('');
-  const [designCategory, setDesignCategory] = useState('Collares');
+  const [designCategory, setDesignCategory] = useState('Earrings');
+  const [designDescription, setDesignDescription] = useState('');
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [galleryOpen, setGalleryOpen] = useState(false);
+  const categories = getTemplateCategories();
   
   const handleSaveClick = () => {
     setSaveDialogOpen(true);
@@ -53,9 +57,10 @@ const Header: React.FC<HeaderProps> = ({
   
   const handleSaveDesign = () => {
     if (designName.trim().length === 0) return;
-    onSaveDesign(designName, designCategory);
+    onSaveDesign(designName, designCategory, designDescription);
     setSaveDialogOpen(false);
     setDesignName('');
+    setDesignDescription('');
   };
 
   const handleSelectTemplate = (templateData: string) => {
@@ -180,12 +185,23 @@ const Header: React.FC<HeaderProps> = ({
                     <SelectValue placeholder="Select category" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Collares">Collares</SelectItem>
-                    <SelectItem value="Anillos">Anillos</SelectItem>
-                    <SelectItem value="Pendientes">Pendientes</SelectItem>
-                    <SelectItem value="Prototipos">Prototipos</SelectItem>
+                    {categories.map((category) => (
+                      <SelectItem key={category} value={category}>{category}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="grid grid-cols-4 items-start gap-4">
+                <Label htmlFor="description" className="text-right pt-2">
+                  Description
+                </Label>
+                <Textarea
+                  id="description"
+                  placeholder="Describe your design (optional)"
+                  value={designDescription}
+                  onChange={(e) => setDesignDescription(e.target.value)}
+                  className="col-span-3 min-h-[80px]"
+                />
               </div>
             </div>
             <DialogFooter>
