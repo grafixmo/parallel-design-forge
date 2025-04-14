@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback } from 'react';
 import { 
   ControlPoint, 
@@ -263,7 +262,7 @@ const Index = () => {
       }
       
       // Process and load the objects
-      loadObjectsFromTemplate(parsedData, true); // Pass true to clear canvas
+      loadObjectsFromTemplate(parsedData);
       
       toast({
         title: "Template Loaded",
