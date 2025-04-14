@@ -1,4 +1,3 @@
-
 import { ControlPoint, Point, CurveStyle, SelectionRect, BezierObject } from '../types/bezier';
 
 // Generate a unique ID
@@ -182,226 +181,276 @@ export const processSVGPathObjects = (svgObjects: any[]): ControlPoint[] => {
 export const convertShapesDataToObjects = (shapesData: any): BezierObject[] => {
   const objects: BezierObject[] = [];
   
-  // Check if it's an array
-  if (Array.isArray(shapesData)) {
-    // Process each item in the array
-    shapesData.forEach((item, index) => {
-      if (item.type === 'path' || item.d) {
-        // This is SVG path data
-        const pathData = item.d || '';
-        const pathPoints = pathData ? svgPathToBezierPoints(pathData) : [];
+  // Log the incoming data to help with debugging
+  console.log('Converting shapes data:', 
+    typeof shapesData, 
+    Array.isArray(shapesData) ? 'is array' : 'not array',
+    shapesData
+  );
+  
+  // Normalize to array if needed
+  let dataArray = shapesData;
+  
+  // If it's a string, try to parse it
+  if (typeof shapesData === 'string') {
+    try {
+      dataArray = JSON.parse(shapesData);
+      console.log('Parsed string data:', dataArray);
+    } catch (err) {
+      console.error('Failed to parse string data:', err);
+      return objects;
+    }
+  }
+  
+  // If it's not an array after normalization, try to extract objects array
+  if (!Array.isArray(dataArray)) {
+    if (typeof dataArray === 'object' && dataArray !== null) {
+      if (dataArray.objects && Array.isArray(dataArray.objects)) {
+        console.log('Found objects array in data object');
+        dataArray = dataArray.objects;
+      } else {
+        // Try to treat the single object as a shape
+        console.log('Treating single object as a shape');
+        dataArray = [dataArray];
+      }
+    } else {
+      console.error('Could not convert to array:', dataArray);
+      return objects;
+    }
+  }
+  
+  // Check if dataArray is now an array
+  if (!Array.isArray(dataArray)) {
+    console.error('Failed to normalize to array:', dataArray);
+    return objects;
+  }
+  
+  // Process each item in the array
+  dataArray.forEach((item, index) => {
+    // Skip null or undefined items
+    if (item === null || item === undefined) {
+      console.warn('Skipping null/undefined item at index', index);
+      return;
+    }
+    
+    // Log each item type to help with debugging
+    console.log(`Processing item ${index}:`, typeof item, item.type || 'no type');
+    
+    if (item.type === 'path' || item.d) {
+      // This is SVG path data
+      const pathData = item.d || '';
+      const pathPoints = pathData ? svgPathToBezierPoints(pathData) : [];
+      
+      if (pathPoints.length > 0) {
+        objects.push({
+          id: item.id || generateId(),
+          points: pathPoints,
+          curveConfig: {
+            styles: [
+              { 
+                color: item.stroke || item.fill || '#000000', 
+                width: item.strokeWidth || 5 
+              }
+            ],
+            parallelCount: 0,
+            spacing: 0
+          },
+          transform: {
+            rotation: item.rotation || 0,
+            scaleX: item.scaleX || 1.0,
+            scaleY: item.scaleY || 1.0
+          },
+          name: `Imported Path ${index + 1}`,
+          isSelected: false
+        });
+      }
+    } else if (item.type === 'spiral' || item.type === 'triangle' || item.type === 'circle') {
+      // This is shape data - create simple control points for visualization
+      const centerX = item.x || 0;
+      const centerY = item.y || 0;
+      const width = item.width || 100;
+      const height = item.height || 100;
+      
+      // Determine color - handle both stroke and fill with fallbacks
+      const color = item.stroke && item.strokeWidth > 0 
+        ? item.stroke 
+        : (item.fill || '#000000');
         
-        if (pathPoints.length > 0) {
-          objects.push({
-            id: item.id || generateId(),
-            points: pathPoints,
-            curveConfig: {
-              styles: [
-                { 
-                  color: item.stroke || item.fill || '#000000', 
-                  width: item.strokeWidth || 5 
-                }
-              ],
-              parallelCount: 0,
-              spacing: 0
-            },
-            transform: {
-              rotation: item.rotation || 0,
-              scaleX: item.scaleX || 1.0,
-              scaleY: item.scaleY || 1.0
-            },
-            name: `Imported Path ${index + 1}`,
-            isSelected: false
-          });
-        }
-      } else if (item.type === 'spiral' || item.type === 'triangle' || item.type === 'circle') {
-        // This is shape data - create simple control points for visualization
-        const centerX = item.x || 0;
-        const centerY = item.y || 0;
-        const width = item.width || 100;
-        const height = item.height || 100;
+      const strokeWidth = typeof item.strokeWidth === 'number' ? item.strokeWidth : 5;
+      
+      let simplePoints: ControlPoint[] = [];
+      
+      if (item.type === 'circle') {
+        // Create circle using 4 bezier curve points (more natural than straight lines)
+        const radius = Math.min(width, height) / 2;
+        const cp = 0.552284749831 * radius; // Control point distance for approximating a circle
         
-        // Determine color - handle both stroke and fill with fallbacks
-        const color = item.stroke && item.strokeWidth > 0 
-          ? item.stroke 
-          : (item.fill || '#000000');
-          
-        const strokeWidth = typeof item.strokeWidth === 'number' ? item.strokeWidth : 5;
-        
-        let simplePoints: ControlPoint[] = [];
-        
-        if (item.type === 'circle') {
-          // Create circle using 4 bezier curve points (more natural than straight lines)
-          const radius = Math.min(width, height) / 2;
-          const cp = 0.552284749831 * radius; // Control point distance for approximating a circle
-          
-          simplePoints = [
-            // Top point
-            {
-              x: centerX, 
-              y: centerY - radius,
-              handleIn: { x: centerX - cp, y: centerY - radius },
-              handleOut: { x: centerX + cp, y: centerY - radius },
-              id: generateId()
-            },
-            // Right point
-            {
-              x: centerX + radius, 
-              y: centerY,
-              handleIn: { x: centerX + radius, y: centerY - cp },
-              handleOut: { x: centerX + radius, y: centerY + cp },
-              id: generateId()
-            },
-            // Bottom point
-            {
-              x: centerX, 
-              y: centerY + radius,
-              handleIn: { x: centerX + cp, y: centerY + radius },
-              handleOut: { x: centerX - cp, y: centerY + radius },
-              id: generateId()
-            },
-            // Left point
-            {
-              x: centerX - radius, 
-              y: centerY,
-              handleIn: { x: centerX - radius, y: centerY + cp },
-              handleOut: { x: centerX - radius, y: centerY - cp },
-              id: generateId()
-            }
-          ];
-        } else if (item.type === 'triangle') {
-          // Create a triangle
-          const halfWidth = width / 2;
-          const halfHeight = height / 2;
-          
-          simplePoints = [
-            // Top point
-            {
-              x: centerX, 
-              y: centerY - halfHeight,
-              handleIn: { x: centerX - 20, y: centerY - halfHeight },
-              handleOut: { x: centerX + 20, y: centerY - halfHeight },
-              id: generateId()
-            },
-            // Bottom right
-            {
-              x: centerX + halfWidth, 
-              y: centerY + halfHeight,
-              handleIn: { x: centerX + halfWidth - 20, y: centerY + halfHeight },
-              handleOut: { x: centerX + halfWidth + 20, y: centerY + halfHeight },
-              id: generateId()
-            },
-            // Bottom left
-            {
-              x: centerX - halfWidth, 
-              y: centerY + halfHeight,
-              handleIn: { x: centerX - halfWidth - 20, y: centerY + halfHeight },
-              handleOut: { x: centerX - halfWidth + 20, y: centerY + halfHeight },
-              id: generateId()
-            }
-          ];
-        } else if (item.type === 'spiral') {
-          // Create a spiral
-          const turns = item.spiralTurns || 3;
-          const spacing = item.spiralSpacing || 5;
-          const numPoints = turns * 8; // 8 points per turn for smoothness
-          
-          simplePoints = [];
-          
-          // Generate points for the spiral
-          for (let i = 0; i <= numPoints; i++) {
-            const angle = (i / numPoints) * turns * Math.PI * 2;
-            const radius = (i / numPoints) * Math.min(width, height) / 2;
-            
-            const x = centerX + Math.cos(angle) * radius;
-            const y = centerY + Math.sin(angle) * radius;
-            
-            // Calculate handle positions
-            const angleStep = (Math.PI * 2) / 16;
-            const handleInAngle = angle - angleStep;
-            const handleOutAngle = angle + angleStep;
-            const handleDistance = (radius * Math.PI) / 8;
-            
-            simplePoints.push({
-              x,
-              y,
-              handleIn: {
-                x: x - Math.cos(handleInAngle) * handleDistance,
-                y: y - Math.sin(handleInAngle) * handleDistance
-              },
-              handleOut: {
-                x: x + Math.cos(handleOutAngle) * handleDistance,
-                y: y + Math.sin(handleOutAngle) * handleDistance
-              },
-              id: generateId()
-            });
+        simplePoints = [
+          // Top point
+          {
+            x: centerX, 
+            y: centerY - radius,
+            handleIn: { x: centerX - cp, y: centerY - radius },
+            handleOut: { x: centerX + cp, y: centerY - radius },
+            id: generateId()
+          },
+          // Right point
+          {
+            x: centerX + radius, 
+            y: centerY,
+            handleIn: { x: centerX + radius, y: centerY - cp },
+            handleOut: { x: centerX + radius, y: centerY + cp },
+            id: generateId()
+          },
+          // Bottom point
+          {
+            x: centerX, 
+            y: centerY + radius,
+            handleIn: { x: centerX + cp, y: centerY + radius },
+            handleOut: { x: centerX - cp, y: centerY + radius },
+            id: generateId()
+          },
+          // Left point
+          {
+            x: centerX - radius, 
+            y: centerY,
+            handleIn: { x: centerX - radius, y: centerY + cp },
+            handleOut: { x: centerX - radius, y: centerY - cp },
+            id: generateId()
           }
-        }
+        ];
+      } else if (item.type === 'triangle') {
+        // Create a triangle
+        const halfWidth = width / 2;
+        const halfHeight = height / 2;
         
-        if (simplePoints.length > 0) {
-          objects.push({
-            id: item.id || generateId(),
-            points: simplePoints,
-            curveConfig: {
-              styles: [
-                { color, width: strokeWidth }
-              ],
-              parallelCount: 0,
-              spacing: 0
-            },
-            transform: {
-              rotation: item.rotation || 0,
-              scaleX: 1.0,
-              scaleY: 1.0
-            },
-            name: `Imported ${item.type} ${index + 1}`,
-            isSelected: false
-          });
-        }
-      } else if (item.points) {
-        // This format already has points defined
-        const pointsWithIds = item.points.map((point: any) => ({
-          ...point,
-          id: point.id || generateId(),
-          handleIn: point.handleIn || { x: point.x - 50, y: point.y },
-          handleOut: point.handleOut || { x: point.x + 50, y: point.y }
-        }));
+        simplePoints = [
+          // Top point
+          {
+            x: centerX, 
+            y: centerY - halfHeight,
+            handleIn: { x: centerX - 20, y: centerY - halfHeight },
+            handleOut: { x: centerX + 20, y: centerY - halfHeight },
+            id: generateId()
+          },
+          // Bottom right
+          {
+            x: centerX + halfWidth, 
+            y: centerY + halfHeight,
+            handleIn: { x: centerX + halfWidth - 20, y: centerY + halfHeight },
+            handleOut: { x: centerX + halfWidth + 20, y: centerY + halfHeight },
+            id: generateId()
+          },
+          // Bottom left
+          {
+            x: centerX - halfWidth, 
+            y: centerY + halfHeight,
+            handleIn: { x: centerX - halfWidth - 20, y: centerY + halfHeight },
+            handleOut: { x: centerX - halfWidth + 20, y: centerY + halfHeight },
+            id: generateId()
+          }
+        ];
+      } else if (item.type === 'spiral') {
+        // Create a spiral
+        const turns = item.spiralTurns || 3;
+        const spacing = item.spiralSpacing || 5;
+        const numPoints = turns * 8; // 8 points per turn for smoothness
         
-        if (pointsWithIds.length > 0) {
-          objects.push({
-            id: item.id || generateId(),
-            points: pointsWithIds,
-            curveConfig: {
-              styles: [
-                { 
-                  color: item.stroke || item.fill || '#000000', 
-                  width: item.strokeWidth || 5 
-                }
-              ],
-              parallelCount: 0,
-              spacing: 0
+        simplePoints = [];
+        
+        // Generate points for the spiral
+        for (let i = 0; i <= numPoints; i++) {
+          const angle = (i / numPoints) * turns * Math.PI * 2;
+          const radius = (i / numPoints) * Math.min(width, height) / 2;
+          
+          const x = centerX + Math.cos(angle) * radius;
+          const y = centerY + Math.sin(angle) * radius;
+          
+          // Calculate handle positions
+          const angleStep = (Math.PI * 2) / 16;
+          const handleInAngle = angle - angleStep;
+          const handleOutAngle = angle + angleStep;
+          const handleDistance = (radius * Math.PI) / 8;
+          
+          simplePoints.push({
+            x,
+            y,
+            handleIn: {
+              x: x - Math.cos(handleInAngle) * handleDistance,
+              y: y - Math.sin(handleInAngle) * handleDistance
             },
-            transform: {
-              rotation: item.rotation || 0,
-              scaleX: item.scaleX || 1.0,
-              scaleY: item.scaleY || 1.0
+            handleOut: {
+              x: x + Math.cos(handleOutAngle) * handleDistance,
+              y: y + Math.sin(handleOutAngle) * handleDistance
             },
-            name: `Imported Object ${index + 1}`,
-            isSelected: false
+            id: generateId()
           });
         }
       }
-    });
-  } else if (typeof shapesData === 'object' && shapesData !== null) {
-    // Handle cases where the data is a single object
-    console.log('Processing single object format', shapesData);
-    
-    // Try to handle as a legacy format or simple object
-    if (shapesData.objects && Array.isArray(shapesData.objects)) {
-      // This is likely a DesignData object
-      return convertShapesDataToObjects(shapesData.objects);
+      
+      if (simplePoints.length > 0) {
+        objects.push({
+          id: item.id || generateId(),
+          points: simplePoints,
+          curveConfig: {
+            styles: [
+              { color, width: strokeWidth }
+            ],
+            parallelCount: 0,
+            spacing: 0
+          },
+          transform: {
+            rotation: item.rotation || 0,
+            scaleX: 1.0,
+            scaleY: 1.0
+          },
+          name: `Imported ${item.type} ${index + 1}`,
+          isSelected: false
+        });
+      }
+    } else if (item.points && Array.isArray(item.points)) {
+      // This format already has points defined
+      const pointsWithIds = item.points.map((point: any) => ({
+        ...point,
+        id: point.id || generateId(),
+        handleIn: point.handleIn || { x: point.x - 50, y: point.y },
+        handleOut: point.handleOut || { x: point.x + 50, y: point.y }
+      }));
+      
+      if (pointsWithIds.length > 0) {
+        objects.push({
+          id: item.id || generateId(),
+          points: pointsWithIds,
+          curveConfig: {
+            styles: [
+              { 
+                color: item.stroke || item.fill || '#000000', 
+                width: item.strokeWidth || 5 
+              }
+            ],
+            parallelCount: 0,
+            spacing: 0
+          },
+          transform: {
+            rotation: item.rotation || 0,
+            scaleX: item.scaleX || 1.0,
+            scaleY: item.scaleY || 1.0
+          },
+          name: `Imported Object ${index + 1}`,
+          isSelected: false
+        });
+      }
+    } else if (item.shapes && Array.isArray(item.shapes)) {
+      // Special case for collections of shapes
+      console.log('Processing nested shapes array:', item.shapes.length);
+      const nestedObjects = convertShapesDataToObjects(item.shapes);
+      objects.push(...nestedObjects);
+    } else {
+      console.log('Unknown item format:', item);
     }
-  }
+  });
+  
+  console.log(`Converted ${objects.length} bezier objects`);
   
   return objects;
 };

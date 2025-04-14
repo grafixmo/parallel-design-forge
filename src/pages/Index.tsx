@@ -248,72 +248,110 @@ const Index = () => {
         throw new Error('Design data is empty');
       }
       
-      // Parse the design data
-      const parsedData = JSON.parse(design.shapes_data);
+      let parsedData;
+      
+      // First, ensure we're working with a string
+      if (typeof design.shapes_data !== 'string') {
+        console.log('Design data is not a string:', typeof design.shapes_data);
+        // If it's already an object, use it directly
+        parsedData = design.shapes_data;
+      } else {
+        // Parse the string data
+        try {
+          parsedData = JSON.parse(design.shapes_data);
+          console.log('Successfully parsed design data');
+        } catch (err) {
+          console.error('Failed to parse design data:', err);
+          throw new Error('Invalid JSON format in design data');
+        }
+      }
+      
+      console.log('Design data format:', typeof parsedData, parsedData);
       
       // Clear current objects
       objects.forEach(obj => deleteObject(obj.id));
       
+      // Process the data into bezier objects
+      let bezierObjects: BezierObject[] = [];
+      
       // Check data format and handle accordingly
       if (Array.isArray(parsedData)) {
-        // This might be either an array of shapes or an array of SVG path objects
-        const bezierObjects = convertShapesDataToObjects(parsedData);
-        
-        if (bezierObjects.length > 0) {
-          // Successfully converted to bezier objects
-          bezierObjects.forEach(obj => {
-            createObject(obj.points, obj.name);
-          });
+        // Array of shapes or objects
+        console.log('Processing array data with', parsedData.length, 'items');
+        bezierObjects = convertShapesDataToObjects(parsedData);
+      } else if (typeof parsedData === 'object' && parsedData !== null) {
+        // Object format (could be DesignData or other)
+        if (parsedData.objects && Array.isArray(parsedData.objects)) {
+          // Standard DesignData format
+          console.log('Processing DesignData with objects array');
+          bezierObjects = convertShapesDataToObjects(parsedData.objects);
+        } else if (parsedData.points && Array.isArray(parsedData.points)) {
+          // Legacy format with just points
+          console.log('Processing legacy format with points array');
+          const pointsWithIds = parsedData.points.map((point: any) => ({
+            ...point,
+            id: point.id || generateId()
+          }));
           
-          toast({
-            title: 'Design Loaded',
-            description: `Design "${design.name}" has been loaded successfully.`
-          });
-          return;
+          // Create a single object from the points
+          if (pointsWithIds.length > 0) {
+            bezierObjects = [{
+              id: generateId(),
+              points: pointsWithIds,
+              curveConfig: {
+                styles: [{ color: '#000000', width: 5 }],
+                parallelCount: 0,
+                spacing: 0
+              },
+              transform: {
+                rotation: 0,
+                scaleX: 1.0,
+                scaleY: 1.0
+              },
+              name: 'Imported Object',
+              isSelected: false
+            }];
+          }
+        } else {
+          // Try to treat the whole object as a single shape
+          console.log('Trying to process as a single shape');
+          bezierObjects = convertShapesDataToObjects([parsedData]);
         }
       }
       
-      // If we get here, try to handle it as the standard DesignData format
-      const designData: DesignData = parsedData;
-      
-      // Check if data has objects array (new format) or just points (old format)
-      if (designData.objects && designData.objects.length > 0) {
-        // New format with objects
-        designData.objects.forEach(obj => {
-          createObject(obj.points, obj.name);
+      // If we have objects to add, create them
+      if (bezierObjects.length > 0) {
+        console.log(`Creating ${bezierObjects.length} objects`);
+        bezierObjects.forEach(obj => {
+          if (obj.points && obj.points.length > 0) {
+            createObject(obj.points, obj.name);
+          } else {
+            console.warn('Skipping object with no points:', obj);
+          }
         });
-      } else if (designData.points && designData.points.length > 0) {
-        // Old format with just points, create a single object
-        const pointsWithIds = designData.points.map(point => ({
-          ...point,
-          id: point.id || generateId()
-        }));
         
-        createObject(pointsWithIds, 'Imported Object');
+        // Set background image if present in the data
+        if (parsedData.backgroundImage) {
+          setBackgroundImage(parsedData.backgroundImage.url);
+          setBackgroundOpacity(parsedData.backgroundImage.opacity);
+        }
+        
+        toast({
+          title: 'Design Loaded',
+          description: `Design "${design.name}" has been loaded with ${bezierObjects.length} objects.`
+        });
       } else {
         toast({
-          title: 'Invalid Design Data',
-          description: 'The selected design does not contain valid control points.',
+          title: 'No Valid Objects',
+          description: 'The design could not be loaded because no valid objects were found.',
           variant: 'destructive'
         });
-        return;
       }
-      
-      // Set background image if present
-      if (designData.backgroundImage) {
-        setBackgroundImage(designData.backgroundImage.url);
-        setBackgroundOpacity(designData.backgroundImage.opacity);
-      }
-      
-      toast({
-        title: 'Design Loaded',
-        description: `Design "${design.name}" has been loaded successfully.`
-      });
     } catch (err) {
       console.error('Error loading design:', err);
       toast({
         title: 'Load Failed',
-        description: 'There was an error loading the design. The format may be invalid.',
+        description: `There was an error loading the design: ${(err as Error).message}`,
         variant: 'destructive'
       });
     }
