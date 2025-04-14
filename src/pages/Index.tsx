@@ -77,6 +77,25 @@ const Index = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
   
+  // Handle background image upload
+  const handleBackgroundImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      const reader = new FileReader();
+      reader.onload = (loadEvent) => {
+        if (loadEvent.target && loadEvent.target.result) {
+          setBackgroundImage(loadEvent.target.result as string);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+  
+  // Remove background image
+  const handleRemoveBackgroundImage = () => {
+    setBackgroundImage(undefined);
+  };
+  
   // Create a new object with points
   const handleCreateObject = (points: ControlPoint[]) => {
     return createObject(points);
@@ -265,7 +284,8 @@ const Index = () => {
   const handleLoadDesign = (design: DesignData) => {
     setLoadedDesign(design);
     if (design.objects && Array.isArray(design.objects)) {
-      loadObjectsFromTemplate(design.objects, true);
+      // Fix: Pass only one argument to loadObjectsFromTemplate
+      loadObjectsFromTemplate(design.objects);
     }
     setIsPanelOpen(false);
   };
@@ -278,6 +298,7 @@ const Index = () => {
         onLoadDesigns={handleLoadDesigns}
         onExportSVG={handleExportSVG}
         onImportSVG={handleImportSVG}
+        // Fix: Pass only expected arguments to onLoadTemplate
         onLoadTemplate={handleLoadTemplate}
         isDrawingMode={isDrawingMode}
         onToggleDrawingMode={handleToggleDrawingMode}
@@ -319,6 +340,12 @@ const Index = () => {
             onRenameObject={renameObject}
             onDeleteObject={deleteObject}
             onDeleteSelectedObjects={deleteSelectedObjects}
+            // Add the missing props
+            backgroundImage={backgroundImage}
+            backgroundOpacity={backgroundOpacity}
+            onRemoveImage={handleRemoveBackgroundImage}
+            onUploadImage={handleBackgroundImageUpload}
+            onBackgroundOpacityChange={setBackgroundOpacity}
           />
         )}
       </main>

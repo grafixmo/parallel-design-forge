@@ -48,6 +48,12 @@ interface ObjectControlsPanelProps {
   onRenameObject: (objectId: string, name: string) => void;
   onDeleteObject: (objectId: string) => void;
   onDeleteSelectedObjects: () => void;
+  // Add missing props for background image functionality
+  backgroundImage?: string;
+  backgroundOpacity: number;
+  onRemoveImage: () => void;
+  onUploadImage: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  onBackgroundOpacityChange: (opacity: number) => void;
 }
 
 const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
@@ -57,7 +63,13 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
   onUpdateTransform,
   onRenameObject,
   onDeleteObject,
-  onDeleteSelectedObjects
+  onDeleteSelectedObjects,
+  // Add the new props to the destructuring
+  backgroundImage,
+  backgroundOpacity,
+  onRemoveImage,
+  onUploadImage,
+  onBackgroundOpacityChange
 }) => {
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   
