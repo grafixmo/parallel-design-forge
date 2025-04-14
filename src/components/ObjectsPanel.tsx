@@ -2,7 +2,7 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { BezierObject } from '@/types/bezier';
-import { Plus, Trash, Edit, ChevronRight, List, Copy, Clipboard } from 'lucide-react';
+import { Plus, Trash, Edit, ChevronRight, List } from 'lucide-react';
 import {
   Card,
   CardContent,
@@ -34,8 +34,6 @@ interface ObjectsPanelProps {
   onDeleteObject: (objectId: string) => void;
   onDeleteSelectedObjects: () => void;
   onRenameObject: (objectId: string, name: string) => void;
-  onCopyObjects?: () => void;
-  onPasteObjects?: () => void;
 }
 
 const ObjectsPanel: React.FC<ObjectsPanelProps> = ({
@@ -45,9 +43,7 @@ const ObjectsPanel: React.FC<ObjectsPanelProps> = ({
   onSelectObject,
   onDeleteObject,
   onDeleteSelectedObjects,
-  onRenameObject,
-  onCopyObjects,
-  onPasteObjects
+  onRenameObject
 }) => {
   const [editingObjectId, setEditingObjectId] = React.useState<string | null>(null);
   const [editName, setEditName] = React.useState<string>('');
@@ -95,59 +91,35 @@ const ObjectsPanel: React.FC<ObjectsPanelProps> = ({
           </div>
           <div className="flex space-x-1 z-10">
             {selectedObjectIds.length > 0 && (
-              <>
-                {onCopyObjects && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
                   <Button 
-                    variant="outline" 
+                    variant="destructive" 
                     size="icon"
                     className="h-6 w-6"
-                    title="Copy selected"
-                    onClick={onCopyObjects}
+                    title="Delete selected"
                   >
-                    <Copy className="h-3 w-3" />
+                    <Trash className="h-3 w-3" />
                   </Button>
-                )}
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button 
-                      variant="destructive" 
-                      size="icon"
-                      className="h-6 w-6"
-                      title="Delete selected"
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete Selected Objects</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Are you sure you want to delete {selectedObjectIds.length} selected objects? This action cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={onDeleteSelectedObjects}
+                      className="bg-red-500 hover:bg-red-600"
                     >
-                      <Trash className="h-3 w-3" />
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Delete Selected Objects</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        Are you sure you want to delete {selectedObjectIds.length} selected objects? This action cannot be undone.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction
-                        onClick={onDeleteSelectedObjects}
-                        className="bg-red-500 hover:bg-red-600"
-                      >
-                        Delete
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              </>
-            )}
-            {onPasteObjects && (
-              <Button 
-                variant="outline" 
-                size="icon"
-                className="h-6 w-6"
-                title="Paste objects"
-                onClick={onPasteObjects}
-              >
-                <Clipboard className="h-3 w-3" />
-              </Button>
+                      Delete
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             )}
             <Button 
               variant="outline" 

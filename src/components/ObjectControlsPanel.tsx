@@ -48,12 +48,9 @@ interface ObjectControlsPanelProps {
   onCreateObject: () => void;
   onSelectObject: (objectId: string, multiSelect: boolean) => void;
   onDeleteObject: (objectId: string) => void;
-  onDeleteSelectedObjects: () => void;  // Added this missing prop
   onRenameObject: (objectId: string, name: string) => void;
   onUpdateCurveConfig: (objectId: string, config: CurveConfig) => void;
   onUpdateTransform: (objectId: string, transform: TransformSettings) => void;
-  onCopyObjects?: () => void;
-  onPasteObjects?: () => void;
   backgroundImage?: string;
   backgroundOpacity: number;
   onBackgroundOpacityChange: (opacity: number) => void;
@@ -68,12 +65,9 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
   onCreateObject,
   onSelectObject,
   onDeleteObject,
-  onDeleteSelectedObjects,
   onRenameObject,
   onUpdateCurveConfig,
   onUpdateTransform,
-  onCopyObjects,
-  onPasteObjects,
   backgroundImage,
   backgroundOpacity,
   onBackgroundOpacityChange,
@@ -213,9 +207,10 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
           onSelectObject={onSelectObject}
           onDeleteObject={onDeleteObject}
           onRenameObject={onRenameObject}
-          onDeleteSelectedObjects={onDeleteSelectedObjects}
-          onCopyObjects={onCopyObjects}
-          onPasteObjects={onPasteObjects}
+          onDeleteSelectedObjects={() => {
+            // Call onDeleteObject for each selected object
+            selectedObjectIds.forEach(id => onDeleteObject(id));
+          }}
         />
         
         {/* Controls for individual object or message */}

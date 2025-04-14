@@ -1,3 +1,4 @@
+
 export interface Point {
   x: number;
   y: number;
@@ -101,17 +102,10 @@ export interface ObjectGroup {
   isSelected: boolean;
 }
 
-// Enhanced SVG import/export options
+// New interfaces for SVG import/export
 export interface SVGImportOptions {
   replaceExisting: boolean;
   importStyle: boolean;
-  simplifyPaths?: boolean;
-  preserveViewBox?: boolean;
-  fitToCanvas?: boolean;
-  centerOnCanvas?: boolean;
-  targetWidth?: number;
-  targetHeight?: number;
-  maintainAspectRatio?: boolean;
 }
 
 export interface SVGExportOptions {

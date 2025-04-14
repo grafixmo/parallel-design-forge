@@ -1,19 +1,16 @@
-
 import { useState, useEffect } from 'react';
 import { 
   ControlPoint, 
   DesignData, 
   SavedDesign,
-  BezierObject,
-  SVGImportOptions,
-  SVGExportOptions
+  BezierObject
 } from '@/types/bezier';
 import BezierCanvas from '@/components/BezierCanvas';
 import Header from '@/components/Header';
 import LibraryPanel from '@/components/LibraryPanel';
 import { generateId } from '@/utils/bezierUtils';
-import { exportAsSVG, downloadSVG, createDesignSVG, exportSVGWithOptions } from '@/utils/svgExporter';
-import { parseSVGContent, readSVGFile, transformImportedObjects } from '@/utils/svgImporter';
+import { exportAsSVG, downloadSVG, createDesignSVG } from '@/utils/svgExporter';
+import { parseSVGContent } from '@/utils/svgImporter';
 import { saveDesign, saveTemplate, Template } from '@/services/supabaseClient';
 import { useToast } from '@/hooks/use-toast';
 import { useBezierObjects } from '@/hooks/useBezierObjects';
@@ -43,19 +40,13 @@ const Index = () => {
     objects,
     selectedObjectIds,
     createObject,
-    createMultipleObjects,
-    setAllObjects,
     selectObject,
     deselectAllObjects,
     updateObjects,
     updateObjectCurveConfig,
     updateObjectTransform,
     deleteObject,
-    deleteSelectedObjects,
     renameObject,
-    copySelectedObjects,
-    pasteObjects,
-    clearAllObjects,
     undo,
     redo,
     saveCurrentState
@@ -83,7 +74,7 @@ const Index = () => {
   // Reset everything to default
   const handleReset = () => {
     // Clear all objects
-    clearAllObjects();
+    objects.forEach(obj => deleteObject(obj.id));
     setBackgroundImage(undefined);
     setBackgroundOpacity(0.3);
     
@@ -161,15 +152,10 @@ const Index = () => {
       return;
     }
     
-    // Define export options
-    const exportOptions: SVGExportOptions = {
-      includeBackground: true,
-      includeBorder: true,
-      embedFonts: false
-    };
+    // Generate SVG content using all objects
+    const svgContent = createDesignSVG(objects, canvasWidth, canvasHeight);
     
-    // Generate SVG content using all objects with options
-    exportSVGWithOptions(objects, canvasWidth, canvasHeight, 'soutache-design.svg', exportOptions);
+    downloadSVG(svgContent, 'soutache-design.svg');
     
     toast({
       title: 'Design Exported',
@@ -177,12 +163,8 @@ const Index = () => {
     });
   };
   
-  // Import SVG file content with progress tracking and proper viewBox handling
-  const handleImportSVG = async (
-    svgContent: string, 
-    options?: SVGImportOptions,
-    onProgress?: (progress: number) => void
-  ) => {
+  // Import SVG file content
+  const handleImportSVG = async (svgContent: string) => {
     try {
       setIsImporting(true);
       
@@ -192,36 +174,32 @@ const Index = () => {
         description: 'Please wait while we process your SVG file...'
       });
       
-      // Parse SVG content with options and progress tracking
-      const importResult = await parseSVGContent(svgContent, options, onProgress);
+      // Parse SVG content
+      const importResult = parseSVGContent(svgContent);
       
       if (importResult.objects.length === 0) {
         throw new Error('No valid paths found in the SVG');
       }
       
-      // Clear current objects if replace option is true
-      if (options?.replaceExisting !== false && objects.length > 0) {
-        clearAllObjects();
+      // Clear current objects if user confirms
+      if (objects.length > 0) {
+        // In a real app, you might want to ask for confirmation
+        objects.forEach(obj => deleteObject(obj.id));
       }
       
-      // Apply transformations based on options (fit to canvas, center, etc.)
-      const transformedObjects = transformImportedObjects(
-        importResult.objects,
-        importResult.viewBox || { x: 0, y: 0, width: importResult.width, height: importResult.height },
-        canvasWidth,
-        canvasHeight,
-        options
-      );
-      
-      // Add imported objects to the canvas using the createMultipleObjects method
-      createMultipleObjects(transformedObjects);
+      // Add imported objects to the canvas
+      importResult.objects.forEach(obj => {
+        if (obj.points && obj.points.length > 0) {
+          createObject(obj.points, obj.name);
+        }
+      });
       
       // Save current state for undo/redo
       saveCurrentState();
       
       toast({
         title: 'Import Successful',
-        description: `Imported ${transformedObjects.length} objects from SVG`
+        description: `Imported ${importResult.objects.length} objects from SVG`
       });
       
       // Switch to selection mode to interact with imported objects
@@ -294,7 +272,8 @@ const Index = () => {
         category,
         description,
         hasDesignData: !!template.design_data,
-        hasThumbnail: !!svgContent
+        hasThumbnail: !!thumbnail,
+        hasSvgContent: !!svgContent
       });
       
       const templateResult = await saveTemplate(template);
@@ -346,7 +325,7 @@ const Index = () => {
       console.log('Design data format:', typeof parsedData, parsedData);
       
       // Clear current objects
-      clearAllObjects();
+      objects.forEach(obj => deleteObject(obj.id));
       
       // Process the data into bezier objects
       let bezierObjects: BezierObject[] = [];
@@ -399,9 +378,13 @@ const Index = () => {
       // If we have objects to add, create them
       if (bezierObjects.length > 0) {
         console.log(`Creating ${bezierObjects.length} objects`);
-        
-        // Use createMultipleObjects instead of creating them one by one
-        createMultipleObjects(bezierObjects);
+        bezierObjects.forEach(obj => {
+          if (obj.points && obj.points.length > 0) {
+            createObject(obj.points, obj.name);
+          } else {
+            console.warn('Skipping object with no points:', obj);
+          }
+        });
         
         // Set background image if present in the data
         if (parsedData.backgroundImage) {
@@ -436,12 +419,14 @@ const Index = () => {
       const parsedData: DesignData = JSON.parse(templateData);
       
       // Clear current objects
-      clearAllObjects();
+      objects.forEach(obj => deleteObject(obj.id));
       
       // Check if data has objects array (new format) or just points (old format)
       if (parsedData.objects && parsedData.objects.length > 0) {
-        // New format with objects - use createMultipleObjects
-        createMultipleObjects(parsedData.objects);
+        // New format with objects
+        parsedData.objects.forEach(obj => {
+          createObject(obj.points, obj.name);
+        });
       } else if (parsedData.points && parsedData.points.length > 0) {
         // Old format with just points, create a single object
         const pointsWithIds = parsedData.points.map(point => ({
@@ -464,11 +449,6 @@ const Index = () => {
         setBackgroundImage(parsedData.backgroundImage.url);
         setBackgroundOpacity(parsedData.backgroundImage.opacity);
       }
-      
-      toast({
-        title: 'Template Loaded',
-        description: 'Template has been loaded successfully.'
-      });
     } catch (err) {
       console.error('Error loading template:', err);
       toast({
@@ -488,24 +468,6 @@ const Index = () => {
     });
   };
   
-  // Copy and paste keyboard shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'c' && selectedObjectIds.length > 0) {
-        copySelectedObjects();
-      } else if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
-        pasteObjects();
-      } else if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
-        undo();
-      } else if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
-        redo();
-      }
-    };
-    
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [copySelectedObjects, pasteObjects, selectedObjectIds, undo, redo]);
-  
   return (
     <div className="flex flex-col h-screen">
       <Header
@@ -515,8 +477,6 @@ const Index = () => {
         onExportSVG={handleExportSVG}
         onImportSVG={handleImportSVG}
         onLoadTemplate={handleLoadTemplate}
-        onCopyObjects={copySelectedObjects}
-        onPasteObjects={pasteObjects}
         isDrawingMode={isDrawingMode}
         onToggleDrawingMode={handleToggleDrawingMode}
       />
@@ -547,12 +507,9 @@ const Index = () => {
             onCreateObject={() => handleCreateObject([])}
             onSelectObject={handleSelectObject}
             onDeleteObject={handleDeleteObject}
-            onDeleteSelectedObjects={deleteSelectedObjects}
             onRenameObject={renameObject}
             onUpdateCurveConfig={updateObjectCurveConfig}
             onUpdateTransform={updateObjectTransform}
-            onCopyObjects={copySelectedObjects}
-            onPasteObjects={pasteObjects}
             backgroundImage={backgroundImage}
             backgroundOpacity={backgroundOpacity}
             onBackgroundOpacityChange={setBackgroundOpacity}

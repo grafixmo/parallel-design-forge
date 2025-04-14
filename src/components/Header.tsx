@@ -1,7 +1,7 @@
 
 import React, { useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { PenLine, Trash2, Upload, Save, Database, MousePointer, Image, FileUp, Download, Copy, Clipboard } from 'lucide-react';
+import { PenLine, Trash2, Upload, Save, Database, MousePointer, Image, Import, FileUp, Download } from 'lucide-react';
 import {
   Tooltip,
   TooltipContent,
@@ -24,27 +24,20 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
 import TemplateGallery from './TemplateGallery';
 import { getTemplateCategories } from '@/utils/thumbnailGenerator';
-import { SVGImportOptions } from '@/types/bezier';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Progress } from '@/components/ui/progress';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
-import { cancelSVGParsing } from '@/utils/svgImporter';
 
 interface HeaderProps {
   onClearCanvas: () => void;
   onSaveDesign: (name: string, category: string, description?: string) => void;
   onLoadDesigns: () => void;
   onExportSVG: () => void;
-  onImportSVG?: (svgContent: string, options?: SVGImportOptions, onProgress?: (progress: number) => void) => void;
+  onImportSVG?: (svgContent: string) => void;
   onLoadTemplate?: (templateData: string) => void;
-  onCopyObjects?: () => void;
-  onPasteObjects?: () => void;
   isDrawingMode?: boolean;
   onToggleDrawingMode?: () => void;
 }
@@ -56,8 +49,6 @@ const Header: React.FC<HeaderProps> = ({
   onExportSVG,
   onImportSVG,
   onLoadTemplate,
-  onCopyObjects,
-  onPasteObjects,
   isDrawingMode = true,
   onToggleDrawingMode
 }) => {
@@ -65,20 +56,8 @@ const Header: React.FC<HeaderProps> = ({
   const [designCategory, setDesignCategory] = useState('Earrings');
   const [designDescription, setDesignDescription] = useState('');
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
-  const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [galleryOpen, setGalleryOpen] = useState(false);
-  const [importOptions, setImportOptions] = useState<SVGImportOptions>({
-    replaceExisting: true,
-    importStyle: true,
-    simplifyPaths: true,
-    preserveViewBox: true,
-    fitToCanvas: false,
-    centerOnCanvas: false
-  });
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [importProgress, setImportProgress] = useState(0);
-  const [isImporting, setIsImporting] = useState(false);
   const categories = getTemplateCategories();
   
   const handleSaveClick = () => {
@@ -98,20 +77,12 @@ const Header: React.FC<HeaderProps> = ({
       onLoadTemplate(templateData);
     }
   };
-
-  const handleImportClick = () => {
-    setImportDialogOpen(true);
-    setImportProgress(0);
-    setIsImporting(false);
-    setSelectedFile(null);
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
   
-  const handleFileSelect = () => {
+  const handleImportClick = () => {
     fileInputRef.current?.click();
   };
   
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     
@@ -125,111 +96,26 @@ const Header: React.FC<HeaderProps> = ({
       return;
     }
     
-    setSelectedFile(file);
-    setImportProgress(0);
-  };
-  
-  const handleImportCancel = () => {
-    if (isImporting) {
-      // Cancel the SVG parsing if it's in progress
-      cancelSVGParsing();
-    }
-    
-    setIsImporting(false);
-    setImportDialogOpen(false);
-    setSelectedFile(null);
-    setImportProgress(0);
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
-  
-  const handleImportConfirm = async () => {
-    if (!selectedFile || !onImportSVG) {
-      toast({
-        title: "No File Selected",
-        description: "Please select an SVG file first.",
-        variant: "destructive"
-      });
-      return;
-    }
-    
     try {
-      // Show loading toast
-      toast({
-        title: "Importing SVG",
-        description: "Please wait while we process your file..."
-      });
-      
-      setIsImporting(true);
-      setImportProgress(0);
-      
       // Read file content
-      const fileReader = new FileReader();
-      
-      fileReader.onload = async (event) => {
-        try {
-          const svgContent = event.target?.result as string;
-          if (!svgContent) throw new Error("Failed to read SVG file");
-          
-          // Quick size validation
-          if (svgContent.length > 10000000) { // 10MB limit
-            throw new Error("SVG file is too large to process");
-          }
-          
-          // Track progress using the callback
-          const updateProgress = (progress: number) => {
-            setImportProgress(progress * 100);
-          };
-          
-          // Import the SVG with options and progress tracking
-          await onImportSVG(svgContent, importOptions, updateProgress);
-          
-          // Close dialog and reset state
-          setImportDialogOpen(false);
-          setSelectedFile(null);
-          setIsImporting(false);
-          setImportProgress(0);
-          if (fileInputRef.current) fileInputRef.current.value = '';
-          
-          toast({
-            title: "Import Successful",
-            description: "SVG file imported successfully."
-          });
-        } catch (error) {
-          console.error('Error importing SVG:', error);
-          toast({
-            title: "Import Failed",
-            description: `Failed to import the SVG file: ${(error as Error).message}`,
-            variant: "destructive"
-          });
-          setIsImporting(false);
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const content = event.target?.result as string;
+        if (content && onImportSVG) {
+          onImportSVG(content);
         }
       };
+      reader.readAsText(file);
       
-      fileReader.onprogress = (event) => {
-        if (event.lengthComputable) {
-          const progress = (event.loaded / event.total) * 30;
-          setImportProgress(progress);
-        }
-      };
-      
-      fileReader.onerror = () => {
-        toast({
-          title: "File Read Error",
-          description: "Failed to read the SVG file.",
-          variant: "destructive"
-        });
-        setIsImporting(false);
-      };
-      
-      fileReader.readAsText(selectedFile);
+      // Reset the input to allow selecting the same file again
+      e.target.value = '';
     } catch (error) {
       console.error('Error importing SVG:', error);
       toast({
         title: "Import Failed",
-        description: `Failed to import the SVG file: ${(error as Error).message}`,
+        description: "Failed to import the SVG file. Please try again.",
         variant: "destructive"
       });
-      setIsImporting(false);
     }
   };
   
@@ -276,44 +162,6 @@ const Header: React.FC<HeaderProps> = ({
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
-        
-        {onCopyObjects && onPasteObjects && (
-          <div className="flex space-x-2 ml-2">
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button 
-                    variant="outline" 
-                    onClick={onCopyObjects}
-                    size="sm"
-                  >
-                    <Copy className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>Copy selected objects</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-            
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button 
-                    variant="outline" 
-                    onClick={onPasteObjects}
-                    size="sm"
-                  >
-                    <Clipboard className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>Paste objects</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          </div>
-        )}
       </div>
       
       <div className="flex items-center space-x-2">
@@ -417,187 +265,6 @@ const Header: React.FC<HeaderProps> = ({
           </DialogContent>
         </Dialog>
         
-        {/* SVG Import Dialog with Progress Indicator */}
-        <Dialog open={importDialogOpen} onOpenChange={(open) => {
-          if (!isImporting) setImportDialogOpen(open); 
-          // Prevent closing dialog while import is in progress
-        }}>
-          <DialogContent className="sm:max-w-[500px]">
-            <DialogHeader>
-              <DialogTitle className="text-xl">Import SVG</DialogTitle>
-              <DialogDescription>
-                Upload an SVG file to import into your design.
-              </DialogDescription>
-            </DialogHeader>
-            
-            <div className="my-6 space-y-4">
-              {isImporting ? (
-                <div className="space-y-2">
-                  <p className="text-center font-medium text-sm">Processing SVG file...</p>
-                  <Progress value={importProgress} className="h-2 w-full" />
-                  <p className="text-xs text-center text-gray-500">
-                    {importProgress < 100 ? 'Please wait while we process your file...' : 'Almost done!'}
-                  </p>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center border-2 border-dashed rounded-md p-6 bg-gray-50">
-                  {selectedFile ? (
-                    <div className="text-center">
-                      <p className="text-green-600 font-medium mb-2">{selectedFile.name}</p>
-                      <p className="text-sm text-gray-500">{Math.round(selectedFile.size / 1024)} KB</p>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="mt-2"
-                        onClick={handleFileSelect}
-                      >
-                        Change file
-                      </Button>
-                    </div>
-                  ) : (
-                    <>
-                      <FileUp className="h-10 w-10 text-gray-400 mb-2" />
-                      <p className="text-sm text-gray-500 mb-2">Click to select an SVG file</p>
-                      <Button variant="outline" onClick={handleFileSelect}>
-                        Select File
-                      </Button>
-                    </>
-                  )}
-                </div>
-              )}
-              
-              {!isImporting && (
-                <div className="space-y-4 border p-4 rounded-md bg-gray-50">
-                  <h3 className="font-medium">Import Options</h3>
-                  
-                  <div className="flex items-center space-x-2">
-                    <Checkbox 
-                      id="replace-existing" 
-                      checked={importOptions.replaceExisting}
-                      onCheckedChange={(checked) => 
-                        setImportOptions({
-                          ...importOptions,
-                          replaceExisting: checked === true
-                        })
-                      }
-                      disabled={isImporting}
-                    />
-                    <Label htmlFor="replace-existing">Replace existing objects</Label>
-                  </div>
-                  
-                  <div className="flex items-center space-x-2">
-                    <Checkbox 
-                      id="import-style" 
-                      checked={importOptions.importStyle}
-                      onCheckedChange={(checked) => 
-                        setImportOptions({
-                          ...importOptions,
-                          importStyle: checked === true
-                        })
-                      }
-                      disabled={isImporting}
-                    />
-                    <Label htmlFor="import-style">Import SVG style attributes</Label>
-                  </div>
-                  
-                  <div className="flex items-center space-x-2">
-                    <Checkbox 
-                      id="preserve-viewbox" 
-                      checked={importOptions.preserveViewBox}
-                      onCheckedChange={(checked) => 
-                        setImportOptions({
-                          ...importOptions,
-                          preserveViewBox: checked === true
-                        })
-                      }
-                      disabled={isImporting}
-                    />
-                    <Label htmlFor="preserve-viewbox">Preserve original SVG positioning</Label>
-                  </div>
-                  
-                  <div className="flex items-center space-x-2">
-                    <Checkbox 
-                      id="simplify-paths" 
-                      checked={importOptions.simplifyPaths}
-                      onCheckedChange={(checked) => 
-                        setImportOptions({
-                          ...importOptions,
-                          simplifyPaths: checked === true
-                        })
-                      }
-                      disabled={isImporting}
-                    />
-                    <Label htmlFor="simplify-paths">Simplify complex paths (reduces points)</Label>
-                  </div>
-                  
-                  <div className="flex items-center space-x-2">
-                    <Checkbox 
-                      id="fit-to-canvas" 
-                      checked={importOptions.fitToCanvas}
-                      onCheckedChange={(checked) => 
-                        setImportOptions({
-                          ...importOptions,
-                          fitToCanvas: checked === true
-                        })
-                      }
-                      disabled={isImporting}
-                    />
-                    <Label htmlFor="fit-to-canvas">Fit to canvas (scale to fit)</Label>
-                  </div>
-                  
-                  <div className="flex items-center space-x-2">
-                    <Checkbox 
-                      id="maintain-aspect-ratio" 
-                      checked={importOptions.maintainAspectRatio !== false}
-                      onCheckedChange={(checked) => 
-                        setImportOptions({
-                          ...importOptions,
-                          maintainAspectRatio: checked === true
-                        })
-                      }
-                      disabled={isImporting || !importOptions.fitToCanvas}
-                    />
-                    <Label htmlFor="maintain-aspect-ratio" className={!importOptions.fitToCanvas ? "text-gray-400" : ""}>
-                      Maintain aspect ratio
-                    </Label>
-                  </div>
-                  
-                  <div className="flex items-center space-x-2">
-                    <Checkbox 
-                      id="center-on-canvas" 
-                      checked={importOptions.centerOnCanvas}
-                      onCheckedChange={(checked) => 
-                        setImportOptions({
-                          ...importOptions,
-                          centerOnCanvas: checked === true
-                        })
-                      }
-                      disabled={isImporting}
-                    />
-                    <Label htmlFor="center-on-canvas">Center on canvas</Label>
-                  </div>
-                </div>
-              )}
-            </div>
-            
-            <DialogFooter>
-              <Button 
-                variant="outline" 
-                onClick={handleImportCancel}
-                disabled={isImporting && importProgress < 95}
-              >
-                {isImporting ? "Cancel" : "Close"}
-              </Button>
-              <Button 
-                onClick={handleImportConfirm}
-                disabled={!selectedFile || isImporting}
-              >
-                Import SVG
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-        
         {/* SVG Import/Export Dropdown */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -611,10 +278,9 @@ const Header: React.FC<HeaderProps> = ({
               <Download className="h-4 w-4 mr-2" />
               Export SVG
             </DropdownMenuItem>
-            <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleImportClick} className="cursor-pointer">
               <FileUp className="h-4 w-4 mr-2" />
-              Import SVG...
+              Import SVG
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
