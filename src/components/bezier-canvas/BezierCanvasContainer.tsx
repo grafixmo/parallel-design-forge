@@ -1,14 +1,13 @@
 
-import React, { useRef, useEffect } from 'react';
+import React from 'react';
 import { 
-  Point, 
   BezierObject, 
   ControlPoint
 } from '@/types/bezier';
-import { useCanvasSetup } from './hooks/useCanvasSetup';
-import { useCanvasHandlers } from './hooks/useCanvasHandlers';
-import { useCanvasRenderer } from './hooks/useCanvasRenderer';
 import BezierCanvas from './BezierCanvas';
+import { toast } from '@/hooks/use-toast';
+import { importSVG } from '@/utils/simpleSvgImporter';
+import { exportSVG, downloadSVG } from '@/utils/simpleSvgExporter';
 
 interface BezierCanvasContainerProps {
   width: number;
@@ -26,10 +25,82 @@ interface BezierCanvasContainerProps {
 }
 
 const BezierCanvasContainer: React.FC<BezierCanvasContainerProps> = (props) => {
-  // Pass through to the simplified main component
+  // Handle SVG import (for reference, handled at Header component level)
+  const handleSVGImport = (svgContent: string) => {
+    try {
+      // Import SVG and convert to BezierObjects
+      const importedObjects = importSVG(svgContent);
+      
+      if (importedObjects.length === 0) {
+        toast({
+          title: "Import Error",
+          description: "No valid paths found in the SVG file.",
+          variant: "destructive"
+        });
+        return;
+      }
+      
+      // Add imported objects to the canvas
+      // This would be called by the parent component that uses this container
+      toast({
+        title: "SVG Imported",
+        description: `Successfully imported ${importedObjects.length} shapes.`,
+        variant: "default"
+      });
+      
+      return importedObjects;
+    } catch (error) {
+      console.error("Error importing SVG:", error);
+      toast({
+        title: "Import Error",
+        description: "Failed to import SVG. Please try a simpler file.",
+        variant: "destructive"
+      });
+      return [];
+    }
+  };
+  
+  // Handle SVG export (for reference, handled at Header component level)
+  const handleSVGExport = (fileName: string = "bezier-design.svg") => {
+    try {
+      if (props.objects.length === 0) {
+        toast({
+          title: "Export Error",
+          description: "No objects to export. Create some shapes first.",
+          variant: "destructive"
+        });
+        return;
+      }
+      
+      // Create SVG content from objects
+      const svgContent = exportSVG(props.objects, props.width, props.height);
+      
+      // Download the SVG file
+      downloadSVG(svgContent, fileName);
+      
+      toast({
+        title: "SVG Exported",
+        description: `Successfully exported ${props.objects.length} shapes.`,
+        variant: "default"
+      });
+    } catch (error) {
+      console.error("Error exporting SVG:", error);
+      toast({
+        title: "Export Error",
+        description: "Failed to export SVG.",
+        variant: "destructive"
+      });
+    }
+  };
+  
+  // Pass through to the main BezierCanvas component
   return (
     <BezierCanvas {...props} />
   );
 };
+
+// Expose functions for external use
+export { importSVG } from '@/utils/simpleSvgImporter';
+export { exportSVG, downloadSVG } from '@/utils/simpleSvgExporter';
 
 export default BezierCanvasContainer;

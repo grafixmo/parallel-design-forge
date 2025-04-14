@@ -29,6 +29,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+// Import new SVG utilities
+import { readSVGFile } from '@/utils/simpleSvgImporter';
+import { importSVG } from '@/utils/simpleSvgImporter';
+import { exportSVG, downloadSVG } from '@/utils/simpleSvgExporter';
 
 interface HeaderProps {
   onClearCanvas: () => void;
@@ -78,6 +82,7 @@ const Header: React.FC<HeaderProps> = ({
     }
   };
   
+  // Updated SVG import flow with more robust error handling
   const handleImportClick = () => {
     fileInputRef.current?.click();
   };
@@ -101,55 +106,50 @@ const Header: React.FC<HeaderProps> = ({
       setIsImporting(true);
       toast({
         title: "Importing SVG",
-        description: "Please wait while we process your SVG file...",
+        description: "Processing your file...",
       });
       
       // Read file content
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const content = event.target?.result as string;
-        if (content && onImportSVG) {
-          try {
-            onImportSVG(content);
-            toast({
-              title: "SVG Imported Successfully",
-              description: "Your SVG file has been imported and rendered on the canvas.",
-              variant: "default"
-            });
-          } catch (error) {
-            console.error("Error during SVG import:", error);
-            toast({
-              title: "Import Error",
-              description: "There was an error processing the SVG. Please try a simpler file.",
-              variant: "destructive"
-            });
-          } finally {
-            setIsImporting(false);
-          }
-        }
-      };
+      const svgContent = await readSVGFile(file);
       
-      reader.onerror = () => {
+      // Try to validate the SVG by importing it to objects first
+      // This will throw if the SVG is invalid without affecting the UI
+      const importedObjects = importSVG(svgContent);
+      
+      if (importedObjects.length === 0) {
         toast({
-          title: "Import Failed",
-          description: "Failed to read the SVG file. Please try again.",
-          variant: "destructive"
+          title: "Import Warning",
+          description: "No path elements found in the SVG. Make sure the file contains SVG paths.",
+          variant: "warning"
         });
         setIsImporting(false);
-      };
+        return;
+      }
       
-      reader.readAsText(file);
+      // Call the parent component's import handler with the SVG content
+      if (onImportSVG) {
+        onImportSVG(svgContent);
+      }
       
-      // Reset the input to allow selecting the same file again
-      e.target.value = '';
+      toast({
+        title: "SVG Imported",
+        description: `Successfully imported ${importedObjects.length} shapes.`,
+        variant: "default"
+      });
     } catch (error) {
       console.error('Error importing SVG:', error);
       toast({
         title: "Import Failed",
-        description: "Failed to import the SVG file. Please try again.",
+        description: "The SVG file couldn't be imported. Please try a simpler file.",
         variant: "destructive"
       });
+    } finally {
       setIsImporting(false);
+      
+      // Reset the input to allow selecting the same file again
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
     }
   };
   
@@ -299,10 +299,14 @@ const Header: React.FC<HeaderProps> = ({
           </DialogContent>
         </Dialog>
         
-        {/* SVG Import/Export Dropdown */}
+        {/* SVG Import/Export Dropdown - Now with improved error handling */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="default" className="bg-indigo-600 hover:bg-indigo-700" disabled={isImporting}>
+            <Button 
+              variant="default" 
+              className="bg-indigo-600 hover:bg-indigo-700" 
+              disabled={isImporting}
+            >
               <Database className="h-4 w-4 mr-2" />
               {isImporting ? 'Importing...' : 'SVG Actions'}
             </Button>

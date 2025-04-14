@@ -1,3 +1,6 @@
 
 import BezierCanvas from './BezierCanvas';
-export default BezierCanvas;
+import BezierCanvasContainer, { importSVG, exportSVG, downloadSVG } from './BezierCanvasContainer';
+
+export { BezierCanvas, importSVG, exportSVG, downloadSVG };
+export default BezierCanvasContainer;
