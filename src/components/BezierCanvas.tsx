@@ -125,6 +125,32 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       setBackgroundImageObj(null);
     }
   }, [backgroundImage]);
+
+  // Make sure canvas size is properly set
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    // Ensure canvas dimensions are set correctly
+    if (width && height) {
+      canvas.width = width;
+      canvas.height = height;
+      console.log(`Canvas dimensions set to ${width}x${height}`);
+    } else {
+      // Fallback to container size if width/height not provided
+      const container = wrapperRef.current;
+      if (container) {
+        canvas.width = container.clientWidth || 800;
+        canvas.height = container.clientHeight || 600;
+        console.log(`Canvas fallback dimensions: ${canvas.width}x${canvas.height}`);
+      } else {
+        // Last resort fallback
+        canvas.width = 800;
+        canvas.height = 600;
+        console.log('Using default canvas dimensions: 800x600');
+      }
+    }
+  }, [width, height]);
   
   // Convert screen coordinates to canvas coordinates (accounting for zoom)
   const screenToCanvas = (x: number, y: number): Point => {
@@ -344,6 +370,11 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       ctx.fillText(`Moving ${selectedObjectIds.length} objects`, 10, 80);
     }
     
+    // Debug coordinates
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.font = '12px Arial';
+    ctx.fillText(`Mouse: ${Math.round(mousePos.x)},${Math.round(mousePos.y)}`, 10, canvas.height - 10);
+    
   }, [
     objects,
     selectedObjectIds,
@@ -371,10 +402,15 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     const screenX = e.clientX - rect.left;
     const screenY = e.clientY - rect.top;
     
+    console.log(`Mouse down at screen coordinates: ${screenX}, ${screenY}`);
+    
     // Convert to canvas coordinates
     const canvasCoords = screenToCanvas(screenX, screenY);
     const x = canvasCoords.x;
     const y = canvasCoords.y;
+    
+    console.log(`Converted to canvas coordinates: ${x}, ${y}`);
+    console.log(`Canvas dimensions: ${canvas.width}x${canvas.height}`);
     
     setMousePos({ x, y });
     
@@ -482,6 +518,8 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         });
         setIsDragging(true);
         setLastDragPosition({ x, y });
+        
+        console.log(`Added point to existing object, now has ${updatedPoints.length} points`);
       } else {
         // Start a new drawing with the first point
         const newPoint: ControlPoint = {
@@ -492,9 +530,13 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
           id: generateId()
         };
         
+        console.log(`Creating new object at ${x},${y}`);
+        
         // Create a new object with this point
         const newObjectId = onCreateObject([newPoint]);
         setCurrentDrawingObjectId(newObjectId);
+        
+        console.log(`New object created with ID: ${newObjectId}`);
         
         // Select the new point for potential dragging
         setSelectedPoint({
@@ -950,8 +992,8 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     <div ref={wrapperRef} className="relative w-full h-full">
       <canvas
         ref={canvasRef}
-        width={width}
-        height={height}
+        width={width || 800}
+        height={height || 600}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
@@ -959,6 +1001,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         onContextMenu={handleContextMenu}
         onWheel={handleWheel}
         className="border border-gray-300 w-full h-full"
+        style={{ minWidth: "400px", minHeight: "300px" }}
       />
 
       {/* Toolbar buttons */}
@@ -980,6 +1023,11 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       {/* Instruction message */}
       <div className="absolute bottom-2 left-2 text-sm text-gray-700 bg-white/80 px-2 py-1 rounded shadow">
         {instructionMessage}
+      </div>
+      
+      {/* Canvas size debug info */}
+      <div className="absolute bottom-2 right-2 text-xs text-gray-500 bg-white/50 px-1 py-0.5 rounded">
+        Canvas: {width}x{height}
       </div>
     </div>
   );

@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { 
   ControlPoint, 
@@ -22,7 +23,7 @@ import { convertShapesDataToObjects } from '@/utils/bezierUtils';
 const Index = () => {
   const { toast } = useToast();
   
-  // Canvas state
+  // Canvas state - Initialize with fixed values for stability
   const [canvasWidth, setCanvasWidth] = useState<number>(800);
   const [canvasHeight, setCanvasHeight] = useState<number>(600);
   
@@ -60,14 +61,26 @@ const Index = () => {
     const handleResize = () => {
       const container = document.getElementById('canvas-container');
       if (container) {
-        const padding = 40; // account for container padding
-        setCanvasWidth(container.clientWidth - padding);
-        setCanvasHeight(container.clientHeight - padding);
+        // Use clientWidth and clientHeight directly with safety bounds
+        const newWidth = Math.max(container.clientWidth - 40, 400); // Min width 400px
+        const newHeight = Math.max(container.clientHeight - 40, 300); // Min height 300px
+        
+        console.log(`Resizing canvas to ${newWidth}x${newHeight}`);
+        
+        setCanvasWidth(newWidth);
+        setCanvasHeight(newHeight);
+      } else {
+        console.log('Canvas container not found, using default dimensions');
       }
     };
     
+    // Initial sizing
     handleResize();
+    
+    // Listen for resize events
     window.addEventListener('resize', handleResize);
+    
+    // Cleanup
     return () => window.removeEventListener('resize', handleResize);
   }, []);
   
@@ -122,12 +135,16 @@ const Index = () => {
   
   // Handler for creating new objects from the canvas
   const handleCreateObject = (points: ControlPoint[]) => {
+    console.log(`Creating new object with ${points.length} points`);
     const objectName = `Object ${objects.length + 1}`;
-    return createObject(points, objectName);
+    const newObjectId = createObject(points, objectName);
+    console.log(`Created object with ID: ${newObjectId}`);
+    return newObjectId;
   };
   
   // Handler for object selection
   const handleSelectObject = (objectId: string, multiSelect: boolean = false) => {
+    console.log(`Selecting object: ${objectId}, multiSelect: ${multiSelect}`);
     if (objectId === '') {
       deselectAllObjects();
     } else {
@@ -137,8 +154,8 @@ const Index = () => {
   
   // Handler for updating all objects
   const handleObjectsChange = (updatedObjects: BezierObject[]) => {
-    // This is a simplified version - in a real app you'd need to merge with existing objects
-    updateObjects(updatedObjects); // Use updateObjects instead of updateObjectPoints
+    console.log(`Updating ${updatedObjects.length} objects`);
+    updateObjects(updatedObjects);
   };
   
   // Export design as SVG
@@ -482,7 +499,7 @@ const Index = () => {
       />
       
       <div className="flex flex-1 overflow-hidden">
-        <div id="canvas-container" className="flex-1 bg-gray-50 p-4 overflow-hidden">
+        <div id="canvas-container" className="flex-1 bg-gray-50 p-4 overflow-hidden" style={{ minHeight: "400px" }}>
           <BezierCanvas
             width={canvasWidth}
             height={canvasHeight}
