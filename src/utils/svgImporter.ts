@@ -1,4 +1,3 @@
-
 import { ControlPoint, BezierObject, CurveConfig, TransformSettings, SVGImportOptions } from '../types/bezier';
 import { generateId } from './bezierUtils';
 
@@ -14,94 +13,186 @@ interface SVGImportResult {
   height: number;
 }
 
-// Parse SVG string into BezierObject objects
-export const parseSVGContent = (svgContent: string, options?: SVGImportOptions): SVGImportResult => {
-  try {
-    // Create a DOM parser
-    const parser = new DOMParser();
-    const svgDoc = parser.parseFromString(svgContent, 'image/svg+xml');
-    
-    // Check for parsing errors
-    const parserError = svgDoc.querySelector('parsererror');
-    if (parserError) {
-      throw new Error('Invalid SVG format');
-    }
-    
-    // Get the root SVG element
-    const svgElement = svgDoc.querySelector('svg');
-    if (!svgElement) {
-      throw new Error('No SVG element found');
-    }
-    
-    // Get SVG dimensions
-    const width = parseFloat(svgElement.getAttribute('width') || '800');
-    const height = parseFloat(svgElement.getAttribute('height') || '600');
-    
-    // Find all path elements
-    const pathElements = svgDoc.querySelectorAll('path');
-    if (pathElements.length === 0) {
-      throw new Error('No paths found in the SVG');
-    }
-    
-    // Extract path data
-    const pathsData: SVGPathData[] = [];
-    pathElements.forEach((pathElement) => {
-      const d = pathElement.getAttribute('d');
-      if (d) {
-        // Get style information (if option enabled)
-        const useImportedStyle = options?.importStyle !== false;
-        
-        pathsData.push({
-          path: d,
-          color: useImportedStyle ? (pathElement.getAttribute('stroke') || '#000000') : '#000000',
-          width: useImportedStyle ? parseFloat(pathElement.getAttribute('stroke-width') || '2') : 2
-        });
-      }
-    });
-    
-    // Convert paths to BezierObjects
-    const objects: BezierObject[] = pathsData.map((pathData, index) => {
-      const points = convertPathToPoints(pathData.path);
-      
-      // Create curve config
-      const curveConfig: CurveConfig = {
-        styles: [
-          { color: pathData.color, width: pathData.width }
-        ],
-        parallelCount: 0,
-        spacing: 0
-      };
-      
-      // Create transform settings - default to no transformation
-      const transform: TransformSettings = {
-        rotation: 0,
-        scaleX: 1.0,
-        scaleY: 1.0
-      };
-      
-      // Create BezierObject
-      return {
-        id: generateId(),
-        points,
-        curveConfig,
-        transform,
-        name: `Imported Path ${index + 1}`,
-        isSelected: false
-      };
-    });
-    
-    return {
-      objects,
-      width,
-      height
-    };
-  } catch (error) {
-    console.error('Error parsing SVG:', error);
-    throw error;
-  }
+// Create a function to prepare a worker
+const createSVGWorker = () => {
+  return new Worker(new URL('./svgWorker.ts', import.meta.url), { type: 'module' });
 };
 
-// Convert SVG path string to ControlPoint objects
+// Parse SVG string into BezierObject objects with progress callbacks
+export const parseSVGContent = (
+  svgContent: string, 
+  options?: SVGImportOptions,
+  onProgress?: (progress: number) => void
+): Promise<SVGImportResult> => {
+  return new Promise((resolve, reject) => {
+    try {
+      // Report initial progress
+      if (onProgress) onProgress(0.1);
+      
+      // Create a DOM parser
+      const parser = new DOMParser();
+      const svgDoc = parser.parseFromString(svgContent, 'image/svg+xml');
+      
+      // Check for parsing errors
+      const parserError = svgDoc.querySelector('parsererror');
+      if (parserError) {
+        throw new Error('Invalid SVG format');
+      }
+      
+      // Get the root SVG element
+      const svgElement = svgDoc.querySelector('svg');
+      if (!svgElement) {
+        throw new Error('No SVG element found');
+      }
+      
+      // Get SVG dimensions
+      const width = parseFloat(svgElement.getAttribute('width') || '800');
+      const height = parseFloat(svgElement.getAttribute('height') || '600');
+      
+      // Find all path elements
+      const pathElements = svgDoc.querySelectorAll('path');
+      if (pathElements.length === 0) {
+        throw new Error('No paths found in the SVG');
+      }
+      
+      if (onProgress) onProgress(0.2);
+      
+      // Extract path data
+      const pathsData: SVGPathData[] = [];
+      pathElements.forEach((pathElement) => {
+        const d = pathElement.getAttribute('d');
+        if (d) {
+          // Get style information (if option enabled)
+          const useImportedStyle = options?.importStyle !== false;
+          
+          pathsData.push({
+            path: d,
+            color: useImportedStyle ? (pathElement.getAttribute('stroke') || '#000000') : '#000000',
+            width: useImportedStyle ? parseFloat(pathElement.getAttribute('stroke-width') || '2') : 2
+          });
+        }
+      });
+      
+      // Progress update for path extraction
+      if (onProgress) onProgress(0.3);
+      
+      // For very simple SVGs with few paths, process synchronously
+      if (pathsData.length <= 3) {
+        // Convert paths to BezierObjects
+        const objects: BezierObject[] = pathsData.map((pathData, index) => {
+          const points = convertPathToPoints(pathData.path);
+          
+          // Create curve config
+          const curveConfig: CurveConfig = {
+            styles: [
+              { color: pathData.color, width: pathData.width }
+            ],
+            parallelCount: 0,
+            spacing: 0
+          };
+          
+          // Create transform settings - default to no transformation
+          const transform: TransformSettings = {
+            rotation: 0,
+            scaleX: 1.0,
+            scaleY: 1.0
+          };
+          
+          // Create BezierObject
+          return {
+            id: generateId(),
+            points,
+            curveConfig,
+            transform,
+            name: `Imported Path ${index + 1}`,
+            isSelected: false
+          };
+        });
+        
+        if (onProgress) onProgress(1.0);
+        
+        resolve({
+          objects,
+          width,
+          height
+        });
+      } else {
+        // For more complex SVGs, process with a worker
+        const worker = createSVGWorker();
+        
+        worker.onmessage = (e) => {
+          const { type, progress, results, error } = e.data;
+          
+          if (type === 'progress' && onProgress) {
+            // Scale worker progress from 0.3 to 0.9 in our overall process
+            onProgress(0.3 + (progress * 0.6));
+          } else if (type === 'complete') {
+            // Worker completed processing all paths
+            const objects: BezierObject[] = results.map((result, index) => {
+              // Create curve config
+              const curveConfig: CurveConfig = {
+                styles: [
+                  { color: pathsData[index].color, width: pathsData[index].width }
+                ],
+                parallelCount: 0,
+                spacing: 0
+              };
+              
+              // Create transform settings - default to no transformation
+              const transform: TransformSettings = {
+                rotation: 0,
+                scaleX: 1.0,
+                scaleY: 1.0
+              };
+              
+              // Create BezierObject
+              return {
+                id: generateId(),
+                points: result.points,
+                curveConfig,
+                transform,
+                name: `Imported Path ${index + 1}`,
+                isSelected: false
+              };
+            });
+            
+            if (onProgress) onProgress(1.0);
+            
+            // Terminate the worker
+            worker.terminate();
+            
+            resolve({
+              objects,
+              width,
+              height
+            });
+          } else if (type === 'error') {
+            worker.terminate();
+            reject(new Error(error));
+          }
+        };
+        
+        // Handle worker errors
+        worker.onerror = (err) => {
+          worker.terminate();
+          reject(new Error('Worker error: ' + err.message));
+        };
+        
+        // Start the worker with the path data
+        worker.postMessage({
+          paths: pathsData,
+          options
+        });
+      }
+    } catch (error) {
+      console.error('Error parsing SVG:', error);
+      if (onProgress) onProgress(1.0); // Ensure progress completes even on error
+      reject(error);
+    }
+  });
+};
+
+// Convert SVG path string to ControlPoint objects (synchronous version for simple paths)
 const convertPathToPoints = (path: string): ControlPoint[] => {
   const points: ControlPoint[] = [];
   
@@ -251,13 +342,22 @@ const convertPathToPoints = (path: string): ControlPoint[] => {
   return points;
 };
 
-// Read SVG file from input element
-export const readSVGFile = (file: File): Promise<string> => {
+// Read SVG file from input element with progress tracking
+export const readSVGFile = (file: File, onProgress?: (progress: number) => void): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     
     reader.onload = (e) => {
+      if (onProgress) onProgress(1.0);
       resolve(e.target?.result as string);
+    };
+    
+    reader.onprogress = (event) => {
+      if (event.lengthComputable && onProgress) {
+        // File read progress from 0 to 0.2 in our overall process
+        const progress = event.loaded / event.total;
+        onProgress(progress * 0.2);
+      }
     };
     
     reader.onerror = (e) => {

@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { 
   ControlPoint, 
@@ -13,7 +12,7 @@ import Header from '@/components/Header';
 import LibraryPanel from '@/components/LibraryPanel';
 import { generateId } from '@/utils/bezierUtils';
 import { exportAsSVG, downloadSVG, createDesignSVG, exportSVGWithOptions } from '@/utils/svgExporter';
-import { parseSVGContent } from '@/utils/svgImporter';
+import { parseSVGContent, readSVGFile } from '@/utils/svgImporter';
 import { saveDesign, saveTemplate, Template } from '@/services/supabaseClient';
 import { useToast } from '@/hooks/use-toast';
 import { useBezierObjects } from '@/hooks/useBezierObjects';
@@ -176,8 +175,12 @@ const Index = () => {
     });
   };
   
-  // Import SVG file content
-  const handleImportSVG = async (svgContent: string, options?: SVGImportOptions) => {
+  // Import SVG file content with progress tracking
+  const handleImportSVG = async (
+    svgContent: string, 
+    options?: SVGImportOptions,
+    onProgress?: (progress: number) => void
+  ) => {
     try {
       setIsImporting(true);
       
@@ -187,8 +190,8 @@ const Index = () => {
         description: 'Please wait while we process your SVG file...'
       });
       
-      // Parse SVG content with options
-      const importResult = parseSVGContent(svgContent, options);
+      // Parse SVG content with options and progress tracking
+      const importResult = await parseSVGContent(svgContent, options, onProgress);
       
       if (importResult.objects.length === 0) {
         throw new Error('No valid paths found in the SVG');
@@ -280,8 +283,7 @@ const Index = () => {
         category,
         description,
         hasDesignData: !!template.design_data,
-        hasThumbnail: !!thumbnail,
-        hasSvgContent: !!svgContent
+        hasThumbnail: !!svgContent
       });
       
       const templateResult = await saveTemplate(template);
