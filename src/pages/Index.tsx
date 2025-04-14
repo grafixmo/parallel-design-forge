@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
   ControlPoint, 
@@ -38,7 +37,6 @@ const Index = () => {
     createObject,
     setAllObjects,
     loadObjectsFromTemplate,
-    selectObject,
     updateObjects,
     updateObjectCurveConfig,
     updateObjectTransform,
@@ -47,7 +45,9 @@ const Index = () => {
     renameObject,
     undo,
     redo,
-    saveCurrentState
+    saveCurrentState,
+    selectObject,
+    importSVGToObjects
   } = useBezierObjects();
   
   // For library panel
@@ -198,13 +198,45 @@ const Index = () => {
     }
   };
   
+  // Optimized Template Loading with error handling
+  const handleLoadTemplate = useCallback(async (templateData: string) => {
+    try {
+      setIsLoading(true);
+      console.log('Loading template');
+      
+      // Parse the template data to match the expected type in loadObjectsFromTemplate
+      const parsedData = JSON.parse(templateData);
+      
+      if (!Array.isArray(parsedData)) {
+        throw new Error('Invalid template data format');
+      }
+      
+      // Process and load the objects - now passing objects array directly, not as string
+      loadObjectsFromTemplate(parsedData);
+      
+      toast({
+        title: "Template Loaded",
+        description: `${parsedData.length} objects loaded from template`
+      });
+    } catch (error) {
+      console.error('Error loading template:', error);
+      toast({
+        title: "Template Load Failed",
+        description: "There was an error loading the template",
+        variant: "destructive"
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [loadObjectsFromTemplate, toast]);
+  
   // Import SVG content
   const handleImportSVG = async (svgContent: string) => {
     try {
-      const importedObjectsResult = await parseSVGContent(svgContent);
+      // Use the importSVGToObjects function from our hook
+      const importedObjects = importSVGToObjects(svgContent);
       
-      // Check if importedObjectsResult is an array or has the expected properties
-      if (!importedObjectsResult || !Array.isArray(importedObjectsResult)) {
+      if (!importedObjects || importedObjects.length === 0) {
         toast({
           title: "Import Failed",
           description: "No valid paths found in the SVG",
@@ -213,13 +245,12 @@ const Index = () => {
         return;
       }
       
-      // Add the imported objects to the canvas
-      setAllObjects([...objects, ...importedObjectsResult]);
+      // Objects are already added to state in the importSVGToObjects function
       saveCurrentState();
       
       toast({
         title: "SVG Imported",
-        description: `${importedObjectsResult.length} paths imported successfully`
+        description: `${importedObjects.length} paths imported successfully`
       });
     } catch (error) {
       console.error('Error importing SVG:', error);
@@ -250,49 +281,17 @@ const Index = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedObjectIds, isDrawingMode, deleteSelectedObjects]);
   
-  // Optimized Template Loading with error handling
-  const handleLoadTemplate = useCallback(async (templateData: string) => {
-    try {
-      setIsLoading(true);
-      console.log('Loading template');
-      
-      // Parse the template data
-      const parsedData = JSON.parse(templateData);
-      
-      if (!Array.isArray(parsedData)) {
-        throw new Error('Invalid template data format');
-      }
-      
-      // Process and load the objects
-      loadObjectsFromTemplate(parsedData);
-      
-      toast({
-        title: "Template Loaded",
-        description: `${parsedData.length} objects loaded from template`
-      });
-    } catch (error) {
-      console.error('Error loading template:', error);
-      toast({
-        title: "Template Load Failed",
-        description: "There was an error loading the template",
-        variant: "destructive"
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  }, [loadObjectsFromTemplate, toast]);
-  
   // Calculate disabled state for certain actions
   const isDeleteDisabled = selectedObjectIds.length === 0 || isDrawingMode;
   
   // Handle loading a design from the library
   const handleLoadDesign = (design: DesignData) => {
-    setLoadedDesign(design);
     if (design.objects && Array.isArray(design.objects)) {
-      // Fix: Pass only one argument to loadObjectsFromTemplate
+      // Directly pass the objects array, not as a string
       loadObjectsFromTemplate(design.objects);
+      setLoadedDesign(design);
+      setIsPanelOpen(false);
     }
-    setIsPanelOpen(false);
   };
   
   return (

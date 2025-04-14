@@ -1,3 +1,4 @@
+
 import React, { useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { PenLine, Trash2, Upload, Save, Database, MousePointer, Image, FileUp, Download } from 'lucide-react';
@@ -120,7 +121,7 @@ const Header: React.FC<HeaderProps> = ({
         toast({
           title: "Import Warning",
           description: "No path elements found in the SVG. Make sure the file contains SVG paths.",
-          variant: "warning"
+          variant: "destructive" // Changed from "warning" to "destructive"
         });
         setIsImporting(false);
         return;
