@@ -67,7 +67,9 @@ const Header: React.FC<HeaderProps> = ({
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [importOptions, setImportOptions] = useState<SVGImportOptions>({
     replaceExisting: true,
-    importStyle: true
+    importStyle: true,
+    simplifyPaths: false,
+    preserveViewBox: true
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -487,6 +489,36 @@ const Header: React.FC<HeaderProps> = ({
                       disabled={isImporting}
                     />
                     <Label htmlFor="import-style">Import SVG style attributes</Label>
+                  </div>
+                  
+                  <div className="flex items-center space-x-2">
+                    <Checkbox 
+                      id="preserve-viewbox" 
+                      checked={importOptions.preserveViewBox}
+                      onCheckedChange={(checked) => 
+                        setImportOptions({
+                          ...importOptions,
+                          preserveViewBox: checked === true
+                        })
+                      }
+                      disabled={isImporting}
+                    />
+                    <Label htmlFor="preserve-viewbox">Preserve original SVG positioning</Label>
+                  </div>
+                  
+                  <div className="flex items-center space-x-2">
+                    <Checkbox 
+                      id="simplify-paths" 
+                      checked={importOptions.simplifyPaths}
+                      onCheckedChange={(checked) => 
+                        setImportOptions({
+                          ...importOptions,
+                          simplifyPaths: checked === true
+                        })
+                      }
+                      disabled={isImporting}
+                    />
+                    <Label htmlFor="simplify-paths">Simplify complex paths (reduces points)</Label>
                   </div>
                 </div>
               )}

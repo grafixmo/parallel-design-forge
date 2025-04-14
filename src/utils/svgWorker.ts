@@ -2,10 +2,18 @@
 // SVG Worker file for processing SVG paths in a separate thread
 // This prevents the UI from freezing during complex SVG imports
 
-// Process SVG path data in chunks
+// Track original SVG viewBox for proper positioning
+let svgViewBox = { x: 0, y: 0, width: 800, height: 600 };
+
 onmessage = function(e) {
   try {
-    const { paths, options } = e.data;
+    const { paths, options, viewBox } = e.data;
+    
+    // Store viewBox information for coordinate calculations
+    if (viewBox) {
+      svgViewBox = viewBox;
+    }
+    
     const totalPaths = paths.length;
     const results = [];
     
@@ -29,10 +37,11 @@ onmessage = function(e) {
       });
     }
     
-    // Send completed result
+    // Send completed result with viewBox information
     postMessage({
       type: 'complete',
-      results
+      results,
+      viewBox: svgViewBox
     });
   } catch (error) {
     // Report error to main thread
@@ -43,10 +52,12 @@ onmessage = function(e) {
   }
 };
 
-// Process a single SVG path
+// Process a single SVG path - optimized to prevent freeze
 function processPath(pathData, options) {
   const { path, color, width } = pathData;
-  const points = convertPathToPoints(path);
+  
+  // Convert to points with minimal processing - only what's needed
+  const points = convertPathToPoints(path, options?.simplifyPaths);
   
   return {
     path,
@@ -56,21 +67,46 @@ function processPath(pathData, options) {
   };
 }
 
-// Optimized version of convertPathToPoints
-function convertPathToPoints(path) {
-  function generateUniqueId() {
-    return Math.random().toString(36).substring(2, 11);
-  }
+// Generate a unique ID with minimal overhead
+function generateUniqueId() {
+  return Math.random().toString(36).substring(2, 11);
+}
 
+// Optimized version of convertPathToPoints - minimal handle generation
+function convertPathToPoints(path, simplify = false) {
   const points = [];
   
   try {
-    // Command cache for better performance
-    const commandCache = {};
+    // Fast path parsing with minimal regex
+    // Split the path into command groups without regex if possible
+    let commands = [];
+    let currentCommand = '';
+    let currentType = '';
     
-    // More efficient path parsing - avoid expensive regex for simple paths
-    const commands = path.match(/[a-zA-Z][^a-zA-Z]*/g) || [];
+    for (let i = 0; i < path.length; i++) {
+      const char = path[i];
+      
+      // If this is a command character (letter)
+      if (/[a-zA-Z]/.test(char)) {
+        // If we already have a command in progress, save it
+        if (currentCommand) {
+          commands.push(currentCommand);
+        }
+        // Start a new command
+        currentType = char;
+        currentCommand = char;
+      } else {
+        // Add to current command
+        currentCommand += char;
+      }
+    }
     
+    // Add the last command if there is one
+    if (currentCommand) {
+      commands.push(currentCommand);
+    }
+    
+    // Process each command
     let currentX = 0;
     let currentY = 0;
     
@@ -78,20 +114,9 @@ function convertPathToPoints(path) {
       const command = commands[i];
       const type = command.charAt(0);
       
-      // Use cached args if we've seen this command before
-      let args;
-      if (commandCache[command]) {
-        args = commandCache[command];
-      } else {
-        args = command.substring(1)
-          .trim()
-          .split(/[\s,]+/)
-          .map(parseFloat)
-          .filter(n => !isNaN(n));
-        
-        // Cache the parsed args for this command
-        commandCache[command] = args;
-      }
+      // Parse arguments - split by comma or whitespace
+      const argsStr = command.substring(1).trim();
+      const args = argsStr.split(/[\s,]+/).map(parseFloat).filter(n => !isNaN(n));
       
       if ((type === 'M' || type === 'm') && args.length >= 2) {
         // Move command
@@ -103,12 +128,13 @@ function convertPathToPoints(path) {
           currentY += args[1];
         }
         
-        // Add first point
+        // Add first point - with minimal handle computation
         points.push({
           x: currentX,
           y: currentY,
-          handleIn: { x: currentX - 50, y: currentY },
-          handleOut: { x: currentX + 50, y: currentY },
+          // Only create handles with minimal offset - they'll be adjusted as needed
+          handleIn: { x: currentX, y: currentY },  // No offset initially
+          handleOut: { x: currentX, y: currentY }, // No offset initially
           id: generateUniqueId()
         });
       } else if ((type === 'C' || type === 'c') && args.length >= 6) {
@@ -142,6 +168,7 @@ function convertPathToPoints(path) {
           x: endX,
           y: endY,
           handleIn: { x: control2X, y: control2Y },
+          // Create handleOut that mirrors handleIn - simpler calculation
           handleOut: { x: endX + (endX - control2X), y: endY + (endY - control2Y) },
           id: generateUniqueId()
         });
@@ -160,30 +187,47 @@ function convertPathToPoints(path) {
           endY = currentY + args[1];
         }
         
-        // Add new point (for lines, handles are aligned with the line)
-        if (points.length > 0) {
-          const lastPoint = points[points.length - 1];
+        // For lines, only add points with simplified handle calculation
+        const lastPoint = points[points.length - 1];
+        if (lastPoint) {
+          // For lines, simple handle calculation along the line
           const dx = endX - lastPoint.x;
           const dy = endY - lastPoint.y;
           
-          // Set the out handle of previous point along the line
-          lastPoint.handleOut = {
-            x: lastPoint.x + dx / 3,
-            y: lastPoint.y + dy / 3
-          };
+          // Simple handle placement - small offsets to reduce complexity
+          const handleDistance = simplify ? 5 : Math.min(Math.sqrt(dx*dx + dy*dy) / 3, 30);
           
-          // Add new point with handle
+          if (dx !== 0 || dy !== 0) {
+            const length = Math.sqrt(dx*dx + dy*dy);
+            const normalizedDx = dx / length;
+            const normalizedDy = dy / length;
+            
+            lastPoint.handleOut = {
+              x: lastPoint.x + normalizedDx * handleDistance,
+              y: lastPoint.y + normalizedDy * handleDistance
+            };
+            
+            points.push({
+              x: endX,
+              y: endY,
+              handleIn: {
+                x: endX - normalizedDx * handleDistance,
+                y: endY - normalizedDy * handleDistance
+              },
+              handleOut: {
+                x: endX + normalizedDx * handleDistance,
+                y: endY + normalizedDy * handleDistance
+              },
+              id: generateUniqueId()
+            });
+          }
+        } else {
+          // If there's no previous point, just add this one
           points.push({
             x: endX,
             y: endY,
-            handleIn: {
-              x: endX - dx / 3,
-              y: endY - dy / 3
-            },
-            handleOut: {
-              x: endX + dx / 3,
-              y: endY + dy / 3
-            },
+            handleIn: { x: endX, y: endY },
+            handleOut: { x: endX, y: endY },
             id: generateUniqueId()
           });
         }
@@ -191,26 +235,40 @@ function convertPathToPoints(path) {
         currentX = endX;
         currentY = endY;
       } else if ((type === 'Z' || type === 'z') && points.length > 1) {
-        // Close path command - connect back to the first point
+        // Close path - connect back to the first point
+        // Only add if needed - avoid unnecessary complexity
+        if (simplify) {
+          // For simplified paths, just set a connection flag
+          // and don't add extra points
+          continue;
+        }
+        
         const firstPoint = points[0];
         const lastPoint = points[points.length - 1];
         
         // Only add closing segment if we're not already at the start point
-        if (Math.abs(lastPoint.x - firstPoint.x) > 0.1 || Math.abs(lastPoint.y - firstPoint.y) > 0.1) {
+        if (Math.abs(lastPoint.x - firstPoint.x) > 1 || Math.abs(lastPoint.y - firstPoint.y) > 1) {
           const dx = firstPoint.x - lastPoint.x;
           const dy = firstPoint.y - lastPoint.y;
           
-          // Set the out handle of last point along the closing line
-          lastPoint.handleOut = {
-            x: lastPoint.x + dx / 3,
-            y: lastPoint.y + dy / 3
-          };
-          
-          // Update the in handle of first point to match the curve
-          firstPoint.handleIn = {
-            x: firstPoint.x - dx / 3,
-            y: firstPoint.y - dy / 3
-          };
+          if (dx !== 0 || dy !== 0) {
+            const length = Math.sqrt(dx*dx + dy*dy);
+            const normalizedDx = dx / length;
+            const normalizedDy = dy / length;
+            const handleDistance = Math.min(length / 3, 30);
+            
+            // Set the out handle of last point along the closing line
+            lastPoint.handleOut = {
+              x: lastPoint.x + normalizedDx * handleDistance,
+              y: lastPoint.y + normalizedDy * handleDistance
+            };
+            
+            // Update the in handle of first point to match the curve
+            firstPoint.handleIn = {
+              x: firstPoint.x - normalizedDx * handleDistance,
+              y: firstPoint.y - normalizedDy * handleDistance
+            };
+          }
         }
       }
     }

@@ -43,6 +43,7 @@ const Index = () => {
     selectedObjectIds,
     createObject,
     createMultipleObjects,
+    setAllObjects,
     selectObject,
     deselectAllObjects,
     updateObjects,
@@ -175,7 +176,7 @@ const Index = () => {
     });
   };
   
-  // Import SVG file content with progress tracking
+  // Import SVG file content with progress tracking and proper viewBox handling
   const handleImportSVG = async (
     svgContent: string, 
     options?: SVGImportOptions,

@@ -1,4 +1,3 @@
-
 export interface Point {
   x: number;
   y: number;
@@ -106,6 +105,8 @@ export interface ObjectGroup {
 export interface SVGImportOptions {
   replaceExisting: boolean;
   importStyle: boolean;
+  simplifyPaths?: boolean;
+  preserveViewBox?: boolean;
 }
 
 export interface SVGExportOptions {
