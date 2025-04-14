@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
   ControlPoint, 
@@ -27,12 +28,13 @@ const Index = () => {
   const [backgroundOpacity, setBackgroundOpacity] = useState(0.3);
   const [backgroundImage, setBackgroundImage] = useState<string | undefined>();
   const [isDrawingMode, setIsDrawingMode] = useState<boolean>(true);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   
   // Use our hooks for Bezier objects
   const {
     objects,
     selectedObjectIds,
-    isLoading,
+    isLoading: objectsLoading,
     createObject,
     setAllObjects,
     loadObjectsFromTemplate,
@@ -167,7 +169,7 @@ const Index = () => {
   };
   
   // Export the current design as SVG
-  const handleExportSVG = async () => {
+  const handleExportSVG = () => {
     try {
       if (objects.length === 0) {
         toast({
@@ -179,7 +181,7 @@ const Index = () => {
       }
       
       // Fix: only pass objects as argument
-      const svg = await createDesignSVG(objects);
+      const svg = createDesignSVG(objects);
       downloadSVG(svg, 'qordatta-design.svg');
       
       toast({
@@ -251,6 +253,7 @@ const Index = () => {
   // Optimized Template Loading with error handling
   const handleLoadTemplate = useCallback(async (templateData: string) => {
     try {
+      setIsLoading(true);
       console.log('Loading template');
       
       // Parse the template data
