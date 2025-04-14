@@ -1,6 +1,7 @@
 
 import { ControlPoint, BezierObject, CurveConfig, TransformSettings, Point } from '../types/bezier';
 import { generateId } from './bezierUtils';
+import { toast } from '@/hooks/use-toast';
 
 interface SVGPathData {
   path: string;
@@ -27,13 +28,13 @@ interface SVGImportResult {
 }
 
 // Maximum number of paths to process at once
-const MAX_PATHS_PER_BATCH = 10;
+const MAX_PATHS_PER_BATCH = 5;
 // Maximum allowed SVG size in MB
 const MAX_SVG_SIZE_MB = 5;
 // Maximum number of paths allowed in an SVG
-const MAX_SVG_PATHS = 500;
+const MAX_SVG_PATHS = 200;
 // Delay between processing batches (ms)
-const BATCH_PROCESSING_DELAY = 50;
+const BATCH_PROCESSING_DELAY = 100;
 
 // Event emitter for progress updates
 type ProgressCallback = (progress: number) => void;
@@ -46,6 +47,7 @@ export const parseSVGContent = async (
   try {
     // Initial progress update
     onProgress?.(0);
+    console.log("Starting SVG import process");
     
     // Check SVG size
     const svgSizeInMB = new Blob([svgContent]).size / (1024 * 1024);
@@ -89,8 +91,24 @@ export const parseSVGContent = async (
     );
     
     // Get SVG dimensions
-    const width = parseFloat(svgElement.getAttribute('width') || '800');
-    const height = parseFloat(svgElement.getAttribute('height') || '600');
+    let width = parseFloat(svgElement.getAttribute('width') || '800');
+    let height = parseFloat(svgElement.getAttribute('height') || '600');
+    
+    // If width or height is NaN, try to get from viewBox or use defaults
+    if (isNaN(width) || isNaN(height)) {
+      console.log("Width or height not specified, checking viewBox");
+      const viewBoxAttr = svgElement.getAttribute('viewBox');
+      if (viewBoxAttr) {
+        const viewBoxValues = viewBoxAttr.split(/\s+/).map(parseFloat);
+        if (viewBoxValues.length === 4) {
+          width = viewBoxValues[2];
+          height = viewBoxValues[3];
+        }
+      }
+      // If still NaN, use defaults
+      if (isNaN(width)) width = 800;
+      if (isNaN(height)) height = 600;
+    }
     
     // Parse viewBox if available
     let viewBox = undefined;
@@ -109,8 +127,30 @@ export const parseSVGContent = async (
     
     // Find all path elements
     const pathElements = Array.from(svgDoc.querySelectorAll('path')) as SVGPathElement[];
+    
+    // If no paths found, look for other SVG elements that might have path data
     if (pathElements.length === 0) {
-      throw new Error('No paths found in the SVG');
+      console.log("No path elements found, looking for other SVG elements");
+      
+      // Check for lines, rectangles, circles, ellipses, and polygons
+      const lines = Array.from(svgDoc.querySelectorAll('line')) as SVGLineElement[];
+      const rects = Array.from(svgDoc.querySelectorAll('rect')) as SVGRectElement[];
+      const circles = Array.from(svgDoc.querySelectorAll('circle')) as SVGCircleElement[];
+      const ellipses = Array.from(svgDoc.querySelectorAll('ellipse')) as SVGEllipseElement[];
+      const polygons = Array.from(svgDoc.querySelectorAll('polygon, polyline')) as SVGPolygonElement[];
+      
+      const totalElements = lines.length + rects.length + circles.length + ellipses.length + polygons.length;
+      
+      if (totalElements === 0) {
+        throw new Error('No valid paths or shapes found in the SVG');
+      }
+      
+      console.log(`Found alternative elements: ${totalElements} (${lines.length} lines, ${rects.length} rects, ${circles.length} circles, ${ellipses.length} ellipses, ${polygons.length} polygons)`);
+      
+      // Convert these elements to path data and continue processing
+      // This is a simplified implementation - would need to be expanded for full support
+      
+      throw new Error('Found shapes but no paths in SVG. Please convert shapes to paths before importing.');
     }
     
     console.log(`Found ${pathElements.length} paths in SVG`);
@@ -120,8 +160,13 @@ export const parseSVGContent = async (
       throw new Error(`SVG contains too many paths (${pathElements.length}). Maximum allowed is ${MAX_SVG_PATHS}.`);
     }
     
-    if (pathElements.length > 100) {
+    if (pathElements.length > 50) {
       console.warn(`Large SVG detected with ${pathElements.length} paths. Processing may take time.`);
+      toast({
+        title: "Large SVG Detected",
+        description: `Processing ${pathElements.length} paths may take some time. Please wait...`,
+        variant: "default"
+      });
     }
     
     // Process paths in batches to prevent UI freezing
@@ -149,6 +194,11 @@ export const parseSVGContent = async (
       }
     });
     
+    // Check if we have any valid path data
+    if (pathsData.length === 0) {
+      throw new Error('No valid paths found in the SVG');
+    }
+    
     // More precise progress tracking
     const totalBatches = Math.ceil(pathsData.length / MAX_PATHS_PER_BATCH);
     let completedBatches = 0;
@@ -163,11 +213,12 @@ export const parseSVGContent = async (
         setTimeout(() => {
           const batchObjects = batch.map((pathData, index) => {
             try {
+              console.log(`Processing path ${i + index + 1}/${pathsData.length}`);
               const points = convertPathToPoints(pathData.path, pathData.transform);
               
               // Skip if no valid points
               if (points.length === 0) {
-                console.warn(`Path ${i + index} has no valid points, skipping`);
+                console.warn(`Path ${i + index + 1} has no valid points, skipping`);
                 return null;
               }
               
@@ -196,7 +247,7 @@ export const parseSVGContent = async (
                 isSelected: false
               };
             } catch (err) {
-              console.error(`Error processing path ${i + index}:`, err);
+              console.error(`Error processing path ${i + index + 1}:`, err);
               return null;
             }
           }).filter(Boolean) as BezierObject[];
@@ -220,7 +271,12 @@ export const parseSVGContent = async (
       await new Promise(resolve => setTimeout(resolve, BATCH_PROCESSING_DELAY));
     }
     
-    console.log(`SVG import complete: ${objects.length} objects created`);
+    // Catch case where no valid objects were created
+    if (objects.length === 0) {
+      throw new Error("Could not create any valid objects from SVG paths");
+    }
+    
+    console.log(`SVG import processed: ${objects.length} objects created`);
     
     // Position imported objects to maintain original positions
     onProgress?.(95); // 95% for positioning

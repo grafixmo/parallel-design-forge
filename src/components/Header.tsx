@@ -75,7 +75,13 @@ const Header: React.FC<HeaderProps> = ({
 
   const handleSelectTemplate = (templateData: string, shouldClearCanvas: boolean) => {
     if (onLoadTemplate) {
-      onLoadTemplate(templateData, shouldClearCanvas);
+      // Close the gallery first to prevent UI freezing
+      setGalleryOpen(false);
+      
+      // Small delay to allow gallery to close
+      setTimeout(() => {
+        onLoadTemplate(templateData, shouldClearCanvas);
+      }, 100);
     }
   };
   
@@ -109,12 +115,12 @@ const Header: React.FC<HeaderProps> = ({
       
       // Read file content
       const reader = new FileReader();
-      reader.onload = (event) => {
+      reader.onload = async (event) => {
         const content = event.target?.result as string;
         if (content && onImportSVG) {
           try {
             // Pass the progress callback to track import progress
-            onImportSVG(content, (progress) => {
+            await onImportSVG(content, (progress) => {
               setImportProgress(progress);
             });
             
@@ -123,11 +129,11 @@ const Header: React.FC<HeaderProps> = ({
               description: "Your SVG file has been imported and rendered on the canvas.",
               variant: "default"
             });
-          } catch (error) {
+          } catch (error: any) {
             console.error("Error during SVG import:", error);
             toast({
               title: "Import Error",
-              description: "There was an error processing the SVG. Please try a simpler file.",
+              description: error?.message || "There was an error processing the SVG. Please try a simpler file.",
               variant: "destructive"
             });
           } finally {
@@ -151,11 +157,11 @@ const Header: React.FC<HeaderProps> = ({
       
       // Reset the input to allow selecting the same file again
       e.target.value = '';
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error importing SVG:', error);
       toast({
         title: "Import Failed",
-        description: "Failed to import the SVG file. Please try again.",
+        description: error?.message || "Failed to import the SVG file. Please try again.",
         variant: "destructive"
       });
       setIsImporting(false);
@@ -359,12 +365,14 @@ const Header: React.FC<HeaderProps> = ({
         />
       </div>
       
-      {/* Gallery component */}
-      <TemplateGallery
-        open={galleryOpen}
-        onClose={() => setGalleryOpen(false)}
-        onSelectTemplate={handleSelectTemplate}
-      />
+      {/* Gallery component - delayed mounting to prevent freezing */}
+      {galleryOpen && (
+        <TemplateGallery
+          open={galleryOpen}
+          onClose={() => setGalleryOpen(false)}
+          onSelectTemplate={handleSelectTemplate}
+        />
+      )}
     </div>
   );
 };
