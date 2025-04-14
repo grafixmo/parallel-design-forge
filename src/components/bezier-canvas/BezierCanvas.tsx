@@ -1,6 +1,6 @@
 
 import React, { useRef, useEffect, useCallback } from 'react';
-import { BezierObject } from '@/types/bezier';
+import { BezierObject, SelectedPoint, ControlPointType, Point } from '@/types/bezier';
 import { useCanvasHandlers } from './hooks/useCanvasHandlers';
 import { useCanvasSetup } from './hooks/useCanvasSetup';
 import { CanvasToolbar } from './components/CanvasToolbar';
@@ -40,6 +40,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const animationFrameRef = useRef<number>();
+  const selectedPointRef = useRef<SelectedPoint | null>(null);
   
   // Use our custom hooks for canvas functionality
   const {
@@ -69,6 +70,66 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     objects,
     selectedObjectIds
   });
+
+  // Handle point selection
+  const handlePointSelect = useCallback((point: SelectedPoint | null) => {
+    selectedPointRef.current = point;
+    console.log("Selected point:", point);
+  }, []);
+
+  // Handle point movement
+  const handlePointMove = useCallback((
+    objectId: string, 
+    pointIndex: number, 
+    type: ControlPointType, 
+    position: Point
+  ) => {
+    // Create a new array of objects with the updated point
+    const updatedObjects = objects.map(obj => {
+      if (obj.id === objectId) {
+        const updatedPoints = [...obj.points];
+        
+        if (type === ControlPointType.MAIN) {
+          // When moving a main point, calculate the relative movement for the handles
+          const originalPoint = updatedPoints[pointIndex];
+          const deltaX = position.x - originalPoint.x;
+          const deltaY = position.y - originalPoint.y;
+          
+          updatedPoints[pointIndex] = {
+            ...originalPoint,
+            x: position.x,
+            y: position.y,
+            handleIn: {
+              x: originalPoint.handleIn.x + deltaX,
+              y: originalPoint.handleIn.y + deltaY
+            },
+            handleOut: {
+              x: originalPoint.handleOut.x + deltaX,
+              y: originalPoint.handleOut.y + deltaY
+            }
+          };
+        } else if (type === ControlPointType.HANDLE_IN) {
+          updatedPoints[pointIndex] = {
+            ...updatedPoints[pointIndex],
+            handleIn: position
+          };
+        } else if (type === ControlPointType.HANDLE_OUT) {
+          updatedPoints[pointIndex] = {
+            ...updatedPoints[pointIndex],
+            handleOut: position
+          };
+        }
+        
+        return {
+          ...obj,
+          points: updatedPoints
+        };
+      }
+      return obj;
+    });
+    
+    onObjectsChange(updatedObjects);
+  }, [objects, onObjectsChange]);
   
   // Draw all bezier objects on the canvas
   const renderObjects = useCallback((ctx: CanvasRenderingContext2D) => {
@@ -91,9 +152,9 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         object,
         isSelected: isObjectSelected || isDrawingObject,
         zoom,
-        selectedPoint: null, // We'll handle this in the handlers
-        onPointSelect: () => {}, // We'll handle this in the handlers
-        onPointMove: () => {}, // This is handled by the parent component
+        selectedPoint: selectedPointRef.current,
+        onPointSelect: handlePointSelect,
+        onPointMove: handlePointMove,
         onSelect: onObjectSelect
       });
       
@@ -127,7 +188,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     }
     
     ctx.restore();
-  }, [objects, selectedObjectIds, currentDrawingObjectId, mousePos, zoom, panOffset, onObjectSelect]);
+  }, [objects, selectedObjectIds, currentDrawingObjectId, mousePos, zoom, panOffset, onObjectSelect, handlePointMove, handlePointSelect]);
   
   // Enhanced render method with object rendering included
   const renderCanvasWithObjects = useCallback(() => {

@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Slider } from '@/components/ui/slider';
 import { Input } from '@/components/ui/input';
@@ -16,7 +17,8 @@ import {
   Info,
   Image,
   X,
-  ChevronRight
+  ChevronRight,
+  Bug
 } from 'lucide-react';
 import {
   Accordion,
@@ -78,22 +80,39 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
   
   const handleParallelCountChange = (objectId: string, value: string) => {
     const count = parseInt(value);
-    if (!isNaN(count) && count >= 1 && count <= 4) {
-      const object = selectedObjects.find(obj => obj.id === objectId);
+    if (!isNaN(count)) {
+      console.log(`Changing parallel count for object ${objectId} to ${count}`);
+      const object = objects.find(obj => obj.id === objectId);
       if (object) {
+        // Ensure we have enough styles for all curves
+        const currentStyles = [...object.curveConfig.styles];
+        const newStyles = [...currentStyles];
+        
+        // If we need more styles, duplicate the first style for each new curve
+        while (newStyles.length < count) {
+          const baseStyle = currentStyles[0] || { color: '#000000', width: 2 };
+          newStyles.push({ ...baseStyle });
+        }
+        
+        // Update the curve config with new count and ensure styles
         onUpdateCurveConfig(objectId, {
           ...object.curveConfig,
-          parallelCount: count
+          parallelCount: count,
+          styles: newStyles
         });
       }
     }
   };
   
   const handleCurveColorChange = (objectId: string, color: string) => {
-    const object = selectedObjects.find(obj => obj.id === objectId);
+    const object = objects.find(obj => obj.id === objectId);
     if (object) {
       const newStyles = [...object.curveConfig.styles];
-      newStyles[0] = { ...newStyles[0], color };
+      if (newStyles.length === 0) {
+        newStyles.push({ color, width: 2 });
+      } else {
+        newStyles[0] = { ...newStyles[0], color };
+      }
       
       onUpdateCurveConfig(objectId, {
         ...object.curveConfig,
@@ -103,10 +122,14 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
   };
   
   const handleCurveWidthChange = (objectId: string, width: number) => {
-    const object = selectedObjects.find(obj => obj.id === objectId);
+    const object = objects.find(obj => obj.id === objectId);
     if (object) {
       const newStyles = [...object.curveConfig.styles];
-      newStyles[0] = { ...newStyles[0], width };
+      if (newStyles.length === 0) {
+        newStyles.push({ color: '#000000', width });
+      } else {
+        newStyles[0] = { ...newStyles[0], width };
+      }
       
       onUpdateCurveConfig(objectId, {
         ...object.curveConfig,
@@ -116,7 +139,7 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
   };
   
   const handleParallelSpacingChange = (objectId: string, spacing: number) => {
-    const object = selectedObjects.find(obj => obj.id === objectId);
+    const object = objects.find(obj => obj.id === objectId);
     if (object) {
       onUpdateCurveConfig(objectId, {
         ...object.curveConfig,
@@ -126,9 +149,15 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
   };
   
   const handleParallelStyleChange = (objectId: string, index: number, style: CurveStyle) => {
-    const object = selectedObjects.find(obj => obj.id === objectId);
+    const object = objects.find(obj => obj.id === objectId);
     if (object) {
       const newStyles = [...object.curveConfig.styles];
+      
+      // Ensure we have enough styles
+      while (newStyles.length <= index) {
+        newStyles.push({ color: '#000000', width: 2 });
+      }
+      
       newStyles[index] = style;
       
       onUpdateCurveConfig(objectId, {
@@ -139,7 +168,7 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
   };
   
   const handleRotationChange = (objectId: string, rotation: number) => {
-    const object = selectedObjects.find(obj => obj.id === objectId);
+    const object = objects.find(obj => obj.id === objectId);
     if (object) {
       onUpdateTransform(objectId, {
         ...object.transform,
@@ -149,7 +178,7 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
   };
   
   const handleScaleXChange = (objectId: string, scaleX: number) => {
-    const object = selectedObjects.find(obj => obj.id === objectId);
+    const object = objects.find(obj => obj.id === objectId);
     if (object) {
       onUpdateTransform(objectId, {
         ...object.transform,
@@ -159,13 +188,25 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
   };
   
   const handleScaleYChange = (objectId: string, scaleY: number) => {
-    const object = selectedObjects.find(obj => obj.id === objectId);
+    const object = objects.find(obj => obj.id === objectId);
     if (object) {
       onUpdateTransform(objectId, {
         ...object.transform,
         scaleY
       });
     }
+  };
+  
+  // Function to print current object state for debugging
+  const debugObject = (object: BezierObject) => {
+    console.log('Debug object:', {
+      id: object.id,
+      name: object.name,
+      parallelCount: object.curveConfig.parallelCount,
+      spacing: object.curveConfig.spacing,
+      styles: object.curveConfig.styles,
+      transform: object.transform
+    });
   };
   
   const SectionHeader = ({ children, tooltip }: { children: React.ReactNode, tooltip?: string }) => (
@@ -196,6 +237,15 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
     <Card className="p-4 overflow-y-auto max-h-[calc(100vh-100px)]">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-medium">Design Controls</h3>
+        {selectedObject && (
+          <button 
+            onClick={() => debugObject(selectedObject)}
+            className="text-xs px-2 py-1 rounded bg-gray-100 hover:bg-gray-200 flex items-center"
+          >
+            <Bug className="w-3 h-3 mr-1" />
+            Debug
+          </button>
+        )}
       </div>
 
       <div className="space-y-4">
@@ -232,11 +282,11 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
                     </Label>
                     <div className="flex items-center space-x-2">
                       <ColorPicker 
-                        color={selectedObject.curveConfig.styles[0].color}
+                        color={selectedObject.curveConfig.styles[0]?.color || '#000000'}
                         onChange={(color) => handleCurveColorChange(selectedObject.id, color)}
                       />
                       <span className="text-xs text-gray-500">
-                        {selectedObject.curveConfig.styles[0].color}
+                        {selectedObject.curveConfig.styles[0]?.color || '#000000'}
                       </span>
                     </div>
                   </div>
@@ -246,7 +296,7 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
                     <div className="flex items-center space-x-2">
                       <Slider
                         id="curve-width"
-                        value={[selectedObject.curveConfig.styles[0].width]}
+                        value={[selectedObject.curveConfig.styles[0]?.width || 2]}
                         min={1}
                         max={20}
                         step={1}
@@ -255,7 +305,7 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
                       />
                       <Input
                         type="number"
-                        value={selectedObject.curveConfig.styles[0].width}
+                        value={selectedObject.curveConfig.styles[0]?.width || 2}
                         onChange={(e) => handleCurveWidthChange(selectedObject.id, Number(e.target.value))}
                         min={1}
                         max={20}
@@ -338,7 +388,7 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
                               <Input
                                 id={`curve-${i}-width`}
                                 type="number"
-                                value={selectedObject.curveConfig.styles[i]?.width || 1}
+                                value={selectedObject.curveConfig.styles[i]?.width || 2}
                                 onChange={(e) => handleParallelStyleChange(selectedObject.id, i, {
                                   ...selectedObject.curveConfig.styles[i],
                                   width: Number(e.target.value)

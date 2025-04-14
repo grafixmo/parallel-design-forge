@@ -10,7 +10,7 @@ import {
 import { 
   calculateBezierPoint, 
   calculateDistance, 
-  generatePathData,
+  calculateParallelPoint,
   isPointNear
 } from '@/utils/bezierUtils';
 
@@ -75,28 +75,62 @@ export class BezierObjectRenderer {
     ctx.scale(transform.scaleX, transform.scaleY);
     ctx.translate(-center.x, -center.y);
     
-    // Draw the main curve with all its styles
-    curveConfig.styles.forEach((style, styleIndex) => {
-      ctx.strokeStyle = style.color;
-      ctx.lineWidth = style.width / this.zoom;
+    // Draw the path based on number of parallel curves and their styles
+    const { parallelCount, spacing, styles } = curveConfig;
+    
+    // Log out configuration for debugging
+    console.log(`Rendering object ${object.id} with parallelCount: ${parallelCount}, spacing: ${spacing}`);
+    console.log(`Styles:`, styles);
+    
+    // If there are no parallel curves (single curve)
+    if (parallelCount <= 1) {
+      // Draw just the main curve with the first style
+      const mainStyle = styles[0] || { color: '#000000', width: 2 };
       
-      if (curveConfig.parallelCount === 0) {
-        // Draw a single path
-        ctx.beginPath();
-        this.drawBezierPath(ctx, 0);
-        ctx.stroke();
+      ctx.beginPath();
+      ctx.strokeStyle = mainStyle.color;
+      ctx.lineWidth = mainStyle.width / this.zoom;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      
+      this.drawBezierPath(ctx, 0);
+      ctx.stroke();
+    } else {
+      // Draw multiple parallel curves
+      // Calculate offsets for parallel curves centered around the main curve
+      const totalCurves = Math.min(parallelCount, styles.length);
+      const offsets = [];
+      
+      if (totalCurves % 2 === 0) {
+        // Even number of curves
+        const halfCount = totalCurves / 2;
+        for (let i = 0; i < totalCurves; i++) {
+          offsets.push((i - halfCount + 0.5) * spacing);
+        }
       } else {
-        // Draw parallel paths
-        const parallelCount = curveConfig.parallelCount;
-        const spacing = curveConfig.spacing;
-        
-        for (let i = -Math.floor(parallelCount / 2); i <= Math.floor(parallelCount / 2); i++) {
-          ctx.beginPath();
-          this.drawBezierPath(ctx, i * spacing);
-          ctx.stroke();
+        // Odd number of curves (center one is at offset 0)
+        const halfCount = Math.floor(totalCurves / 2);
+        for (let i = -halfCount; i <= halfCount; i++) {
+          offsets.push(i * spacing);
         }
       }
-    });
+      
+      // Draw each parallel curve with its style
+      offsets.forEach((offset, index) => {
+        if (index < styles.length) {
+          const style = styles[index];
+          
+          ctx.beginPath();
+          ctx.strokeStyle = style.color;
+          ctx.lineWidth = style.width / this.zoom;
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          
+          this.drawParallelPath(ctx, offset);
+          ctx.stroke();
+        }
+      });
+    }
     
     // Draw object label if selected
     if (isSelected) {
@@ -113,7 +147,7 @@ export class BezierObjectRenderer {
     ctx.restore();
   }
   
-  // Draw the bezier path
+  // Draw the bezier path for the main curve
   private drawBezierPath(ctx: CanvasRenderingContext2D, offset: number): void {
     const { points } = this.object;
     if (points.length < 2) return;
@@ -134,6 +168,40 @@ export class BezierObjectRenderer {
         next.x,
         next.y
       );
+    }
+  }
+  
+  // Draw parallel paths with offset
+  private drawParallelPath(ctx: CanvasRenderingContext2D, offset: number): void {
+    const { points } = this.object;
+    if (points.length < 2) return;
+    
+    // For parallel paths, we need to calculate offset points
+    const steps = 50; // Number of points to sample along the curve
+    
+    // Get first point
+    let prevPoint = null;
+    
+    // Sample the bezier curve and create a parallel curve
+    for (let t = 0; t <= 1; t += 1/steps) {
+      // For each segment
+      for (let i = 0; i < points.length - 1; i++) {
+        const p0 = points[i];
+        const p1 = points[i].handleOut;
+        const p2 = points[i+1].handleIn;
+        const p3 = points[i+1];
+        
+        // Get point on parallel curve
+        const point = calculateParallelPoint(p0, p1, p2, p3, t, offset);
+        
+        if (prevPoint === null) {
+          ctx.moveTo(point.x, point.y);
+        } else {
+          ctx.lineTo(point.x, point.y);
+        }
+        
+        prevPoint = point;
+      }
     }
   }
   
