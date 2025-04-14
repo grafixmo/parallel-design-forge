@@ -1,3 +1,4 @@
+
 import { ControlPoint, BezierObject, CurveConfig, TransformSettings, Point } from '../types/bezier';
 import { generateId } from './bezierUtils';
 
@@ -27,10 +28,20 @@ interface SVGImportResult {
 
 // Maximum number of paths to process at once
 const MAX_PATHS_PER_BATCH = 15;
+// Maximum allowed SVG size in MB
+const MAX_SVG_SIZE_MB = 5;
+// Maximum number of paths allowed in an SVG
+const MAX_SVG_PATHS = 500;
 
 // Parse SVG string into BezierObject objects with improved attribute preservation
 export const parseSVGContent = async (svgContent: string): Promise<SVGImportResult> => {
   try {
+    // Check SVG size
+    const svgSizeInMB = new Blob([svgContent]).size / (1024 * 1024);
+    if (svgSizeInMB > MAX_SVG_SIZE_MB) {
+      throw new Error(`SVG file is too large (${svgSizeInMB.toFixed(2)}MB). Maximum allowed size is ${MAX_SVG_SIZE_MB}MB.`);
+    }
+    
     // Create a DOM parser
     const parser = new DOMParser();
     const svgDoc = parser.parseFromString(svgContent, 'image/svg+xml');
@@ -79,6 +90,11 @@ export const parseSVGContent = async (svgContent: string): Promise<SVGImportResu
     }
     
     console.log(`Found ${pathElements.length} paths in SVG`);
+    
+    // Check if SVG has too many paths
+    if (pathElements.length > MAX_SVG_PATHS) {
+      throw new Error(`SVG contains too many paths (${pathElements.length}). Maximum allowed is ${MAX_SVG_PATHS}.`);
+    }
     
     if (pathElements.length > 100) {
       console.warn(`Large SVG detected with ${pathElements.length} paths. Processing may take time.`);
@@ -941,4 +957,137 @@ const approximateArc = (
   x2: number, y2: number, 
   rx: number, ry: number, 
   xAxisRotation: number, 
-  largeArcFlag
+  largeArcFlag: number, 
+  sweepFlag: number
+): Point[] => {
+  // Convert angles from degrees to radians
+  const phi = xAxisRotation * Math.PI / 180;
+  
+  // Compute the center of the ellipse
+  const sinPhi = Math.sin(phi);
+  const cosPhi = Math.cos(phi);
+  
+  // Step 1: Compute (x1', y1')
+  const x1p = cosPhi * (x1 - x2) / 2 + sinPhi * (y1 - y2) / 2;
+  const y1p = -sinPhi * (x1 - x2) / 2 + cosPhi * (y1 - y2) / 2;
+  
+  // Ensure radii are large enough
+  rx = Math.abs(rx);
+  ry = Math.abs(ry);
+  
+  // Correction of out-of-range radii
+  let lambda = (x1p * x1p) / (rx * rx) + (y1p * y1p) / (ry * ry);
+  if (lambda > 1) {
+    rx *= Math.sqrt(lambda);
+    ry *= Math.sqrt(lambda);
+  }
+  
+  // Step 2: Compute (cx', cy')
+  let s = 0;
+  const sign = (largeArcFlag !== sweepFlag) ? 1 : -1;
+  
+  const sq = ((rx * rx * ry * ry) - (rx * rx * y1p * y1p) - (ry * ry * x1p * x1p)) / 
+             ((rx * rx * y1p * y1p) + (ry * ry * x1p * x1p));
+             
+  s = (sq < 0) ? 0 : sign * Math.sqrt(sq);
+  
+  const cxp = s * rx * y1p / ry;
+  const cyp = s * -ry * x1p / rx;
+  
+  // Step 3: Compute (cx, cy) from (cx', cy')
+  const cx = cosPhi * cxp - sinPhi * cyp + (x1 + x2) / 2;
+  const cy = sinPhi * cxp + cosPhi * cyp + (y1 + y2) / 2;
+  
+  // Step 4: Calculate the angle parameters
+  const ux = (x1p - cxp) / rx;
+  const uy = (y1p - cyp) / ry;
+  const vx = (-x1p - cxp) / rx;
+  const vy = (-y1p - cyp) / ry;
+  
+  // Compute the angle start
+  let n = Math.sqrt(ux * ux + uy * uy);
+  let p = ux; // cos(startAngle)
+  
+  let startAngle = Math.acos(p / n);
+  if (uy < 0) {
+    startAngle = -startAngle;
+  }
+  
+  // Compute the angle extent
+  n = Math.sqrt((ux * ux + uy * uy) * (vx * vx + vy * vy));
+  p = ux * vx + uy * vy;
+  
+  let sweepAngle = Math.acos(p / n);
+  if (ux * vy - uy * vx < 0) {
+    sweepAngle = -sweepAngle;
+  }
+  
+  if (sweepFlag === 0 && sweepAngle > 0) {
+    sweepAngle -= 2 * Math.PI;
+  } else if (sweepFlag === 1 && sweepAngle < 0) {
+    sweepAngle += 2 * Math.PI;
+  }
+  
+  // Split the arc into multiple segments, each less than 90 degrees
+  const segments = Math.ceil(Math.abs(sweepAngle) / (Math.PI / 2));
+  const segmentAngle = sweepAngle / segments;
+  
+  const result: Point[] = [];
+  
+  for (let i = 0; i < segments; i++) {
+    const theta = startAngle + i * segmentAngle;
+    const theta2 = startAngle + (i + 1) * segmentAngle;
+    
+    // Approximate one segment of the curve
+    const segPoints = approximateArcSegment(
+      cx, cy, rx, ry, theta, theta2, phi
+    );
+    
+    // Add to result
+    result.push(...segPoints);
+  }
+  
+  return result;
+};
+
+// Helper function to approximate a single arc segment with a cubic bezier curve
+const approximateArcSegment = (
+  cx: number, cy: number, 
+  rx: number, ry: number, 
+  startAngle: number, endAngle: number, 
+  phi: number
+): Point[] => {
+  // Calculate curve points
+  const sinPhi = Math.sin(phi);
+  const cosPhi = Math.cos(phi);
+  
+  // Calculate angle constant
+  const alpha = Math.sin(endAngle - startAngle) * 
+                (Math.sqrt(4 + 3 * Math.pow(Math.tan((endAngle - startAngle) / 2), 2)) - 1) / 3;
+  
+  // Calculate start and end points
+  const cosStart = Math.cos(startAngle);
+  const sinStart = Math.sin(startAngle);
+  const cosEnd = Math.cos(endAngle);
+  const sinEnd = Math.sin(endAngle);
+  
+  // Calculate control points
+  const p1x = cx + rx * (cosPhi * cosStart - sinPhi * sinStart);
+  const p1y = cy + ry * (sinPhi * cosStart + cosPhi * sinStart);
+  
+  const p2x = cx + rx * (cosPhi * cosEnd - sinPhi * sinEnd);
+  const p2y = cy + ry * (sinPhi * cosEnd + cosPhi * sinEnd);
+  
+  const q1x = p1x - alpha * rx * (cosPhi * sinStart + sinPhi * cosStart);
+  const q1y = p1y - alpha * ry * (cosPhi * sinStart - sinPhi * cosStart);
+  
+  const q2x = p2x + alpha * rx * (cosPhi * sinEnd + sinPhi * cosEnd);
+  const q2y = p2y + alpha * ry * (cosPhi * sinEnd - sinPhi * cosEnd);
+  
+  // Return points for a cubic bezier approximation of the arc segment
+  return [
+    { x: q1x, y: q1y },
+    { x: q2x, y: q2y },
+    { x: p2x, y: p2y }
+  ];
+};
