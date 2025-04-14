@@ -16,6 +16,7 @@ import {
 import { toast } from '@/hooks/use-toast';
 import { ZoomIn, ZoomOut, Undo, Move } from 'lucide-react';
 import { BezierObjectRenderer } from './BezierObject';
+import { Button } from '@/components/ui/button';
 
 interface BezierCanvasProps {
   width: number;
@@ -920,6 +921,4 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         {instructionMessage}
       </div>
       
-      <div className="absolute top-4 right-4 flex space-x-2">
-        <button 
-          className="bg-
+      <div className="absolute top-4 right-4 flex space-x-
