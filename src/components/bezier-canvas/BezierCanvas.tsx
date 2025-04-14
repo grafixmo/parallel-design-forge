@@ -96,6 +96,13 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     screenToCanvas,
     renderCanvas
   });
+  
+  // Log key props for debugging
+  useEffect(() => {
+    console.log("BezierCanvas render - objects count:", objects.length);
+    console.log("BezierCanvas render - isDrawingMode:", isDrawingMode);
+    console.log("BezierCanvas render - currentDrawingObjectId:", currentDrawingObjectId);
+  }, [objects.length, isDrawingMode, currentDrawingObjectId]);
 
   // Request animation frame for continuous rendering
   useEffect(() => {
@@ -135,8 +142,8 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     <div ref={wrapperRef} className="relative w-full h-full">
       <canvas
         ref={canvasRef}
-        width={width || 800}
-        height={height || 600}
+        width={width}
+        height={height}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
@@ -155,7 +162,13 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
 
       <CanvasInstructions message={instructionMessage} />
       
-      <CanvasStatusInfo width={width} height={height} />
+      <CanvasStatusInfo 
+        width={width} 
+        height={height} 
+        zoom={zoom} 
+        isDrawingMode={isDrawingMode}
+        objectsCount={objects.length}
+      />
     </div>
   );
 };
