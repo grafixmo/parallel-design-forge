@@ -345,7 +345,7 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
       });
       
       setLoadingTemplate(false);
-      clearInterval();
+      clearInterval(progressInterval); // Fixed: Added the interval parameter
     }
   }, [templateToLoad, onSelectTemplate, toast, onClose]);
   

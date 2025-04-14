@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
   ControlPoint, 
@@ -204,7 +203,7 @@ const Index = () => {
   };
   
   // Import SVG content with progress tracking
-  const handleImportSVG = async (svgContent: string, onProgress?: (progress: number) => void) => {
+  const handleImportSVG = async (svgContent: string, onProgress?: (progress: number) => void): Promise<void> => {
     try {
       setIsLoading(true);
       
@@ -244,6 +243,7 @@ const Index = () => {
         description: error instanceof Error ? error.message : "There was an error processing the SVG",
         variant: "destructive"
       });
+      throw error; // Re-throw to allow proper error handling in the caller
     } finally {
       setIsLoading(false);
     }

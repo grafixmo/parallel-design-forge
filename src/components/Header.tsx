@@ -35,7 +35,7 @@ interface HeaderProps {
   onSaveDesign: (name: string, category: string, description?: string) => void;
   onLoadDesigns: () => void;
   onExportSVG: () => void;
-  onImportSVG?: (svgContent: string, onProgress?: (progress: number) => void) => void;
+  onImportSVG?: (svgContent: string, onProgress?: (progress: number) => void) => Promise<void>; // Changed to return Promise<void>
   onLoadTemplate?: (templateData: string, shouldClearCanvas?: boolean) => void;
   isDrawingMode?: boolean;
   onToggleDrawingMode?: () => void;
@@ -107,13 +107,15 @@ const Header: React.FC<HeaderProps> = ({
           // Pass the progress callback to track import progress
           onImportSVG(svgContent, (progress) => {
             setImportProgress(progress);
-          }).then(() => {
+          })
+          .then(() => {
             toast({
               title: "SVG Imported Successfully",
               description: "Your SVG file has been imported and rendered on the canvas.",
               variant: "default"
             });
-          }).catch((error) => {
+          })
+          .catch((error) => {
             console.error("Error during SVG import:", error);
             setImportError(error?.message || "Failed to process SVG");
             toast({
@@ -121,7 +123,8 @@ const Header: React.FC<HeaderProps> = ({
               description: error?.message || "There was an error processing the SVG. Please try a different file.",
               variant: "destructive"
             });
-          }).finally(() => {
+          })
+          .finally(() => {
             setIsImporting(false);
             setImportProgress(0);
             setSvgBuffer(null); // Clear buffer after processing
