@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { 
   Dialog, 
@@ -100,16 +99,25 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
   const confirmLoadTemplate = (shouldClearCanvas: boolean) => {
     if (!templateToLoad) return;
     
-    onSelectTemplate(templateToLoad.design_data, shouldClearCanvas);
-    onClose();
-    
-    toast({
-      title: 'Template Loaded',
-      description: `"${templateToLoad.name}" has been loaded to the canvas`
-    });
-    
-    setLoadDialogOpen(false);
-    setTemplateToLoad(null);
+    try {
+      onSelectTemplate(templateToLoad.design_data, shouldClearCanvas);
+      onClose();
+      
+      toast({
+        title: 'Template Loaded',
+        description: `"${templateToLoad.name}" has been loaded to the canvas`
+      });
+    } catch (error) {
+      console.error('Error loading template:', error);
+      toast({
+        title: 'Error Loading Template',
+        description: 'There was a problem processing the template data',
+        variant: 'destructive'
+      });
+    } finally {
+      setLoadDialogOpen(false);
+      setTemplateToLoad(null);
+    }
   };
   
   const handleDeleteTemplate = async () => {

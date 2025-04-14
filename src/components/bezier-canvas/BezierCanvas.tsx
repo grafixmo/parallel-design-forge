@@ -1,5 +1,5 @@
 
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useCallback } from 'react';
 import { BezierObject } from '@/types/bezier';
 import { useCanvasHandlers } from './hooks/useCanvasHandlers';
 import { useCanvasSetup } from './hooks/useCanvasSetup';
@@ -38,6 +38,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const animationFrameRef = useRef<number>();
   
   // Use our custom hooks for canvas functionality
   const {
@@ -53,7 +54,8 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     setCurrentDrawingObjectId,
     backgroundImageObj,
     screenToCanvas,
-    renderCanvas
+    renderCanvas,
+    canvasDimensions
   } = useCanvasSetup({
     canvasRef,
     wrapperRef,
@@ -97,28 +99,29 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     renderCanvas
   });
   
-  // Log key props for debugging
+  // Log key props for debugging - limiting to important changes only
   useEffect(() => {
     console.log("BezierCanvas render - objects count:", objects.length);
     console.log("BezierCanvas render - isDrawingMode:", isDrawingMode);
-    console.log("BezierCanvas render - currentDrawingObjectId:", currentDrawingObjectId);
-  }, [objects.length, isDrawingMode, currentDrawingObjectId]);
+  }, [objects.length, isDrawingMode]);
 
-  // Request animation frame for continuous rendering
+  // Request animation frame for continuous rendering with performance optimization
+  const animate = useCallback(() => {
+    renderCanvas();
+    animationFrameRef.current = window.requestAnimationFrame(animate);
+  }, [renderCanvas]);
+  
   useEffect(() => {
-    let animationFrameId: number;
-    
-    const render = () => {
-      renderCanvas();
-      animationFrameId = window.requestAnimationFrame(render);
-    };
-    
-    render();
+    // Start the animation loop
+    animate();
     
     return () => {
-      window.cancelAnimationFrame(animationFrameId);
+      // Clean up animation frame on unmount
+      if (animationFrameRef.current) {
+        window.cancelAnimationFrame(animationFrameRef.current);
+      }
     };
-  }, [renderCanvas]);
+  }, [animate]);
 
   // To avoid passive event issues, we'll handle the actual canvas click events
   useEffect(() => {
@@ -142,8 +145,8 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     <div ref={wrapperRef} className="relative w-full h-full">
       <canvas
         ref={canvasRef}
-        width={width}
-        height={height}
+        width={canvasDimensions.width}
+        height={canvasDimensions.height}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
@@ -163,8 +166,8 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       <CanvasInstructions message={instructionMessage} />
       
       <CanvasStatusInfo 
-        width={width} 
-        height={height} 
+        width={canvasDimensions.width} 
+        height={canvasDimensions.height} 
         zoom={zoom} 
         isDrawingMode={isDrawingMode}
         objectsCount={objects.length}
