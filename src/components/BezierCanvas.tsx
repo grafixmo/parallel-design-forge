@@ -85,6 +85,11 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     setIsSelecting(false);
     setSelectionRect(null);
     setLastDragPosition(null);
+    
+    // Deselect all objects - call the parent component's handler
+    if (selectedObjectIds.length > 0) {
+      onObjectSelect('', false);
+    }
   };
   
   // Reset drawing state - called when cancelling or completing a drawing
@@ -105,14 +110,13 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       }
     } else {
       if (selectedObjectIds.length > 0) {
-        setInstructionMessage('Drag selected objects or their points to move them, press DEL to delete');
+        setInstructionMessage('Drag selected objects or their points to move them, press DEL to delete, ESC to deselect');
       } else {
         setInstructionMessage('Click to select objects or Shift+Drag to select multiple objects');
       }
     }
   }, [isDrawingMode, currentDrawingObjectId, selectedObjectIds.length]);
   
-  // Initialize background image if URL is provided
   useEffect(() => {
     if (backgroundImage) {
       const img = new Image();
@@ -174,7 +178,6 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     }
   };
 
-  // Draw the canvas
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -473,6 +476,11 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         setIsDragging(true);
         setLastDragPosition({ x, y });
       } else {
+        // First clear any existing selection
+        if (selectedObjectIds.length > 0) {
+          onObjectSelect('', false);
+        }
+        
         // Start a new drawing with the first point
         const newPoint: ControlPoint = {
           x,
@@ -510,14 +518,19 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
           width: 0,
           height: 0
         });
-      } else if (selectedObjectIds.length > 0) {
+      } else {
         // In selection mode, clear selection when clicking on empty space (without Shift)
-        onObjectSelect('', false); // Deselect all objects
+        if (selectedObjectIds.length > 0) {
+          onObjectSelect('', false); // Deselect all objects
+          toast({
+            title: "Objects Deselected",
+            description: "Click on an object to select it"
+          });
+        }
       }
     }
   };
   
-  // Handle mouse move
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -646,7 +659,6 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     }
   };
   
-  // Handle mouse up
   const handleMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
     // Handle canvas dragging
     if (isCanvasDragging) {
@@ -854,8 +866,13 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         if (currentDrawingObjectId) {
           // Cancel the current drawing
           cancelDrawing();
-        } else {
+        } else if (selectedObjectIds.length > 0) {
+          // Deselect all objects
           clearSelections();
+          toast({
+            title: "Selection Cleared",
+            description: "All objects deselected"
+          });
         }
       }
       
@@ -900,76 +917,9 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [selectedObjectIds, isDrawingMode, onUndo, currentDrawingObjectId, objects]);
+  }, [selectedObjectIds, isDrawingMode, onUndo, currentDrawingObjectId, objects, onObjectSelect]);
   
   // Handle zoom in function
   const handleZoomIn = () => {
     const newZoom = Math.min(5, zoom * (1 + ZOOM_FACTOR));
-    setZoom(newZoom);
-    toast({
-      title: `Zoom: ${Math.round(newZoom * 100)}%`,
-      description: 'Zoomed in'
-    });
-  };
-
-  // Handle zoom out function
-  const handleZoomOut = () => {
-    const newZoom = Math.max(0.1, zoom * (1 - ZOOM_FACTOR));
-    setZoom(newZoom);
-    toast({
-      title: `Zoom: ${Math.round(newZoom * 100)}%`,
-      description: 'Zoomed out'
-    });
-  };
-
-  // Handle reset
-// Handle reset view
-  const handleResetView = () => {
-    setZoom(1);
-    setPanOffset({ x: 0, y: 0 });
-    toast({
-      title: 'View Reset',
-      description: 'Zoom and pan have been reset'
-    });
-  };
-
-  return (
-    <div ref={wrapperRef} className="relative w-full h-full">
-      <canvas
-        ref={canvasRef}
-        width={width}
-        height={height}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onDoubleClick={handleDoubleClick}
-        onContextMenu={handleContextMenu}
-        onWheel={handleWheel}
-        className="border border-gray-300 w-full h-full"
-      />
-
-      {/* Toolbar buttons */}
-      <div className="absolute top-2 left-2 z-10 flex gap-2 bg-white/90 backdrop-blur-sm p-1 rounded shadow">
-        <Button size="icon" onClick={handleZoomIn} title="Zoom In">
-          <ZoomIn className="w-4 h-4" />
-        </Button>
-        <Button size="icon" onClick={handleZoomOut} title="Zoom Out">
-          <ZoomOut className="w-4 h-4" />
-        </Button>
-        <Button size="icon" onClick={handleResetView} title="Reset View">
-          <RotateCcw className="w-4 h-4" />
-        </Button>
-        <Button size="icon" onClick={onUndo} title="Undo">
-          <Undo className="w-4 h-4" />
-        </Button>
-      </div>
-
-      {/* Instruction message */}
-      <div className="absolute bottom-2 left-2 text-sm text-gray-700 bg-white/80 px-2 py-1 rounded shadow">
-        {instructionMessage}
-      </div>
-    </div>
-  );
-};
-
-export default BezierCanvas;
+    setZoom(new
