@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect, useState } from 'react';
 import { 
   ControlPoint, 
@@ -149,6 +150,9 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         // Save state and reset drawing
         onSaveState();
         resetDrawingState();
+        
+        // Deselect the object to allow for creating a new one next
+        onObjectSelect('', false);
       } else {
         // Not enough points, inform the user
         toast({
@@ -441,6 +445,12 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     
     // If we're in drawing mode and didn't click on any object, handle drawing
     if (!clickedOnObject && isDrawingMode) {
+      // If we're starting a new drawing, make sure no objects are selected
+      if (!currentDrawingObjectId) {
+        // Deselect any previously selected objects
+        onObjectSelect('', false);
+      }
+      
       if (currentDrawingObjectId) {
         // We're already drawing an object, add a new point to it
         const objectIndex = objects.findIndex(obj => obj.id === currentDrawingObjectId);
@@ -856,6 +866,10 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
           cancelDrawing();
         } else {
           clearSelections();
+          // Also clear object selection when pressing ESC
+          if (selectedObjectIds.length > 0) {
+            onObjectSelect('', false);
+          }
         }
       }
       
@@ -922,8 +936,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     });
   };
 
-  // Handle reset
-// Handle reset view
+  // Handle reset view
   const handleResetView = () => {
     setZoom(1);
     setPanOffset({ x: 0, y: 0 });
