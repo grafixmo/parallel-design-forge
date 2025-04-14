@@ -10,6 +10,7 @@ import Header from '@/components/Header';
 import LibraryPanel from '@/components/LibraryPanel';
 import { generateId } from '@/utils/bezierUtils';
 import { exportAsSVG, downloadSVG, createDesignSVG } from '@/utils/svgExporter';
+import { parseSVGContent } from '@/utils/svgImporter';
 import { saveDesign, saveTemplate, Template } from '@/services/supabaseClient';
 import { useToast } from '@/hooks/use-toast';
 import { useBezierObjects } from '@/hooks/useBezierObjects';
@@ -32,6 +33,7 @@ const Index = () => {
   // UI state
   const [showLibrary, setShowLibrary] = useState<boolean>(false);
   const [isDrawingMode, setIsDrawingMode] = useState<boolean>(true);
+  const [isImporting, setIsImporting] = useState<boolean>(false);
   
   // Use our custom hook for bezier objects
   const {
@@ -159,6 +161,60 @@ const Index = () => {
       title: 'Design Exported',
       description: 'Your design has been exported as an SVG file.'
     });
+  };
+  
+  // Import SVG file content
+  const handleImportSVG = async (svgContent: string) => {
+    try {
+      setIsImporting(true);
+      
+      // Show loading toast
+      toast({
+        title: 'Importing SVG',
+        description: 'Please wait while we process your SVG file...'
+      });
+      
+      // Parse SVG content
+      const importResult = parseSVGContent(svgContent);
+      
+      if (importResult.objects.length === 0) {
+        throw new Error('No valid paths found in the SVG');
+      }
+      
+      // Clear current objects if user confirms
+      if (objects.length > 0) {
+        // In a real app, you might want to ask for confirmation
+        objects.forEach(obj => deleteObject(obj.id));
+      }
+      
+      // Add imported objects to the canvas
+      importResult.objects.forEach(obj => {
+        if (obj.points && obj.points.length > 0) {
+          createObject(obj.points, obj.name);
+        }
+      });
+      
+      // Save current state for undo/redo
+      saveCurrentState();
+      
+      toast({
+        title: 'Import Successful',
+        description: `Imported ${importResult.objects.length} objects from SVG`
+      });
+      
+      // Switch to selection mode to interact with imported objects
+      setIsDrawingMode(false);
+      
+    } catch (error) {
+      console.error('Error importing SVG:', error);
+      toast({
+        title: 'Import Failed',
+        description: `Error: ${(error as Error).message}`,
+        variant: 'destructive'
+      });
+    } finally {
+      setIsImporting(false);
+    }
   };
   
   // Save design to Supabase
@@ -419,6 +475,7 @@ const Index = () => {
         onSaveDesign={handleSaveDesign}
         onLoadDesigns={() => setShowLibrary(true)}
         onExportSVG={handleExportSVG}
+        onImportSVG={handleImportSVG}
         onLoadTemplate={handleLoadTemplate}
         isDrawingMode={isDrawingMode}
         onToggleDrawingMode={handleToggleDrawingMode}
