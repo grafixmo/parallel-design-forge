@@ -1,5 +1,4 @@
-
-import { ControlPoint, Point, CurveStyle, SelectionRect } from '../types/bezier';
+import { ControlPoint, Point, CurveStyle, SelectionRect, BezierObject } from '../types/bezier';
 
 // Generate a unique ID
 export const generateId = (): string => {
@@ -162,6 +161,102 @@ export const svgPathToBezierPoints = (pathData: string): ControlPoint[] => {
   }
   
   return points;
+};
+
+// Process SVG path objects into control points
+export const processSVGPathObjects = (svgObjects: any[]): ControlPoint[] => {
+  let allPoints: ControlPoint[] = [];
+  
+  for (const obj of svgObjects) {
+    if (obj.type === 'path' && obj.d) {
+      const pathPoints = svgPathToBezierPoints(obj.d);
+      allPoints = [...allPoints, ...pathPoints];
+    }
+  }
+  
+  return allPoints;
+};
+
+// Convert various shape formats to BezierObjects
+export const convertShapesDataToObjects = (shapesData: any): BezierObject[] => {
+  const objects: BezierObject[] = [];
+  
+  // Check if it's an array
+  if (Array.isArray(shapesData)) {
+    // Process each item in the array
+    shapesData.forEach((item, index) => {
+      if (item.type === 'path' || item.d) {
+        // This is SVG path data
+        const pathPoints = item.d ? svgPathToBezierPoints(item.d) : [];
+        if (pathPoints.length > 0) {
+          objects.push({
+            id: item.id || generateId(),
+            points: pathPoints,
+            curveConfig: {
+              styles: [
+                { color: item.stroke || '#000000', width: item.strokeWidth || 5 }
+              ],
+              parallelCount: 0,
+              spacing: 0
+            },
+            transform: {
+              rotation: item.rotation || 0,
+              scaleX: 1.0,
+              scaleY: 1.0
+            },
+            name: `Imported Path ${index + 1}`,
+            isSelected: false
+          });
+        }
+      } else if (item.type === 'spiral' || item.type === 'triangle' || item.type === 'circle') {
+        // This is shape data - create simple control points for visualization
+        const centerX = item.x || 0;
+        const centerY = item.y || 0;
+        const width = item.width || 100;
+        const height = item.height || 100;
+        
+        const simplePoints: ControlPoint[] = [];
+        
+        // Create a simple shape representation with control points
+        // For simplicity, we'll create a rectangle with 4 points
+        [
+          { x: centerX - width/2, y: centerY - height/2 },
+          { x: centerX + width/2, y: centerY - height/2 },
+          { x: centerX + width/2, y: centerY + height/2 },
+          { x: centerX - width/2, y: centerY + height/2 }
+        ].forEach(point => {
+          simplePoints.push({
+            x: point.x,
+            y: point.y,
+            handleIn: { x: point.x - 20, y: point.y },
+            handleOut: { x: point.x + 20, y: point.y },
+            id: generateId()
+          });
+        });
+        
+        objects.push({
+          id: item.id || generateId(),
+          points: simplePoints,
+          curveConfig: {
+            styles: [
+              { color: item.stroke || item.fill || '#000000', width: item.strokeWidth || 5 }
+            ],
+            parallelCount: 0,
+            spacing: 0
+          },
+          transform: {
+            rotation: item.rotation || 0,
+            scaleX: 1.0,
+            scaleY: 1.0
+          },
+          name: `Imported ${item.type} ${index + 1}`,
+          isSelected: false
+        });
+      }
+    });
+  }
+  
+  return objects;
 };
 
 // Apply transformation to a point

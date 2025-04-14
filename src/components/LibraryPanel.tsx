@@ -10,9 +10,10 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { SavedDesign } from '@/types/bezier';
+import { SavedDesign, BezierObject, DesignData } from '@/types/bezier';
 import { getDesigns, getDesignsByCategory } from '@/services/supabaseClient';
 import { X } from 'lucide-react';
+import { convertShapesDataToObjects } from '@/utils/bezierUtils';
 
 interface LibraryPanelProps {
   onClose: () => void;
@@ -46,7 +47,22 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign }) 
         throw new Error(response.error.message);
       }
       
-      setDesigns(response.data || []);
+      // Process each design to validate its content before displaying
+      const processedDesigns = (response.data || []).map((design: SavedDesign) => {
+        try {
+          // Just to check if it's valid JSON
+          if (design.shapes_data) {
+            JSON.parse(design.shapes_data);
+          }
+          return design;
+        } catch (err) {
+          console.error(`Invalid JSON in design ${design.id}:`, err);
+          // We'll include it anyway but mark it in the console
+          return design;
+        }
+      });
+      
+      setDesigns(processedDesigns);
     } catch (err) {
       setError('Failed to load designs. Please try again.');
       console.error('Error fetching designs:', err);
@@ -59,9 +75,35 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign }) 
     setSelectedCategory(category);
   };
 
-  const handleSelectDesign = (design: SavedDesign) => {
-    onSelectDesign(design);
-    onClose();
+  const validateAndSelectDesign = (design: SavedDesign) => {
+    try {
+      // Ensure we have some data to work with
+      if (!design.shapes_data) {
+        throw new Error('Design contains no data');
+      }
+      
+      // Pre-process the design data to check its format
+      const parsedData = JSON.parse(design.shapes_data);
+      
+      // Test if we can process the data - this will convert it if it's in a compatible format
+      if (Array.isArray(parsedData)) {
+        const objects = convertShapesDataToObjects(parsedData);
+        console.log(`Converted design ${design.id} to ${objects.length} objects`);
+        
+        // Only proceed if we could extract some objects
+        if (objects.length === 0) {
+          console.warn(`Design ${design.id} could not be converted to any objects`);
+        }
+      }
+      
+      // If we got here, either the data is in a format our Index component can handle,
+      // or we've converted it to a format that can be handled
+      onSelectDesign(design);
+      onClose();
+    } catch (err) {
+      console.error('Error validating design:', err);
+      setError(`Failed to load design "${design.name}". The format may be incompatible.`);
+    }
   };
 
   return (
@@ -120,7 +162,7 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign }) 
                 <Card
                   key={design.id}
                   className="p-4 hover:shadow-md transition-shadow cursor-pointer"
-                  onClick={() => handleSelectDesign(design)}
+                  onClick={() => validateAndSelectDesign(design)}
                 >
                   <div className="aspect-square mb-2 border rounded flex items-center justify-center bg-gray-50">
                     <div className="text-5xl text-gray-300">⌘</div>

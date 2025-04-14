@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { 
   ControlPoint, 
@@ -16,6 +15,8 @@ import { useToast } from '@/hooks/use-toast';
 import { useBezierObjects } from '@/hooks/useBezierObjects';
 import ObjectControlsPanel from '@/components/ObjectControlsPanel';
 import { generateThumbnailFromSVG } from '@/utils/thumbnailGenerator';
+import React from 'react';
+import { convertShapesDataToObjects } from '@/utils/bezierUtils';
 
 const Index = () => {
   const { toast } = useToast();
@@ -247,20 +248,43 @@ const Index = () => {
         throw new Error('Design data is empty');
       }
       
-      const parsedData: DesignData = JSON.parse(design.shapes_data);
+      // Parse the design data
+      const parsedData = JSON.parse(design.shapes_data);
       
       // Clear current objects
       objects.forEach(obj => deleteObject(obj.id));
       
+      // Check data format and handle accordingly
+      if (Array.isArray(parsedData)) {
+        // This might be either an array of shapes or an array of SVG path objects
+        const bezierObjects = convertShapesDataToObjects(parsedData);
+        
+        if (bezierObjects.length > 0) {
+          // Successfully converted to bezier objects
+          bezierObjects.forEach(obj => {
+            createObject(obj.points, obj.name);
+          });
+          
+          toast({
+            title: 'Design Loaded',
+            description: `Design "${design.name}" has been loaded successfully.`
+          });
+          return;
+        }
+      }
+      
+      // If we get here, try to handle it as the standard DesignData format
+      const designData: DesignData = parsedData;
+      
       // Check if data has objects array (new format) or just points (old format)
-      if (parsedData.objects && parsedData.objects.length > 0) {
+      if (designData.objects && designData.objects.length > 0) {
         // New format with objects
-        parsedData.objects.forEach(obj => {
+        designData.objects.forEach(obj => {
           createObject(obj.points, obj.name);
         });
-      } else if (parsedData.points && parsedData.points.length > 0) {
+      } else if (designData.points && designData.points.length > 0) {
         // Old format with just points, create a single object
-        const pointsWithIds = parsedData.points.map(point => ({
+        const pointsWithIds = designData.points.map(point => ({
           ...point,
           id: point.id || generateId()
         }));
@@ -276,9 +300,9 @@ const Index = () => {
       }
       
       // Set background image if present
-      if (parsedData.backgroundImage) {
-        setBackgroundImage(parsedData.backgroundImage.url);
-        setBackgroundOpacity(parsedData.backgroundImage.opacity);
+      if (designData.backgroundImage) {
+        setBackgroundImage(designData.backgroundImage.url);
+        setBackgroundOpacity(designData.backgroundImage.opacity);
       }
       
       toast({
