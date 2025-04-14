@@ -695,9 +695,9 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       }
       
       if (objectIdsInSelection.length > 0) {
-        toast({\
-          title: `${objectIdsInSelection.length} objects selected`,\
-          description: "Drag to move objects as a group, or press Delete to remove them"\
+        toast({
+          title: `${objectIdsInSelection.length} objects selected`,
+          description: "Drag to move objects as a group, or press Delete to remove them"
         });
       }
     }
@@ -922,4 +922,4 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     });
   };
 
-  // Handle
+  // Handle reset
