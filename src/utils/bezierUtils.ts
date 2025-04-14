@@ -1,3 +1,4 @@
+
 import { ControlPoint, Point, CurveStyle, SelectionRect, BezierObject } from '../types/bezier';
 
 // Generate a unique ID
@@ -817,3 +818,68 @@ export const convertShapesDataToObjects = (shapesData: any): BezierObject[] => {
         console.log('Found objects array in data object');
         dataArray = dataArray.objects;
       } else {
+        // Try to convert the object itself to a BezierObject
+        try {
+          if (dataArray.id && Array.isArray(dataArray.points)) {
+            objects.push({
+              id: dataArray.id,
+              points: dataArray.points,
+              curveConfig: dataArray.curveConfig || { styles: [{ color: '#000000', width: 2 }], parallelCount: 0, spacing: 0 },
+              transform: dataArray.transform || { rotation: 0, scaleX: 1, scaleY: 1 },
+              name: dataArray.name || 'Imported Object',
+              isSelected: false
+            });
+            return objects;
+          }
+        } catch (err) {
+          console.error('Failed to convert object to BezierObject:', err);
+        }
+      }
+    }
+  }
+  
+  // Process the array data
+  if (Array.isArray(dataArray)) {
+    for (const item of dataArray) {
+      // Skip null or undefined items
+      if (!item) continue;
+      
+      try {
+        // If item is already a BezierObject with proper structure
+        if (item.id && Array.isArray(item.points)) {
+          objects.push({
+            id: item.id,
+            points: item.points,
+            curveConfig: item.curveConfig || { styles: [{ color: '#000000', width: 2 }], parallelCount: 0, spacing: 0 },
+            transform: item.transform || { rotation: 0, scaleX: 1, scaleY: 1 },
+            name: item.name || 'Imported Object',
+            isSelected: false
+          });
+        } 
+        // If it's an SVG path description
+        else if (item.type === 'path' && item.d) {
+          const points = svgPathToBezierPoints(item.d);
+          if (points.length > 0) {
+            objects.push({
+              id: generateId(),
+              points,
+              curveConfig: { styles: [{ color: item.stroke || '#000000', width: item.strokeWidth || 2 }], parallelCount: 0, spacing: 0 },
+              transform: { rotation: 0, scaleX: 1, scaleY: 1 },
+              name: item.name || 'Imported Path',
+              isSelected: false
+            });
+          }
+        }
+        // It might be a different format, try to adapt
+        else if (typeof item === 'object') {
+          console.log('Unrecognized object format, attempting to adapt:', item);
+          // Add additional format conversions here as needed
+        }
+      } catch (err) {
+        console.error('Error processing item:', item, err);
+      }
+    }
+  }
+  
+  return objects;
+}
