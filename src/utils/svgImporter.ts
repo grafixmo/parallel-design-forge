@@ -6,12 +6,23 @@ interface SVGPathData {
   path: string;
   color: string;
   width: number;
+  fill?: string;
+  opacity?: number;
+  strokeDasharray?: string;
+  strokeLinecap?: string;
+  strokeLinejoin?: string;
 }
 
 interface SVGImportResult {
   objects: BezierObject[];
   width: number;
   height: number;
+  viewBox?: {
+    minX: number;
+    minY: number;
+    width: number;
+    height: number;
+  };
 }
 
 // Parse SVG string into BezierObject objects
@@ -37,33 +48,57 @@ export const parseSVGContent = (svgContent: string): SVGImportResult => {
     const width = parseFloat(svgElement.getAttribute('width') || '800');
     const height = parseFloat(svgElement.getAttribute('height') || '600');
     
+    // Parse viewBox if available
+    let viewBox = undefined;
+    const viewBoxAttr = svgElement.getAttribute('viewBox');
+    if (viewBoxAttr) {
+      const viewBoxValues = viewBoxAttr.split(/\s+/).map(parseFloat);
+      if (viewBoxValues.length === 4) {
+        viewBox = {
+          minX: viewBoxValues[0],
+          minY: viewBoxValues[1],
+          width: viewBoxValues[2],
+          height: viewBoxValues[3]
+        };
+      }
+    }
+    
     // Find all path elements
     const pathElements = svgDoc.querySelectorAll('path');
     if (pathElements.length === 0) {
       throw new Error('No paths found in the SVG');
     }
     
-    // Extract path data
+    // Extract path data with enhanced styling information
     const pathsData: SVGPathData[] = [];
     pathElements.forEach((pathElement) => {
       const d = pathElement.getAttribute('d');
       if (d) {
+        // Get all styling attributes
         pathsData.push({
           path: d,
           color: pathElement.getAttribute('stroke') || '#000000',
-          width: parseFloat(pathElement.getAttribute('stroke-width') || '2')
+          width: parseFloat(pathElement.getAttribute('stroke-width') || '2'),
+          fill: pathElement.getAttribute('fill') || 'none',
+          opacity: parseFloat(pathElement.getAttribute('opacity') || '1'),
+          strokeDasharray: pathElement.getAttribute('stroke-dasharray') || undefined,
+          strokeLinecap: pathElement.getAttribute('stroke-linecap') || undefined,
+          strokeLinejoin: pathElement.getAttribute('stroke-linejoin') || undefined
         });
       }
     });
     
-    // Convert paths to BezierObjects
+    // Convert paths to BezierObjects with position adjustment
     const objects: BezierObject[] = pathsData.map((pathData, index) => {
       const points = convertPathToPoints(pathData.path);
       
-      // Create curve config
+      // Create curve config with enhanced styling
       const curveConfig: CurveConfig = {
         styles: [
-          { color: pathData.color, width: pathData.width }
+          { 
+            color: pathData.color, 
+            width: pathData.width 
+          }
         ],
         parallelCount: 0,
         spacing: 0
@@ -87,14 +122,106 @@ export const parseSVGContent = (svgContent: string): SVGImportResult => {
       };
     });
     
+    // Apply positioning to make the imported SVG visible
+    positionImportedObjects(objects, { width, height, viewBox });
+    
     return {
       objects,
       width,
-      height
+      height,
+      viewBox
     };
   } catch (error) {
     console.error('Error parsing SVG:', error);
     throw error;
+  }
+};
+
+// Position imported objects to ensure they're visible in the canvas
+const positionImportedObjects = (
+  objects: BezierObject[], 
+  svgInfo: { width: number, height: number, viewBox?: any }
+): void => {
+  if (objects.length === 0) return;
+  
+  // Find bounds of all objects
+  let minX = Infinity, minY = Infinity;
+  let maxX = -Infinity, maxY = -Infinity;
+  
+  objects.forEach(obj => {
+    obj.points.forEach(point => {
+      minX = Math.min(minX, point.x);
+      minY = Math.min(minY, point.y);
+      maxX = Math.max(maxX, point.x);
+      maxY = Math.max(maxY, point.y);
+    });
+  });
+  
+  // Calculate offset to center the objects in canvas
+  // Place them in the center area (avoid toolbar area)
+  const offsetX = 300 - (minX + (maxX - minX) / 2);
+  const offsetY = 300 - (minY + (maxY - minY) / 2);
+  
+  // Apply offset to all points
+  objects.forEach(obj => {
+    obj.points = obj.points.map(point => ({
+      ...point,
+      x: point.x + offsetX,
+      y: point.y + offsetY,
+      handleIn: {
+        x: point.handleIn.x + offsetX,
+        y: point.handleIn.y + offsetY
+      },
+      handleOut: {
+        x: point.handleOut.x + offsetX,
+        y: point.handleOut.y + offsetY
+      }
+    }));
+  });
+  
+  // Scale if needed to fit in viewable area
+  const width = maxX - minX;
+  const height = maxY - minY;
+  
+  if (width > 600 || height > 400) {
+    const scale = Math.min(600 / width, 400 / height) * 0.8; // 80% of max scale for padding
+    
+    // Find center point after offset
+    const centerX = minX + width/2 + offsetX;
+    const centerY = minY + height/2 + offsetY;
+    
+    // Scale all objects around center
+    objects.forEach(obj => {
+      obj.points = obj.points.map(point => {
+        // Distance from center
+        const dx = point.x - centerX;
+        const dy = point.y - centerY;
+        
+        // Scale distance
+        const scaledX = centerX + dx * scale;
+        const scaledY = centerY + dy * scale;
+        
+        // Also scale handles
+        const handleInDx = point.handleIn.x - centerX;
+        const handleInDy = point.handleIn.y - centerY;
+        const handleOutDx = point.handleOut.x - centerX;
+        const handleOutDy = point.handleOut.y - centerY;
+        
+        return {
+          ...point,
+          x: scaledX,
+          y: scaledY,
+          handleIn: {
+            x: centerX + handleInDx * scale,
+            y: centerY + handleInDy * scale
+          },
+          handleOut: {
+            x: centerX + handleOutDx * scale,
+            y: centerY + handleOutDy * scale
+          }
+        };
+      });
+    });
   }
 };
 
