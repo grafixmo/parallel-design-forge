@@ -1,7 +1,7 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { PenLine, Trash2, Upload, Save, Database, MousePointer } from 'lucide-react';
+import { PenLine, Trash2, Upload, Save, Database, MousePointer, Image } from 'lucide-react';
 import {
   Tooltip,
   TooltipContent,
@@ -21,12 +21,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
+import TemplateGallery from './TemplateGallery';
 
 interface HeaderProps {
   onClearCanvas: () => void;
   onSaveDesign: (name: string, category: string) => void;
   onLoadDesigns: () => void;
   onExportSVG: () => void;
+  onLoadTemplate?: (templateData: string) => void; // New prop for loading templates
   isDrawingMode?: boolean;
   onToggleDrawingMode?: () => void;
 }
@@ -36,12 +38,14 @@ const Header: React.FC<HeaderProps> = ({
   onSaveDesign,
   onLoadDesigns,
   onExportSVG,
+  onLoadTemplate,
   isDrawingMode = true,
   onToggleDrawingMode
 }) => {
-  const [designName, setDesignName] = React.useState('');
-  const [designCategory, setDesignCategory] = React.useState('Collares');
-  const [saveDialogOpen, setSaveDialogOpen] = React.useState(false);
+  const [designName, setDesignName] = useState('');
+  const [designCategory, setDesignCategory] = useState('Collares');
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [galleryOpen, setGalleryOpen] = useState(false);
   
   const handleSaveClick = () => {
     setSaveDialogOpen(true);
@@ -52,6 +56,12 @@ const Header: React.FC<HeaderProps> = ({
     onSaveDesign(designName, designCategory);
     setSaveDialogOpen(false);
     setDesignName('');
+  };
+
+  const handleSelectTemplate = (templateData: string) => {
+    if (onLoadTemplate) {
+      onLoadTemplate(templateData);
+    }
   };
   
   return (
@@ -100,6 +110,23 @@ const Header: React.FC<HeaderProps> = ({
       </div>
       
       <div className="flex items-center space-x-2">
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button 
+                variant="outline" 
+                onClick={() => setGalleryOpen(true)}
+              >
+                <Image className="h-4 w-4 mr-2" />
+                Gallery
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Browse and load templates</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+        
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -190,6 +217,13 @@ const Header: React.FC<HeaderProps> = ({
           </Tooltip>
         </TooltipProvider>
       </div>
+      
+      {/* Gallery component */}
+      <TemplateGallery
+        open={galleryOpen}
+        onClose={() => setGalleryOpen(false)}
+        onSelectTemplate={handleSelectTemplate}
+      />
     </div>
   );
 };

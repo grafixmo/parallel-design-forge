@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { 
   ControlPoint, 
@@ -13,7 +14,7 @@ import Header from '@/components/Header';
 import LibraryPanel from '@/components/LibraryPanel';
 import { generateId } from '@/utils/bezierUtils';
 import { exportAsSVG, downloadSVG } from '@/utils/svgExporter';
-import { saveDesign } from '@/services/supabaseClient';
+import { saveDesign, saveTemplate, Template } from '@/services/supabaseClient';
 import { useToast } from '@/hooks/use-toast';
 import { useBezierObjects } from '@/hooks/useBezierObjects';
 import ObjectControlsPanel from '@/components/ObjectControlsPanel';
@@ -203,6 +204,7 @@ const Index = () => {
       } : undefined
     };
     
+    // Save design to the designs table (legacy)
     const design: SavedDesign = {
       name,
       category,
@@ -215,6 +217,16 @@ const Index = () => {
       if (error) {
         throw new Error(error.message);
       }
+      
+      // Also save as a template to the new templates table
+      const template: Template = {
+        name,
+        category,
+        design_data: JSON.stringify(designData),
+        likes: 0
+      };
+      
+      await saveTemplate(template);
       
       toast({
         title: 'Design Saved',
@@ -285,6 +297,52 @@ const Index = () => {
     }
   };
   
+  // Load a template from the gallery
+  const handleLoadTemplate = (templateData: string) => {
+    try {
+      const parsedData: DesignData = JSON.parse(templateData);
+      
+      // Clear current objects
+      objects.forEach(obj => deleteObject(obj.id));
+      
+      // Check if data has objects array (new format) or just points (old format)
+      if (parsedData.objects && parsedData.objects.length > 0) {
+        // New format with objects
+        parsedData.objects.forEach(obj => {
+          createObject(obj.points, obj.name);
+        });
+      } else if (parsedData.points && parsedData.points.length > 0) {
+        // Old format with just points, create a single object
+        const pointsWithIds = parsedData.points.map(point => ({
+          ...point,
+          id: point.id || generateId()
+        }));
+        
+        createObject(pointsWithIds, 'Imported Template');
+      } else {
+        toast({
+          title: 'Invalid Template Data',
+          description: 'The selected template does not contain valid control points.',
+          variant: 'destructive'
+        });
+        return;
+      }
+      
+      // Set background image if present
+      if (parsedData.backgroundImage) {
+        setBackgroundImage(parsedData.backgroundImage.url);
+        setBackgroundOpacity(parsedData.backgroundImage.opacity);
+      }
+    } catch (err) {
+      console.error('Error loading template:', err);
+      toast({
+        title: 'Load Failed',
+        description: 'There was an error loading the template. The format may be invalid.',
+        variant: 'destructive'
+      });
+    }
+  };
+  
   // Handle object deletion
   const handleDeleteObject = (objectId: string) => {
     deleteObject(objectId);
@@ -301,6 +359,7 @@ const Index = () => {
         onSaveDesign={handleSaveDesign}
         onLoadDesigns={() => setShowLibrary(true)}
         onExportSVG={handleExportSVG}
+        onLoadTemplate={handleLoadTemplate}
         isDrawingMode={isDrawingMode}
         onToggleDrawingMode={handleToggleDrawingMode}
       />
