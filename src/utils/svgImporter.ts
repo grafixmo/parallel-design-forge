@@ -1,5 +1,5 @@
 
-import { ControlPoint, BezierObject, CurveConfig, TransformSettings } from '../types/bezier';
+import { ControlPoint, BezierObject, CurveConfig, TransformSettings, SVGImportOptions } from '../types/bezier';
 import { generateId } from './bezierUtils';
 
 interface SVGPathData {
@@ -15,7 +15,7 @@ interface SVGImportResult {
 }
 
 // Parse SVG string into BezierObject objects
-export const parseSVGContent = (svgContent: string): SVGImportResult => {
+export const parseSVGContent = (svgContent: string, options?: SVGImportOptions): SVGImportResult => {
   try {
     // Create a DOM parser
     const parser = new DOMParser();
@@ -48,10 +48,13 @@ export const parseSVGContent = (svgContent: string): SVGImportResult => {
     pathElements.forEach((pathElement) => {
       const d = pathElement.getAttribute('d');
       if (d) {
+        // Get style information (if option enabled)
+        const useImportedStyle = options?.importStyle !== false;
+        
         pathsData.push({
           path: d,
-          color: pathElement.getAttribute('stroke') || '#000000',
-          width: parseFloat(pathElement.getAttribute('stroke-width') || '2')
+          color: useImportedStyle ? (pathElement.getAttribute('stroke') || '#000000') : '#000000',
+          width: useImportedStyle ? parseFloat(pathElement.getAttribute('stroke-width') || '2') : 2
         });
       }
     });
@@ -215,6 +218,28 @@ const convertPathToPoints = (path: string): ControlPoint[] => {
         
         currentX = endX;
         currentY = endY;
+      } else if ((type === 'Z' || type === 'z') && points.length > 1) {
+        // Close path command - connect back to the first point
+        const firstPoint = points[0];
+        const lastPoint = points[points.length - 1];
+        
+        // Only add closing segment if we're not already at the start point
+        if (Math.abs(lastPoint.x - firstPoint.x) > 0.1 || Math.abs(lastPoint.y - firstPoint.y) > 0.1) {
+          const dx = firstPoint.x - lastPoint.x;
+          const dy = firstPoint.y - lastPoint.y;
+          
+          // Set the out handle of last point along the closing line
+          lastPoint.handleOut = {
+            x: lastPoint.x + dx / 3,
+            y: lastPoint.y + dy / 3
+          };
+          
+          // Update the in handle of first point to match the curve
+          firstPoint.handleIn = {
+            x: firstPoint.x - dx / 3,
+            y: firstPoint.y - dy / 3
+          };
+        }
       }
       
       // Add support for other path commands as needed
