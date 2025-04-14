@@ -18,6 +18,37 @@ const createSVGWorker = () => {
   return new Worker(new URL('./svgWorker.ts', import.meta.url), { type: 'module' });
 };
 
+// Helper to determine if an SVG is complex enough to require worker processing
+const isSVGComplex = (
+  pathsData: SVGPathData[],
+  svgContent: string
+): boolean => {
+  // Consider both file size and path complexity
+  const contentSize = svgContent.length;
+  const pathCount = pathsData.length;
+  const totalPathLength = pathsData.reduce((sum, p) => sum + p.path.length, 0);
+  
+  // Decision tree based on empirical thresholds
+  // 1. Large files with multiple paths should use worker
+  if (contentSize > 5000 && pathCount > 2) return true;
+  
+  // 2. Files with many paths should use worker regardless of file size
+  if (pathCount > 5) return true;
+  
+  // 3. Files with complex paths (many commands/coordinates) should use worker
+  if (totalPathLength > 3000) return true;
+  
+  // 4. Files with paths containing many curve commands should use worker
+  const curveCommandCount = pathsData.reduce(
+    (sum, p) => sum + (p.path.match(/[cC]/g) || []).length, 
+    0
+  );
+  if (curveCommandCount > 10) return true;
+  
+  // Otherwise, process synchronously for small simple SVGs
+  return false;
+};
+
 // Parse SVG string into BezierObject objects with progress callbacks
 export const parseSVGContent = (
   svgContent: string, 
@@ -76,9 +107,11 @@ export const parseSVGContent = (
       // Progress update for path extraction
       if (onProgress) onProgress(0.3);
       
-      // For very simple SVGs with few paths, process synchronously
-      if (pathsData.length <= 3) {
-        // Convert paths to BezierObjects
+      // Decide whether to use worker based on complexity analysis
+      const shouldUseWorker = isSVGComplex(pathsData, svgContent);
+      
+      if (!shouldUseWorker) {
+        // For simple SVGs, process synchronously to avoid worker overhead
         const objects: BezierObject[] = pathsData.map((pathData, index) => {
           const points = convertPathToPoints(pathData.path);
           
@@ -197,20 +230,33 @@ const convertPathToPoints = (path: string): ControlPoint[] => {
   const points: ControlPoint[] = [];
   
   try {
-    // Very basic path parsing - works for simple paths
-    // This would need to be enhanced for complex paths
+    // Command cache for better performance
+    const commandCache = {};
+    
+    // More efficient path parsing
     const commands = path.match(/[a-zA-Z][^a-zA-Z]*/g) || [];
     
     let currentX = 0;
     let currentY = 0;
     
-    commands.forEach((command) => {
+    for (let i = 0; i < commands.length; i++) {
+      const command = commands[i];
       const type = command.charAt(0);
-      const args = command.substring(1)
-        .trim()
-        .split(/[\s,]+/)
-        .map(parseFloat)
-        .filter(n => !isNaN(n));
+      
+      // Use cached args if we've seen this command before
+      let args;
+      if (commandCache[command]) {
+        args = commandCache[command];
+      } else {
+        args = command.substring(1)
+          .trim()
+          .split(/[\s,]+/)
+          .map(parseFloat)
+          .filter(n => !isNaN(n));
+        
+        // Cache the parsed args for this command
+        commandCache[command] = args;
+      }
       
       if ((type === 'M' || type === 'm') && args.length >= 2) {
         // Move command
@@ -332,9 +378,7 @@ const convertPathToPoints = (path: string): ControlPoint[] => {
           };
         }
       }
-      
-      // Add support for other path commands as needed
-    });
+    }
   } catch (error) {
     console.error('Error converting path to points:', error);
   }

@@ -97,6 +97,8 @@ const Header: React.FC<HeaderProps> = ({
     setImportDialogOpen(true);
     setImportProgress(0);
     setIsImporting(false);
+    setSelectedFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
   
   const handleFileSelect = () => {
@@ -149,28 +151,66 @@ const Header: React.FC<HeaderProps> = ({
       setIsImporting(true);
       setImportProgress(0);
       
-      // Track progress using the callback
-      const updateProgress = (progress: number) => {
-        setImportProgress(progress * 100);
+      // Read file content
+      const fileReader = new FileReader();
+      
+      fileReader.onload = async (event) => {
+        try {
+          const svgContent = event.target?.result as string;
+          if (!svgContent) throw new Error("Failed to read SVG file");
+          
+          // Quick size validation
+          if (svgContent.length > 5000000) { // 5MB limit
+            throw new Error("SVG file is too large to process");
+          }
+          
+          // Track progress using the callback
+          const updateProgress = (progress: number) => {
+            setImportProgress(progress * 100);
+          };
+          
+          // Import the SVG with options and progress tracking
+          await onImportSVG(svgContent, importOptions, updateProgress);
+          
+          // Close dialog and reset state
+          setImportDialogOpen(false);
+          setSelectedFile(null);
+          setIsImporting(false);
+          setImportProgress(0);
+          if (fileInputRef.current) fileInputRef.current.value = '';
+          
+          toast({
+            title: "Import Successful",
+            description: "SVG file imported successfully."
+          });
+        } catch (error) {
+          console.error('Error importing SVG:', error);
+          toast({
+            title: "Import Failed",
+            description: `Failed to import the SVG file: ${(error as Error).message}`,
+            variant: "destructive"
+          });
+          setIsImporting(false);
+        }
       };
       
-      // Read file content
-      const fileContent = await readSVGFile(selectedFile, updateProgress);
+      fileReader.onprogress = (event) => {
+        if (event.lengthComputable) {
+          const progress = (event.loaded / event.total) * 30;
+          setImportProgress(progress);
+        }
+      };
       
-      // Import the SVG with options and progress tracking
-      await onImportSVG(fileContent, importOptions, updateProgress);
+      fileReader.onerror = () => {
+        toast({
+          title: "File Read Error",
+          description: "Failed to read the SVG file.",
+          variant: "destructive"
+        });
+        setIsImporting(false);
+      };
       
-      // Close dialog and reset state
-      setImportDialogOpen(false);
-      setSelectedFile(null);
-      setIsImporting(false);
-      setImportProgress(0);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-      
-      toast({
-        title: "Import Successful",
-        description: "SVG file imported successfully."
-      });
+      fileReader.readAsText(selectedFile);
     } catch (error) {
       console.error('Error importing SVG:', error);
       toast({
@@ -180,32 +220,6 @@ const Header: React.FC<HeaderProps> = ({
       });
       setIsImporting(false);
     }
-  };
-  
-  // Define function to read SVG file with progress tracking
-  const readSVGFile = (file: File, onProgress?: (progress: number) => void): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      
-      reader.onload = (e) => {
-        if (onProgress) onProgress(0.2); // File read complete
-        resolve(e.target?.result as string);
-      };
-      
-      reader.onprogress = (event) => {
-        if (event.lengthComputable && onProgress) {
-          // File read progress from 0 to 0.2 in our overall process
-          const progress = event.loaded / event.total * 0.2;
-          onProgress(progress);
-        }
-      };
-      
-      reader.onerror = (e) => {
-        reject(new Error('Error reading SVG file'));
-      };
-      
-      reader.readAsText(file);
-    });
   };
   
   return (

@@ -58,7 +58,6 @@ function processPath(pathData, options) {
 
 // Optimized version of convertPathToPoints
 function convertPathToPoints(path) {
-  // Import the generateId function dynamically
   function generateUniqueId() {
     return Math.random().toString(36).substring(2, 11);
   }
@@ -66,19 +65,33 @@ function convertPathToPoints(path) {
   const points = [];
   
   try {
-    // Optimized path parsing - works for simple paths
+    // Command cache for better performance
+    const commandCache = {};
+    
+    // More efficient path parsing - avoid expensive regex for simple paths
     const commands = path.match(/[a-zA-Z][^a-zA-Z]*/g) || [];
     
     let currentX = 0;
     let currentY = 0;
     
-    commands.forEach((command) => {
+    for (let i = 0; i < commands.length; i++) {
+      const command = commands[i];
       const type = command.charAt(0);
-      const args = command.substring(1)
-        .trim()
-        .split(/[\s,]+/)
-        .map(parseFloat)
-        .filter(n => !isNaN(n));
+      
+      // Use cached args if we've seen this command before
+      let args;
+      if (commandCache[command]) {
+        args = commandCache[command];
+      } else {
+        args = command.substring(1)
+          .trim()
+          .split(/[\s,]+/)
+          .map(parseFloat)
+          .filter(n => !isNaN(n));
+        
+        // Cache the parsed args for this command
+        commandCache[command] = args;
+      }
       
       if ((type === 'M' || type === 'm') && args.length >= 2) {
         // Move command
@@ -200,7 +213,7 @@ function convertPathToPoints(path) {
           };
         }
       }
-    });
+    }
   } catch (error) {
     console.error('Error converting path to points:', error);
   }
