@@ -128,7 +128,7 @@ const Index = () => {
         return;
       }
       
-      // Fix: only pass objects as argument to createDesignSVG
+      // Fix: only pass objects to createDesignSVG
       const svg = createDesignSVG(objects);
       const designData = JSON.stringify(objects);
       
@@ -274,6 +274,8 @@ const Index = () => {
         description: "There was an error loading the template",
         variant: "destructive"
       });
+    } finally {
+      setIsLoading(false);
     }
   }, [loadObjectsFromTemplate, toast]);
   
