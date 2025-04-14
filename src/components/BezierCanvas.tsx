@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect, useState } from 'react';
 import { 
   ControlPoint, 
@@ -14,9 +15,8 @@ import {
   isPointInSelectionRect
 } from '../utils/bezierUtils';
 import { toast } from '@/hooks/use-toast';
-import { ZoomIn, ZoomOut, Undo, Move, RotateCcw } from 'lucide-react';
+import { ZoomIn, ZoomOut, Undo, Move } from 'lucide-react';
 import { BezierObjectRenderer } from './BezierObject';
-import { Button } from '@/components/ui/button';
 
 interface BezierCanvasProps {
   width: number;
@@ -719,7 +719,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     }
   };
   
-  // Handle double click to add points to an existing object, finalize drawing, or delete points
+  // Handle double click to add points to an existing object or finalize drawing
   const handleDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -739,82 +739,74 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       return;
     }
     
-    // Check if double-clicking on a point to delete it (works in both modes)
-    let pointDeleted = false;
-    
-    // For each object (prioritize selected objects)
-    const objectsToCheck = [...objects].sort((a, b) => 
-      (b.isSelected ? 1 : 0) - (a.isSelected ? 1 : 0)
-    );
-    
-    for (const object of objectsToCheck) {
-      // Skip if this would leave the object with fewer than 2 points
-      if (object.points.length <= 2) continue;
-      
-      // Check if double-clicking on an existing point
-      for (let i = 0; i < object.points.length; i++) {
-        const point = object.points[i];
-        
-        if (isPointNear({ x, y }, point, POINT_RADIUS / zoom)) {
-          // Remove the point
-          const updatedPoints = object.points.filter((_, index) => index !== i);
-          const updatedObjects = objects.map(obj => 
-            obj.id === object.id 
-              ? { ...obj, points: updatedPoints }
-              : obj
-          );
-          
-          onObjectsChange(updatedObjects);
-          onSaveState();
-          
-          toast({
-            title: "Point Removed",
-            description: `Removed point ${i + 1} from ${object.name}`
-          });
-          
-          pointDeleted = true;
-          break;
-        }
-      }
-      
-      if (pointDeleted) break;
-    }
-    
-    // If we didn't delete a point and we're in drawing mode, handle adding a point to selected object
-    if (!pointDeleted && isDrawingMode && selectedObjectIds.length === 1) {
+    // If in drawing mode and an object is selected (but not being drawn), add a point to it
+    if (isDrawingMode && selectedObjectIds.length === 1 && selectedObjectIds[0] !== currentDrawingObjectId) {
       const objectId = selectedObjectIds[0];
       const objectIndex = objects.findIndex(obj => obj.id === objectId);
       if (objectIndex === -1) return;
       
       const object = objects[objectIndex];
       
-      // Don't add another point if we're too close to an existing point
-      const tooCloseToExisting = object.points.some(point => 
-        isPointNear({ x, y }, point, POINT_RADIUS * 2 / zoom)
-      );
+      // Create a new point
+      const newPoint: ControlPoint = {
+        x,
+        y,
+        handleIn: { x: x - 50, y },
+        handleOut: { x: x + 50, y },
+        id: generateId()
+      };
       
-      if (!tooCloseToExisting) {
-        // Create a new point
-        const newPoint: ControlPoint = {
-          x,
-          y,
-          handleIn: { x: x - 50, y },
-          handleOut: { x: x + 50, y },
-          id: generateId()
-        };
+      // Add the point to the object
+      const updatedPoints = [...object.points, newPoint];
+      const updatedObjects = [...objects];
+      updatedObjects[objectIndex] = { ...object, points: updatedPoints };
+      
+      onObjectsChange(updatedObjects);
+      onSaveState();
+      
+      toast({
+        title: "Point Added",
+        description: `Added a new point to ${object.name}`
+      });
+    }
+    
+    // If in drawing mode, also check if double-clicking on a point to delete it
+    if (isDrawingMode && selectedObjectIds.length === 1) {
+      const objectId = selectedObjectIds[0];
+      const objectIndex = objects.findIndex(obj => obj.id === objectId);
+      if (objectIndex === -1) return;
+      
+      const object = objects[objectIndex];
+      
+      // Check if double-clicking on an existing point
+      for (let i = 0; i < object.points.length; i++) {
+        const point = object.points[i];
         
-        // Add the point to the object
-        const updatedPoints = [...object.points, newPoint];
-        const updatedObjects = [...objects];
-        updatedObjects[objectIndex] = { ...object, points: updatedPoints };
-        
-        onObjectsChange(updatedObjects);
-        onSaveState();
-        
-        toast({
-          title: "Point Added",
-          description: `Added a new point to ${object.name}`
-        });
+        if (isPointNear({ x, y }, point, POINT_RADIUS / zoom)) {
+          // Only delete if there are more than 2 points (to maintain a valid curve)
+          if (object.points.length > 2) {
+            // Remove the point
+            const updatedPoints = object.points.filter((_, index) => index !== i);
+            const updatedObjects = [...objects];
+            updatedObjects[objectIndex] = { ...object, points: updatedPoints };
+            
+            onObjectsChange(updatedObjects);
+            onSaveState();
+            
+            toast({
+              title: "Point Removed",
+              description: `Removed point ${i + 1} from ${object.name}`
+            });
+          } else {
+            toast({
+              title: "Cannot Remove Point",
+              description: "An object must have at least 2 points",
+              variant: "destructive"
+            });
+          }
+          
+          break;
+        }
       }
     }
   };
@@ -902,24 +894,70 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     };
   }, [selectedObjectIds, isDrawingMode, onUndo, currentDrawingObjectId, objects]);
   
-  // Handle zoom in function
-  const handleZoomIn = () => {
-    const newZoom = Math.min(5, zoom * (1 + ZOOM_FACTOR));
-    setZoom(newZoom);
-    toast({
-      title: `Zoom: ${Math.round(newZoom * 100)}%`,
-      description: 'Zoomed in'
-    });
-  };
+  return (
+    <div ref={wrapperRef} className="relative w-full h-full overflow-hidden">
+      <canvas
+        ref={canvasRef}
+        width={width}
+        height={height}
+        className="w-full h-full bg-white"
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onDoubleClick={handleDoubleClick}
+        onWheel={handleWheel}
+        onContextMenu={handleContextMenu}
+      />
+      
+      <div className="absolute bottom-4 left-4 text-sm text-gray-500 bg-white/80 px-3 py-1 rounded shadow">
+        {instructionMessage}
+      </div>
+      
+      <div className="absolute top-4 right-4 flex space-x-2">
+        <button 
+          className="bg-white/80 p-2 rounded shadow hover:bg-white transition-colors"
+          onClick={onUndo}
+          title="Undo (Ctrl+Z)"
+        >
+          <Undo className="w-5 h-5" />
+        </button>
+        <button 
+          className="bg-white/80 p-2 rounded shadow hover:bg-white transition-colors"
+          onClick={() => setZoom(prev => Math.min(5, prev + ZOOM_FACTOR))}
+          title="Zoom In"
+        >
+          <ZoomIn className="w-5 h-5" />
+        </button>
+        <button 
+          className="bg-white/80 p-2 rounded shadow hover:bg-white transition-colors"
+          onClick={() => setZoom(prev => Math.max(0.1, prev - ZOOM_FACTOR))}
+          title="Zoom Out"
+        >
+          <ZoomOut className="w-5 h-5" />
+        </button>
+      </div>
+      
+      {currentDrawingObjectId && (
+        <div className="absolute bottom-4 right-4 flex space-x-2">
+          <button
+            className="bg-red-500 text-white px-3 py-1 rounded shadow hover:bg-red-600 transition-colors"
+            onClick={cancelDrawing}
+            title="Cancel Drawing (ESC)"
+          >
+            Cancel
+          </button>
+          <button
+            className="bg-green-500 text-white px-3 py-1 rounded shadow hover:bg-green-600 transition-colors"
+            onClick={finalizeDrawingObject}
+            title="Finish Drawing (Enter or Right-click)"
+          >
+            Finish
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
 
-  // Handle zoom out function
-  const handleZoomOut = () => {
-    const newZoom = Math.max(0.1, zoom * (1 - ZOOM_FACTOR));
-    setZoom(newZoom);
-    toast({
-      title: `Zoom: ${Math.round(newZoom * 100)}%`,
-      description: 'Zoomed out'
-    });
-  };
+export default BezierCanvas;
 
-  // Handle reset

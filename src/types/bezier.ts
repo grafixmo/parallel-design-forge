@@ -1,4 +1,3 @@
-
 export interface Point {
   x: number;
   y: number;
@@ -57,7 +56,6 @@ export interface SavedDesign {
   shapes_data: string; // JSON stringified DesignData
   created_at?: string;
   updated_at?: string;
-  preserveOriginalProperties?: boolean; // Flag to indicate if original properties should be preserved
 }
 
 export enum ControlPointType {
