@@ -36,6 +36,8 @@ export const useCanvasSetup = ({
     
     // Mark canvas as initialized
     setIsCanvasInitialized(true);
+    
+    console.log("Canvas initialized with dimensions:", width, "x", height);
   }, [width, height]);
   
   // Update canvas size when dimensions change

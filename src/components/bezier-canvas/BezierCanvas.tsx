@@ -69,6 +69,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       img.src = backgroundImage;
       img.onload = () => {
         setBackgroundImageObj(img);
+        console.log("Background image loaded");
       };
     } else {
       setBackgroundImageObj(null);
@@ -124,8 +125,16 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
   
   // Force an initial render
   useEffect(() => {
+    console.log("Initial canvas render, dimensions:", width, "x", height);
     renderCanvas();
   }, [renderCanvas]);
+  
+  // Re-render when objects or selections change
+  useEffect(() => {
+    renderCanvas();
+  }, [objects, selectedObjectIds, renderCanvas]);
+  
+  console.log("BezierCanvas rendering with width:", width, "height:", height, "objects:", objects.length);
   
   return (
     <div 
