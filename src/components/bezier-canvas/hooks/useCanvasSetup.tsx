@@ -32,8 +32,6 @@ export const useCanvasSetup = ({
   const [panOffset, setPanOffset] = useState<Point>({ x: 0, y: 0 });
   const [currentDrawingObjectId, setCurrentDrawingObjectId] = useState<string | null>(null);
   
-  const ZOOM_FACTOR = 0.1;
-  
   // Initialize background image if URL is provided
   useEffect(() => {
     if (backgroundImage) {
@@ -96,36 +94,6 @@ export const useCanvasSetup = ({
     };
   };
   
-  // Handle zoom in function
-  const handleZoomIn = () => {
-    const newZoom = Math.min(5, zoom * (1 + ZOOM_FACTOR));
-    setZoom(newZoom);
-    toast({
-      title: `Zoom: ${Math.round(newZoom * 100)}%`,
-      description: 'Zoomed in'
-    });
-  };
-
-  // Handle zoom out function
-  const handleZoomOut = () => {
-    const newZoom = Math.max(0.1, zoom * (1 - ZOOM_FACTOR));
-    setZoom(newZoom);
-    toast({
-      title: `Zoom: ${Math.round(newZoom * 100)}%`,
-      description: 'Zoomed out'
-    });
-  };
-
-  // Handle reset view
-  const handleResetView = () => {
-    setZoom(1);
-    setPanOffset({ x: 0, y: 0 });
-    toast({
-      title: 'View Reset',
-      description: 'Zoom and pan have been reset'
-    });
-  };
-  
   return {
     mousePos,
     setMousePos,
@@ -138,9 +106,6 @@ export const useCanvasSetup = ({
     isDrawingMode,
     currentDrawingObjectId,
     setCurrentDrawingObjectId,
-    screenToCanvas,
-    handleZoomIn,
-    handleZoomOut,
-    handleResetView
+    screenToCanvas
   };
 };

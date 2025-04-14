@@ -42,14 +42,17 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
   // Use our custom hooks for canvas functionality
   const {
     mousePos,
+    setMousePos,
     instructionMessage,
     zoom,
+    setZoom,
     panOffset,
+    setPanOffset,
     isDrawingMode: isInDrawingMode,
     currentDrawingObjectId,
-    handleZoomIn,
-    handleZoomOut,
-    handleResetView
+    setCurrentDrawingObjectId,
+    backgroundImageObj,
+    screenToCanvas
   } = useCanvasSetup({
     canvasRef,
     wrapperRef,
@@ -66,7 +69,10 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     handleMouseUp,
     handleContextMenu,
     handleDoubleClick,
-    handleWheel
+    handleWheel,
+    handleZoomIn,
+    handleZoomOut,
+    handleResetView
   } = useCanvasHandlers({
     canvasRef,
     objects,
@@ -78,9 +84,28 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     onUndo,
     zoom,
     panOffset,
+    setZoom,
+    setPanOffset,
     isDrawingMode,
-    currentDrawingObjectId
+    currentDrawingObjectId,
+    setCurrentDrawingObjectId
   });
+
+  // To avoid passive event issues, we'll handle the actual canvas click events
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    // We need to add passive: false to prevent default behavior for wheel events
+    canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      handleWheel(e as unknown as React.WheelEvent<HTMLCanvasElement>);
+    }, { passive: false });
+    
+    return () => {
+      canvas.removeEventListener('wheel', handleWheel as any);
+    };
+  }, [handleWheel]);
 
   return (
     <div ref={wrapperRef} className="relative w-full h-full">
@@ -93,7 +118,6 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         onMouseUp={handleMouseUp}
         onDoubleClick={handleDoubleClick}
         onContextMenu={handleContextMenu}
-        onWheel={handleWheel}
         className="border border-gray-300 w-full h-full"
         style={{ minWidth: "400px", minHeight: "300px" }}
       />

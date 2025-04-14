@@ -27,8 +27,11 @@ interface CanvasHandlersProps {
   onUndo: () => void;
   zoom: number;
   panOffset: Point;
+  setZoom: (zoom: number) => void;
+  setPanOffset: (offset: Point) => void;
   isDrawingMode: boolean;
   currentDrawingObjectId: string | null;
+  setCurrentDrawingObjectId: (id: string | null) => void;
 }
 
 export const useCanvasHandlers = ({
@@ -42,8 +45,11 @@ export const useCanvasHandlers = ({
   onUndo,
   zoom,
   panOffset,
+  setZoom,
+  setPanOffset,
   isDrawingMode,
-  currentDrawingObjectId
+  currentDrawingObjectId,
+  setCurrentDrawingObjectId
 }: CanvasHandlersProps) => {
   // State for handling interactions
   const [isDragging, setIsDragging] = useState(false);
@@ -59,6 +65,7 @@ export const useCanvasHandlers = ({
   
   const POINT_RADIUS = 8;
   const HANDLE_RADIUS = 6;
+  const ZOOM_FACTOR = 0.1;
   
   // Convert screen coordinates to canvas coordinates
   const screenToCanvas = (x: number, y: number): Point => {
@@ -93,6 +100,7 @@ export const useCanvasHandlers = ({
         
         // Save state and reset drawing
         onSaveState();
+        setCurrentDrawingObjectId(null);
         
         // Deselect the object to allow for creating a new one next
         onObjectSelect('', false);
@@ -112,6 +120,7 @@ export const useCanvasHandlers = ({
     if (currentDrawingObjectId) {
       // Remove the partial object
       onObjectsChange(objects.filter(obj => obj.id !== currentDrawingObjectId));
+      setCurrentDrawingObjectId(null);
       
       toast({
         title: "Drawing Cancelled",
@@ -261,6 +270,7 @@ export const useCanvasHandlers = ({
         
         // Create a new object with this point
         const newObjectId = onCreateObject([newPoint]);
+        setCurrentDrawingObjectId(newObjectId);
         
         console.log(`New object created with ID: ${newObjectId}`);
         
@@ -317,8 +327,10 @@ export const useCanvasHandlers = ({
       const deltaY = screenY - dragStart.y;
       
       // Update canvas offset for panning
-      // This requires access to the panOffset state setter
-      // We should pass it from the parent hook
+      setPanOffset(prev => ({
+        x: prev.x + deltaX,
+        y: prev.y + deltaY
+      }));
       
       setDragStart({ x: screenX, y: screenY });
       return;
@@ -598,7 +610,7 @@ export const useCanvasHandlers = ({
   
   // Handle mouse wheel for zoom
   const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
-    e.preventDefault();
+    e.preventDefault(); // This is necessary for the zoom behavior, but it may trigger a passive event warning
     
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -609,19 +621,46 @@ export const useCanvasHandlers = ({
     
     // Calculate zoom direction
     const delta = e.deltaY < 0 ? 1 : -1;
-    const newZoom = Math.max(0.1, Math.min(5, zoom * (1 + delta * 0.1)));
+    const newZoom = Math.max(0.1, Math.min(5, zoom * (1 + delta * ZOOM_FACTOR)));
     
     // Calculate new offset to zoom centered on mouse position
     const zoomRatio = newZoom / zoom;
     
-    // This requires access to the zoom and panOffset state setters
-    // We should pass them from the parent hook
+    setZoom(newZoom);
     
     toast({
       title: `Zoom: ${Math.round(newZoom * 100)}%`,
       description: 'Use mouse wheel to zoom in and out'
     });
   };
+  
+  // Setup wheel event with passive: false
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    const handleWheelEvent = (e: WheelEvent) => {
+      e.preventDefault();
+      
+      const rect = canvas.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+      
+      // Calculate zoom direction
+      const delta = e.deltaY < 0 ? 1 : -1;
+      const newZoom = Math.max(0.1, Math.min(5, zoom * (1 + delta * ZOOM_FACTOR)));
+      
+      // Set new zoom
+      setZoom(newZoom);
+    };
+    
+    // Add wheel event with passive false to prevent console errors
+    canvas.addEventListener('wheel', handleWheelEvent, { passive: false });
+    
+    return () => {
+      canvas.removeEventListener('wheel', handleWheelEvent);
+    };
+  }, [canvasRef, zoom, setZoom]);
   
   // Handle keyboard events
   useEffect(() => {
@@ -683,6 +722,34 @@ export const useCanvasHandlers = ({
     };
   }, [selectedObjectIds, isDrawingMode, onUndo, currentDrawingObjectId, objects]);
   
+  // Helper functions for external components to use
+  const handleZoomIn = () => {
+    const newZoom = Math.min(5, zoom * (1 + ZOOM_FACTOR));
+    setZoom(newZoom);
+    toast({
+      title: `Zoom: ${Math.round(newZoom * 100)}%`,
+      description: 'Zoomed in'
+    });
+  };
+
+  const handleZoomOut = () => {
+    const newZoom = Math.max(0.1, zoom * (1 - ZOOM_FACTOR));
+    setZoom(newZoom);
+    toast({
+      title: `Zoom: ${Math.round(newZoom * 100)}%`,
+      description: 'Zoomed out'
+    });
+  };
+
+  const handleResetView = () => {
+    setZoom(1);
+    setPanOffset({ x: 0, y: 0 });
+    toast({
+      title: 'View Reset',
+      description: 'Zoom and pan have been reset'
+    });
+  };
+  
   return {
     handleMouseDown,
     handleMouseMove,
@@ -690,6 +757,9 @@ export const useCanvasHandlers = ({
     handleContextMenu,
     handleDoubleClick,
     handleWheel,
+    handleZoomIn,
+    handleZoomOut,
+    handleResetView,
     selectedPoint,
     mousePos,
     isSelecting,
