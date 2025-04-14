@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   ControlPoint, 
   DesignData, 
@@ -16,7 +16,6 @@ import { useToast } from '@/hooks/use-toast';
 import { useBezierObjects } from '@/hooks/useBezierObjects';
 import ObjectControlsPanel from '@/components/ObjectControlsPanel';
 import { generateThumbnailFromSVG } from '@/utils/thumbnailGenerator';
-import React from 'react';
 import { convertShapesDataToObjects } from '@/utils/bezierUtils';
 
 const Index = () => {
@@ -129,8 +128,8 @@ const Index = () => {
         return;
       }
       
-      // Create SVG for export - Fix: only pass objects as argument
-      const svg = await createDesignSVG(objects);
+      // Fix: only pass objects as argument to createDesignSVG
+      const svg = createDesignSVG(objects);
       const designData = JSON.stringify(objects);
       
       // Generate a thumbnail
