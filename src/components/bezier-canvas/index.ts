@@ -1,3 +1,3 @@
 
-import BezierCanvas from './BezierCanvas';
-export default BezierCanvas;
+import BezierCanvasContainer from './BezierCanvasContainer';
+export default BezierCanvasContainer;

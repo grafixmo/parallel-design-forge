@@ -1,5 +1,5 @@
 
-import { useEffect, RefObject } from 'react';
+import { useCallback, RefObject } from 'react';
 import { 
   Point, 
   BezierObject, 
@@ -25,30 +25,37 @@ interface CanvasRendererProps {
   onObjectSelect: (objectId: string, multiSelect: boolean) => void;
 }
 
-export const useCanvasRenderer = ({
-  canvasRef,
-  objects,
-  selectedObjectIds,
-  selectedPoint,
-  mousePos,
-  zoom,
-  panOffset,
-  isSelecting,
-  selectionRect,
-  backgroundImageObj,
-  backgroundOpacity,
-  isDrawingMode,
-  currentDrawingObjectId,
-  onObjectSelect
-}: CanvasRendererProps) => {
+export const useCanvasRenderer = (props: CanvasRendererProps) => {
+  const {
+    canvasRef,
+    objects,
+    selectedObjectIds,
+    selectedPoint,
+    mousePos,
+    zoom,
+    panOffset,
+    isSelecting,
+    selectionRect,
+    backgroundImageObj,
+    backgroundOpacity,
+    isDrawingMode,
+    currentDrawingObjectId,
+    onObjectSelect
+  } = props;
   
-  // Draw the canvas content
-  useEffect(() => {
+  // Main render function
+  const renderCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+    
+    console.log("Rendering canvas...", {
+      objectsCount: objects.length,
+      selectedIds: selectedObjectIds,
+      mode: isDrawingMode ? 'Drawing' : 'Selection'
+    });
     
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -57,6 +64,9 @@ export const useCanvasRenderer = ({
     ctx.save();
     ctx.translate(panOffset.x, panOffset.y);
     ctx.scale(zoom, zoom);
+    
+    // Draw background (grid)
+    drawGrid(ctx, canvas.width, canvas.height, zoom, panOffset);
     
     // Draw background image if available
     if (backgroundImageObj) {
@@ -76,36 +86,6 @@ export const useCanvasRenderer = ({
       
       ctx.drawImage(backgroundImageObj, x, y, scaledWidth, scaledHeight);
       ctx.globalAlpha = 1.0;
-    }
-    
-    // Draw grid
-    ctx.strokeStyle = '#f0f0f0';
-    ctx.lineWidth = 1 / zoom; // Adjust line width for zoom
-    
-    const gridSize = 20;
-    const visibleWidth = canvas.width / zoom;
-    const visibleHeight = canvas.height / zoom;
-    const offsetX = -panOffset.x / zoom;
-    const offsetY = -panOffset.y / zoom;
-    
-    // Calculate grid bounds
-    const startX = Math.floor(offsetX / gridSize) * gridSize;
-    const startY = Math.floor(offsetY / gridSize) * gridSize;
-    const endX = offsetX + visibleWidth;
-    const endY = offsetY + visibleHeight;
-    
-    for (let x = startX; x < endX; x += gridSize) {
-      ctx.beginPath();
-      ctx.moveTo(x, offsetY);
-      ctx.lineTo(x, offsetY + visibleHeight);
-      ctx.stroke();
-    }
-    
-    for (let y = startY; y < endY; y += gridSize) {
-      ctx.beginPath();
-      ctx.moveTo(offsetX, y);
-      ctx.lineTo(offsetX + visibleWidth, y);
-      ctx.stroke();
     }
     
     // Draw all bezier objects
@@ -169,8 +149,11 @@ export const useCanvasRenderer = ({
       ctx.stroke();
     }
     
+    // Restore original context (removes zoom and pan)
+    ctx.restore();
+    
+    // Draw UI overlays (in screen space)
     // Draw zoom level indicator
-    ctx.restore(); // Restore original context without zoom
     ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
     ctx.font = '12px Arial';
     ctx.fillText(`Zoom: ${Math.round(zoom * 100)}%`, 10, 20);
@@ -215,7 +198,43 @@ export const useCanvasRenderer = ({
     onObjectSelect
   ]);
   
-  return {
-    // No need to return anything as this hook just handles rendering
+  // Helper function to draw grid
+  const drawGrid = (
+    ctx: CanvasRenderingContext2D, 
+    width: number, 
+    height: number,
+    zoom: number,
+    panOffset: Point
+  ) => {
+    ctx.strokeStyle = '#f0f0f0';
+    ctx.lineWidth = 1 / zoom; // Adjust line width for zoom
+    
+    const gridSize = 20;
+    const visibleWidth = width / zoom;
+    const visibleHeight = height / zoom;
+    const offsetX = -panOffset.x / zoom;
+    const offsetY = -panOffset.y / zoom;
+    
+    // Calculate grid bounds
+    const startX = Math.floor(offsetX / gridSize) * gridSize;
+    const startY = Math.floor(offsetY / gridSize) * gridSize;
+    const endX = offsetX + visibleWidth;
+    const endY = offsetY + visibleHeight;
+    
+    for (let x = startX; x < endX; x += gridSize) {
+      ctx.beginPath();
+      ctx.moveTo(x, offsetY);
+      ctx.lineTo(x, offsetY + visibleHeight);
+      ctx.stroke();
+    }
+    
+    for (let y = startY; y < endY; y += gridSize) {
+      ctx.beginPath();
+      ctx.moveTo(offsetX, y);
+      ctx.lineTo(offsetX + visibleWidth, y);
+      ctx.stroke();
+    }
   };
+  
+  return renderCanvas;
 };
