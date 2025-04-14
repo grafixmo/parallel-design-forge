@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { 
   ControlPoint, 
@@ -6,7 +5,7 @@ import {
   SavedDesign,
   BezierObject
 } from '@/types/bezier';
-import BezierCanvas from '@/components/BezierCanvas';
+import BezierCanvas from '@/components/bezier-canvas';
 import Header from '@/components/Header';
 import LibraryPanel from '@/components/LibraryPanel';
 import { generateId } from '@/utils/bezierUtils';
