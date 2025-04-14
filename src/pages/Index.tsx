@@ -129,8 +129,8 @@ const Index = () => {
         return;
       }
       
-      // Create SVG for export
-      const svg = await createDesignSVG(objects, canvasWidth, canvasHeight);
+      // Create SVG for export - Fix: only pass objects as argument
+      const svg = await createDesignSVG(objects);
       const designData = JSON.stringify(objects);
       
       // Generate a thumbnail
@@ -179,8 +179,8 @@ const Index = () => {
         return;
       }
       
-      // Fix: The function expects the objects array and canvas dimensions, not individual values
-      const svg = await createDesignSVG(objects, canvasWidth, canvasHeight);
+      // Fix: only pass objects as argument
+      const svg = await createDesignSVG(objects);
       downloadSVG(svg, 'qordatta-design.svg');
       
       toast({
