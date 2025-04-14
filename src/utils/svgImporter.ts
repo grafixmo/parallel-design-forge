@@ -1,7 +1,6 @@
 
 import { ControlPoint, BezierObject, CurveConfig, TransformSettings, Point } from '../types/bezier';
 import { generateId } from './bezierUtils';
-import { toast } from '@/hooks/use-toast';
 
 interface SVGPathData {
   path: string;
@@ -27,99 +26,28 @@ interface SVGImportResult {
   };
 }
 
-// Maximum number of paths to process at once
-const MAX_PATHS_PER_BATCH = 5;
-// Maximum allowed SVG size in MB
-const MAX_SVG_SIZE_MB = 10; // Increased from 5MB to handle various files
-// Maximum number of paths allowed in an SVG
-const MAX_SVG_PATHS = 500; // Increased from 200 to handle more complex SVGs
-// Delay between processing batches (ms)
-const BATCH_PROCESSING_DELAY = 50; // Reduced to speed up processing
-
-// Event emitter for progress updates
-type ProgressCallback = (progress: number) => void;
-
 // Parse SVG string into BezierObject objects with improved attribute preservation
-export const parseSVGContent = async (
-  svgContent: string, 
-  onProgress?: ProgressCallback
-): Promise<SVGImportResult> => {
+export const parseSVGContent = (svgContent: string): SVGImportResult => {
   try {
-    // Initial progress update
-    onProgress?.(0);
-    console.log("Starting SVG import process");
-    
-    // Basic validation to ensure we have a string
-    if (!svgContent || typeof svgContent !== 'string') {
-      throw new Error('Invalid SVG content: Empty or not a string');
-    }
-    
-    // Check for minimal SVG content
-    if (svgContent.length < 10) {
-      throw new Error(`SVG content too small (${svgContent.length} bytes). This may not be a valid SVG file.`);
-    }
-    
-    // Validate SVG format - more permissive check
-    if (!svgContent.includes('<svg') || !svgContent.includes('</svg>')) {
-      // Try to recover by adding SVG tags if we have path data
-      if (svgContent.includes('<path') || svgContent.includes('d="M')) {
-        console.log("Attempting to recover malformed SVG by wrapping content in SVG tags");
-        svgContent = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600">${svgContent}</svg>`;
-      } else {
-        throw new Error('Invalid SVG format: Not a valid SVG file. Missing <svg> tags.');
-      }
-    }
-    
     // Create a DOM parser
     const parser = new DOMParser();
-    
-    // Use try-catch to catch parsing errors
-    let svgDoc;
-    try {
-      svgDoc = parser.parseFromString(svgContent, 'image/svg+xml');
-    } catch (error) {
-      console.error('SVG parsing error:', error);
-      throw new Error('Failed to parse SVG: Malformed SVG content');
-    }
+    const svgDoc = parser.parseFromString(svgContent, 'image/svg+xml');
     
     // Check for parsing errors
     const parserError = svgDoc.querySelector('parsererror');
     if (parserError) {
-      console.error("Parser error:", parserError.textContent);
-      throw new Error('Invalid SVG format: ' + (parserError.textContent || 'Unknown parsing error'));
+      throw new Error('Invalid SVG format');
     }
     
     // Get the root SVG element
-    const svgElement = svgDoc.querySelector('svg') as SVGSVGElement;
+    const svgElement = svgDoc.querySelector('svg');
     if (!svgElement) {
-      throw new Error('No SVG element found in the document');
+      throw new Error('No SVG element found');
     }
-    
-    // Log parsing started
-    console.log('Parsing SVG with dimensions:', 
-      svgElement.getAttribute('width'), 
-      svgElement.getAttribute('height')
-    );
     
     // Get SVG dimensions
-    let width = parseFloat(svgElement.getAttribute('width') || '800');
-    let height = parseFloat(svgElement.getAttribute('height') || '600');
-    
-    // If width or height is NaN, try to get from viewBox or use defaults
-    if (isNaN(width) || isNaN(height)) {
-      console.log("Width or height not specified, checking viewBox");
-      const viewBoxAttr = svgElement.getAttribute('viewBox');
-      if (viewBoxAttr) {
-        const viewBoxValues = viewBoxAttr.split(/\s+/).map(parseFloat);
-        if (viewBoxValues.length === 4) {
-          width = viewBoxValues[2];
-          height = viewBoxValues[3];
-        }
-      }
-      // If still NaN, use defaults
-      if (isNaN(width)) width = 800;
-      if (isNaN(height)) height = 600;
-    }
+    const width = parseFloat(svgElement.getAttribute('width') || '800');
+    const height = parseFloat(svgElement.getAttribute('height') || '600');
     
     // Parse viewBox if available
     let viewBox = undefined;
@@ -137,101 +65,13 @@ export const parseSVGContent = async (
     }
     
     // Find all path elements
-    const pathElements = Array.from(svgDoc.querySelectorAll('path')) as SVGPathElement[];
-    
-    // If no paths found, look for other SVG elements that might have path data
+    const pathElements = svgDoc.querySelectorAll('path');
     if (pathElements.length === 0) {
-      console.log("No path elements found, looking for other SVG elements");
-      
-      // Try to extract path data from other elements
-      try {
-        // Create a simple path for minimal SVGs with no paths
-        const objects: BezierObject[] = [];
-        
-        // Add a simple rectangle path if no other elements
-        objects.push({
-          id: generateId(),
-          points: [
-            {
-              x: 100,
-              y: 100,
-              handleIn: { x: 100, y: 100 },
-              handleOut: { x: 100, y: 100 },
-              id: generateId()
-            },
-            {
-              x: 700,
-              y: 100,
-              handleIn: { x: 700, y: 100 },
-              handleOut: { x: 700, y: 100 },
-              id: generateId()
-            },
-            {
-              x: 700,
-              y: 500,
-              handleIn: { x: 700, y: 500 },
-              handleOut: { x: 700, y: 500 },
-              id: generateId()
-            },
-            {
-              x: 100,
-              y: 500,
-              handleIn: { x: 100, y: 500 },
-              handleOut: { x: 100, y: 500 },
-              id: generateId()
-            }
-          ],
-          curveConfig: {
-            styles: [{ color: '#000000', width: 2 }],
-            parallelCount: 0,
-            spacing: 0
-          },
-          transform: {
-            rotation: 0,
-            scaleX: 1.0,
-            scaleY: 1.0
-          },
-          name: 'Default Shape',
-          isSelected: false
-        });
-        
-        onProgress?.(100);
-        
-        return {
-          objects,
-          width,
-          height,
-          viewBox
-        };
-      } catch (error) {
-        console.error("Error creating fallback shape:", error);
-        throw new Error('No valid paths found in the SVG and could not create fallback shape');
-      }
+      throw new Error('No paths found in the SVG');
     }
-    
-    console.log(`Found ${pathElements.length} paths in SVG`);
-    
-    // Check if SVG has too many paths
-    if (pathElements.length > MAX_SVG_PATHS) {
-      throw new Error(`SVG contains too many paths (${pathElements.length}). Maximum allowed is ${MAX_SVG_PATHS}.`);
-    }
-    
-    if (pathElements.length > 50) {
-      console.warn(`Large SVG detected with ${pathElements.length} paths. Processing may take time.`);
-      toast({
-        title: "Large SVG Detected",
-        description: `Processing ${pathElements.length} paths may take some time. Please wait...`,
-        variant: "default"
-      });
-    }
-    
-    // Process paths in batches to prevent UI freezing
-    const objects: BezierObject[] = [];
     
     // Extract path data with enhanced styling information
     const pathsData: SVGPathData[] = [];
-    
-    // Extract path data first
     pathElements.forEach((pathElement) => {
       const d = pathElement.getAttribute('d');
       if (d) {
@@ -250,191 +90,39 @@ export const parseSVGContent = async (
       }
     });
     
-    // Check if we have any valid path data
-    if (pathsData.length === 0) {
-      // Create a fallback object if no valid paths
-      const fallbackObject: BezierObject = {
-        id: generateId(),
-        points: [
-          {
-            x: 200,
-            y: 200,
-            handleIn: { x: 200, y: 200 },
-            handleOut: { x: 200, y: 200 },
-            id: generateId()
-          },
-          {
-            x: 600,
-            y: 200,
-            handleIn: { x: 600, y: 200 },
-            handleOut: { x: 600, y: 200 },
-            id: generateId()
-          },
-          {
-            x: 400,
-            y: 400,
-            handleIn: { x: 400, y: 400 },
-            handleOut: { x: 400, y: 400 },
-            id: generateId()
+    // Convert paths to BezierObjects with improved preservation of attributes
+    const objects: BezierObject[] = pathsData.map((pathData, index) => {
+      const points = convertPathToPoints(pathData.path, pathData.transform);
+      
+      // Create curve config that preserves original styling
+      // Use exactly one curve with the original stroke properties
+      const curveConfig: CurveConfig = {
+        styles: [
+          { 
+            color: pathData.color, 
+            width: pathData.width 
           }
         ],
-        curveConfig: {
-          styles: [{ color: '#ff0000', width: 2 }],
-          parallelCount: 0,
-          spacing: 0
-        },
-        transform: {
-          rotation: 0,
-          scaleX: 1.0,
-          scaleY: 1.0
-        },
-        name: 'Fallback Shape',
-        isSelected: false
+        parallelCount: 0, // No parallel curves for imported SVGs
+        spacing: 0
       };
       
-      objects.push(fallbackObject);
+      // Parse transform attribute
+      const transform: TransformSettings = parseTransform(pathData.transform);
       
-      onProgress?.(100);
-      
+      // Create BezierObject with proper name and preserved attributes
       return {
-        objects,
-        width,
-        height,
-        viewBox
-      };
-    }
-    
-    // More precise progress tracking
-    const totalBatches = Math.ceil(pathsData.length / MAX_PATHS_PER_BATCH);
-    let completedBatches = 0;
-    
-    // Process paths in batches to prevent UI freezing
-    for (let i = 0; i < pathsData.length; i += MAX_PATHS_PER_BATCH) {
-      const batch = pathsData.slice(i, i + MAX_PATHS_PER_BATCH);
-      
-      // Process batch
-      const batchPromise = new Promise<BezierObject[]>((resolve) => {
-        // Use setTimeout to give the UI thread a chance to breathe
-        setTimeout(() => {
-          const batchObjects = batch.map((pathData, index) => {
-            try {
-              console.log(`Processing path ${i + index + 1}/${pathsData.length}`);
-              const points = convertPathToPoints(pathData.path, pathData.transform);
-              
-              // Skip if no valid points
-              if (points.length === 0) {
-                console.warn(`Path ${i + index + 1} has no valid points, skipping`);
-                return null;
-              }
-              
-              // Create curve config that preserves original styling
-              const curveConfig: CurveConfig = {
-                styles: [
-                  { 
-                    color: pathData.color, 
-                    width: pathData.width 
-                  }
-                ],
-                parallelCount: 0, // No parallel curves for imported SVGs
-                spacing: 0
-              };
-              
-              // Parse transform attribute
-              const transform: TransformSettings = parseTransform(pathData.transform);
-              
-              // Create BezierObject with proper name and preserved attributes
-              return {
-                id: generateId(),
-                points,
-                curveConfig,
-                transform,
-                name: `Path ${i + index + 1}`,
-                isSelected: false
-              };
-            } catch (err) {
-              console.error(`Error processing path ${i + index + 1}:`, err);
-              return null;
-            }
-          }).filter(Boolean) as BezierObject[];
-          
-          resolve(batchObjects);
-        }, 0);
-      });
-      
-      const batchObjects = await batchPromise;
-      objects.push(...batchObjects);
-      
-      // Update progress
-      completedBatches++;
-      const progressPercent = (completedBatches / totalBatches) * 90; // Up to 90% for parsing
-      onProgress?.(progressPercent);
-      
-      // Log progress
-      console.log(`Processed batch ${completedBatches}/${totalBatches} (${progressPercent.toFixed(1)}%)`);
-      
-      // Yield to browser to prevent freezing - longer delay between batches
-      await new Promise(resolve => setTimeout(resolve, BATCH_PROCESSING_DELAY));
-    }
-    
-    // Catch case where no valid objects were created
-    if (objects.length === 0) {
-      // Create a fallback object as last resort
-      const fallbackObject: BezierObject = {
         id: generateId(),
-        points: [
-          {
-            x: 200,
-            y: 200,
-            handleIn: { x: 200, y: 200 },
-            handleOut: { x: 200, y: 200 },
-            id: generateId()
-          },
-          {
-            x: 600,
-            y: 200,
-            handleIn: { x: 600, y: 200 },
-            handleOut: { x: 600, y: 200 },
-            id: generateId()
-          },
-          {
-            x: 400,
-            y: 400,
-            handleIn: { x: 400, y: 400 },
-            handleOut: { x: 400, y: 400 },
-            id: generateId()
-          }
-        ],
-        curveConfig: {
-          styles: [{ color: '#ff0000', width: 2 }],
-          parallelCount: 0,
-          spacing: 0
-        },
-        transform: {
-          rotation: 0,
-          scaleX: 1.0,
-          scaleY: 1.0
-        },
-        name: 'Fallback Shape',
+        points,
+        curveConfig,
+        transform,
+        name: `Imported Path ${index + 1}`,
         isSelected: false
       };
-      
-      objects.push(fallbackObject);
-      
-      toast({
-        title: "SVG Import Notice",
-        description: "Could not extract valid paths from SVG. Created a default shape instead.",
-        variant: "default"
-      });
-    }
-    
-    console.log(`SVG import processed: ${objects.length} objects created`);
+    });
     
     // Position imported objects to maintain original positions
-    onProgress?.(95); // 95% for positioning
-    await positionImportedObjects(objects, { width, height, viewBox });
-    
-    // Complete!
-    onProgress?.(100);
+    positionImportedObjects(objects, { width, height, viewBox });
     
     return {
       objects,
@@ -483,141 +171,135 @@ const parseTransform = (transformAttr?: string): TransformSettings => {
 };
 
 // Position imported objects to maintain original layout and proportions
-const positionImportedObjects = async (
+const positionImportedObjects = (
   objects: BezierObject[], 
   svgInfo: { width: number, height: number, viewBox?: any }
-): Promise<void> => {
+): void => {
   if (objects.length === 0) return;
   
-  return new Promise<void>((resolve) => {
-    setTimeout(() => {
-      // Find bounds of all objects
-      let minX = Infinity, minY = Infinity;
-      let maxX = -Infinity, maxY = -Infinity;
+  // Find bounds of all objects
+  let minX = Infinity, minY = Infinity;
+  let maxX = -Infinity, maxY = -Infinity;
+  
+  objects.forEach(obj => {
+    obj.points.forEach(point => {
+      minX = Math.min(minX, point.x);
+      minY = Math.min(minY, point.y);
+      maxX = Math.max(maxX, point.x);
+      maxY = Math.max(maxY, point.y);
+    });
+  });
+  
+  // If no viewBox is specified in the SVG, we need to center the objects
+  if (!svgInfo.viewBox) {
+    // Calculate dimensions
+    const width = maxX - minX;
+    const height = maxY - minY;
+    
+    // Calculate target canvas center
+    const targetCenterX = 400; // Default canvas width / 2
+    const targetCenterY = 300; // Default canvas height / 2
+    
+    // Calculate source center
+    const sourceCenterX = minX + width / 2;
+    const sourceCenterY = minY + height / 2;
+    
+    // Calculate offset to center the objects in canvas
+    const offsetX = targetCenterX - sourceCenterX;
+    const offsetY = targetCenterY - sourceCenterY;
+    
+    // Apply offset to all points
+    objects.forEach(obj => {
+      obj.points = obj.points.map(point => ({
+        ...point,
+        x: point.x + offsetX,
+        y: point.y + offsetY,
+        handleIn: {
+          x: point.handleIn.x + offsetX,
+          y: point.handleIn.y + offsetY
+        },
+        handleOut: {
+          x: point.handleOut.x + offsetX,
+          y: point.handleOut.y + offsetY
+        }
+      }));
+    });
+    
+    // Scale only if needed to fit in viewable area (preserving aspect ratio)
+    if (width > 700 || height > 500) {
+      const scale = Math.min(700 / width, 500 / height) * 0.9; // 90% of max scale for padding
       
+      // Find center point after offset
+      const centerX = sourceCenterX + offsetX;
+      const centerY = sourceCenterY + offsetY;
+      
+      // Scale all objects around center
       objects.forEach(obj => {
-        obj.points.forEach(point => {
-          minX = Math.min(minX, point.x);
-          minY = Math.min(minY, point.y);
-          maxX = Math.max(maxX, point.x);
-          maxY = Math.max(maxY, point.y);
+        obj.points = obj.points.map(point => {
+          // Distance from center
+          const dx = point.x - centerX;
+          const dy = point.y - centerY;
+          
+          // Scale distance
+          const scaledX = centerX + dx * scale;
+          const scaledY = centerY + dy * scale;
+          
+          // Also scale handles proportionally
+          const handleInDx = point.handleIn.x - centerX;
+          const handleInDy = point.handleIn.y - centerY;
+          const handleOutDx = point.handleOut.x - centerX;
+          const handleOutDy = point.handleOut.y - centerY;
+          
+          return {
+            ...point,
+            x: scaledX,
+            y: scaledY,
+            handleIn: {
+              x: centerX + handleInDx * scale,
+              y: centerY + handleInDy * scale
+            },
+            handleOut: {
+              x: centerX + handleOutDx * scale,
+              y: centerY + handleOutDy * scale
+            }
+          };
         });
       });
-      
-      // If no viewBox is specified in the SVG, we need to center the objects
-      if (!svgInfo.viewBox) {
-        // Calculate dimensions
-        const width = maxX - minX;
-        const height = maxY - minY;
-        
-        // Calculate target canvas center
-        const targetCenterX = 400; // Default canvas width / 2
-        const targetCenterY = 300; // Default canvas height / 2
-        
-        // Calculate source center
-        const sourceCenterX = minX + width / 2;
-        const sourceCenterY = minY + height / 2;
-        
-        // Calculate offset to center the objects in canvas
-        const offsetX = targetCenterX - sourceCenterX;
-        const offsetY = targetCenterY - sourceCenterY;
-        
-        // Apply offset to all points
-        objects.forEach(obj => {
-          obj.points = obj.points.map(point => ({
-            ...point,
-            x: point.x + offsetX,
-            y: point.y + offsetY,
-            handleIn: {
-              x: point.handleIn.x + offsetX,
-              y: point.handleIn.y + offsetY
-            },
-            handleOut: {
-              x: point.handleOut.x + offsetX,
-              y: point.handleOut.y + offsetY
-            }
-          }));
-        });
-        
-        // Scale only if needed to fit in viewable area (preserving aspect ratio)
-        if (width > 700 || height > 500) {
-          const scale = Math.min(700 / width, 500 / height) * 0.9; // 90% of max scale for padding
-          
-          // Find center point after offset
-          const centerX = sourceCenterX + offsetX;
-          const centerY = sourceCenterY + offsetY;
-          
-          // Scale all objects around center
-          objects.forEach(obj => {
-            obj.points = obj.points.map(point => {
-              // Distance from center
-              const dx = point.x - centerX;
-              const dy = point.y - centerY;
-              
-              // Scale distance
-              const scaledX = centerX + dx * scale;
-              const scaledY = centerY + dy * scale;
-              
-              // Also scale handles proportionally
-              const handleInDx = point.handleIn.x - centerX;
-              const handleInDy = point.handleIn.y - centerY;
-              const handleOutDx = point.handleOut.x - centerX;
-              const handleOutDy = point.handleOut.y - centerY;
-              
-              return {
-                ...point,
-                x: scaledX,
-                y: scaledY,
-                handleIn: {
-                  x: centerX + handleInDx * scale,
-                  y: centerY + handleInDy * scale
-                },
-                handleOut: {
-                  x: centerX + handleOutDx * scale,
-                  y: centerY + handleOutDy * scale
-                }
-              };
-            });
-          });
+    }
+  } else {
+    // If viewBox is provided, try to maintain original positions
+    const viewBoxWidth = svgInfo.viewBox.width;
+    const viewBoxHeight = svgInfo.viewBox.height;
+    
+    // Calculate scale factor from viewBox to canvas
+    const scaleX = 800 / viewBoxWidth;
+    const scaleY = 600 / viewBoxHeight;
+    const scale = Math.min(scaleX, scaleY) * 0.9; // Use 90% to create margin
+    
+    // Calculate translation to center the scaled viewBox
+    const scaledViewBoxWidth = viewBoxWidth * scale;
+    const scaledViewBoxHeight = viewBoxHeight * scale;
+    
+    const offsetX = (800 - scaledViewBoxWidth) / 2 - svgInfo.viewBox.minX * scale;
+    const offsetY = (600 - scaledViewBoxHeight) / 2 - svgInfo.viewBox.minY * scale;
+    
+    // Apply scale and offset to all points
+    objects.forEach(obj => {
+      obj.points = obj.points.map(point => ({
+        ...point,
+        x: point.x * scale + offsetX,
+        y: point.y * scale + offsetY,
+        handleIn: {
+          x: point.handleIn.x * scale + offsetX,
+          y: point.handleIn.y * scale + offsetY
+        },
+        handleOut: {
+          x: point.handleOut.x * scale + offsetX,
+          y: point.handleOut.y * scale + offsetY
         }
-      } else {
-        // If viewBox is provided, try to maintain original positions
-        const viewBoxWidth = svgInfo.viewBox.width;
-        const viewBoxHeight = svgInfo.viewBox.height;
-        
-        // Calculate scale factor from viewBox to canvas
-        const scaleX = 800 / viewBoxWidth;
-        const scaleY = 600 / viewBoxHeight;
-        const scale = Math.min(scaleX, scaleY) * 0.9; // Use 90% to create margin
-        
-        // Calculate translation to center the scaled viewBox
-        const scaledViewBoxWidth = viewBoxWidth * scale;
-        const scaledViewBoxHeight = viewBoxHeight * scale;
-        
-        const offsetX = (800 - scaledViewBoxWidth) / 2 - svgInfo.viewBox.minX * scale;
-        const offsetY = (600 - scaledViewBoxHeight) / 2 - svgInfo.viewBox.minY * scale;
-        
-        // Apply scale and offset to all points
-        objects.forEach(obj => {
-          obj.points = obj.points.map(point => ({
-            ...point,
-            x: point.x * scale + offsetX,
-            y: point.y * scale + offsetY,
-            handleIn: {
-              x: point.handleIn.x * scale + offsetX,
-              y: point.handleIn.y * scale + offsetY
-            },
-            handleOut: {
-              x: point.handleOut.x * scale + offsetX,
-              y: point.handleOut.y * scale + offsetY
-            }
-          }));
-        });
-      }
-      
-      resolve();
-    }, 0);
-  });
+      }));
+    });
+  }
 };
 
 // Improved SVG path to control points converter with higher precision and better handle placement
@@ -625,43 +307,8 @@ const convertPathToPoints = (path: string, transform?: string): ControlPoint[] =
   const points: ControlPoint[] = [];
   
   try {
-    // Handle empty or invalid path data
-    if (!path || path.trim().length === 0) {
-      console.warn("Empty path data received");
-      return [];
-    }
-    
-    // Special case for minimal SVG with just coordinates
-    if (path.includes(',') && !path.match(/[a-zA-Z]/)) {
-      // Simple format with comma-separated values - convert to points
-      const coords = path.split(/[\s,]+/).map(parseFloat).filter(n => !isNaN(n));
-      if (coords.length >= 4 && coords.length % 2 === 0) {
-        for (let i = 0; i < coords.length; i += 2) {
-          points.push({
-            x: coords[i],
-            y: coords[i+1],
-            handleIn: { 
-              x: coords[i], 
-              y: coords[i+1] 
-            },
-            handleOut: { 
-              x: coords[i], 
-              y: coords[i+1] 
-            },
-            id: generateId()
-          });
-        }
-        return points;
-      }
-    }
-    
     // Parse SVG path commands
     const commands = path.match(/[a-zA-Z][^a-zA-Z]*/g) || [];
-    
-    if (commands.length === 0) {
-      console.warn("No valid commands found in path:", path);
-      return [];
-    }
     
     let currentX = 0;
     let currentY = 0;
@@ -1239,14 +886,21 @@ const approximateArc = (
   largeArcFlag: number, 
   sweepFlag: number
 ): Point[] => {
-  // Convert angles from degrees to radians
-  const phi = xAxisRotation * Math.PI / 180;
+  // If rx or ry is 0, it's just a straight line
+  if (rx === 0 || ry === 0) {
+    return [
+      { x: x1 + (x2 - x1) / 3, y: y1 + (y2 - y1) / 3 },
+      { x: x1 + 2 * (x2 - x1) / 3, y: y1 + 2 * (y2 - y1) / 3 },
+      { x: x2, y: y2 }
+    ];
+  }
   
-  // Compute the center of the ellipse
-  const sinPhi = Math.sin(phi);
+  // Convert xAxisRotation to radians
+  const phi = (xAxisRotation * Math.PI) / 180;
+  
+  // Step 1: Compute (x1', y1') - the transformed start point
   const cosPhi = Math.cos(phi);
-  
-  // Step 1: Compute (x1', y1')
+  const sinPhi = Math.sin(phi);
   const x1p = cosPhi * (x1 - x2) / 2 + sinPhi * (y1 - y2) / 2;
   const y1p = -sinPhi * (x1 - x2) / 2 + cosPhi * (y1 - y2) / 2;
   
@@ -1261,112 +915,105 @@ const approximateArc = (
     ry *= Math.sqrt(lambda);
   }
   
-  // Step 2: Compute (cx', cy')
-  let s = 0;
-  const sign = (largeArcFlag !== sweepFlag) ? 1 : -1;
+  // Step 2: Compute (cx', cy') - the center of the ellipse
+  let sign = (largeArcFlag !== sweepFlag) ? 1 : -1;
+  let sq = ((rx * rx * ry * ry) - (rx * rx * y1p * y1p) - (ry * ry * x1p * x1p)) / 
+           ((rx * rx * y1p * y1p) + (ry * ry * x1p * x1p));
+  sq = (sq < 0) ? 0 : sq;
+  const coefficient = sign * Math.sqrt(sq);
   
-  const sq = ((rx * rx * ry * ry) - (rx * rx * y1p * y1p) - (ry * ry * x1p * x1p)) / 
-             ((rx * rx * y1p * y1p) + (ry * ry * x1p * x1p));
-             
-  s = (sq < 0) ? 0 : sign * Math.sqrt(sq);
+  const cxp = coefficient * ((rx * y1p) / ry);
+  const cyp = coefficient * (-(ry * x1p) / rx);
   
-  const cxp = s * rx * y1p / ry;
-  const cyp = s * -ry * x1p / rx;
-  
-  // Step 3: Compute (cx, cy) from (cx', cy')
+  // Step 3: Compute (cx, cy) - the center in the original coordinate system
   const cx = cosPhi * cxp - sinPhi * cyp + (x1 + x2) / 2;
   const cy = sinPhi * cxp + cosPhi * cyp + (y1 + y2) / 2;
   
-  // Step 4: Calculate the angle parameters
-  const ux = (x1p - cxp) / rx;
-  const uy = (y1p - cyp) / ry;
-  const vx = (-x1p - cxp) / rx;
-  const vy = (-y1p - cyp) / ry;
+  // Step 4: Compute the angles
+  // The vector from the center to the starting point
+  const startVectorX = (x1p - cxp) / rx;
+  const startVectorY = (y1p - cyp) / ry;
+  const startAngle = Math.atan2(startVectorY, startVectorX);
   
-  // Compute the angle start
-  let n = Math.sqrt(ux * ux + uy * uy);
-  let p = ux; // cos(startAngle)
+  // The vector from the center to the ending point
+  const endVectorX = (-x1p - cxp) / rx;
+  const endVectorY = (-y1p - cyp) / ry;
   
-  let startAngle = Math.acos(p / n);
-  if (uy < 0) {
-    startAngle = -startAngle;
+  let deltaAngle = Math.atan2(endVectorY, endVectorX) - startAngle;
+  
+  // Ensure deltaAngle has the correct sign
+  if (sweepFlag === 0 && deltaAngle > 0) {
+    deltaAngle -= 2 * Math.PI;
+  } else if (sweepFlag === 1 && deltaAngle < 0) {
+    deltaAngle += 2 * Math.PI;
   }
   
-  // Compute the angle extent
-  n = Math.sqrt((ux * ux + uy * uy) * (vx * vx + vy * vy));
-  p = ux * vx + uy * vy;
+  // We'll divide the arc into segments - more segments for larger arcs
+  const segmentCount = Math.max(1, Math.ceil(Math.abs(deltaAngle) / (Math.PI / 4)));
+  const angleStep = deltaAngle / segmentCount;
   
-  let sweepAngle = Math.acos(p / n);
-  if (ux * vy - uy * vx < 0) {
-    sweepAngle = -sweepAngle;
-  }
+  // Generate points for each segment
+  const points: Point[] = [];
   
-  if (sweepFlag === 0 && sweepAngle > 0) {
-    sweepAngle -= 2 * Math.PI;
-  } else if (sweepFlag === 1 && sweepAngle < 0) {
-    sweepAngle += 2 * Math.PI;
-  }
-  
-  // Split the arc into multiple segments, each less than 90 degrees
-  const segments = Math.ceil(Math.abs(sweepAngle) / (Math.PI / 2));
-  const segmentAngle = sweepAngle / segments;
-  
-  const result: Point[] = [];
-  
-  for (let i = 0; i < segments; i++) {
-    const theta = startAngle + i * segmentAngle;
-    const theta2 = startAngle + (i + 1) * segmentAngle;
+  for (let i = 0; i < segmentCount; i++) {
+    const angle1 = startAngle + i * angleStep;
+    const angle2 = startAngle + (i + 1) * angleStep;
     
-    // Approximate one segment of the curve
-    const segPoints = approximateArcSegment(
-      cx, cy, rx, ry, theta, theta2, phi
+    // Calculate Bezier control points for approximating an arc segment
+    const alpha = Math.sin(angleStep) * (Math.sqrt(4 + 3 * Math.tan(angleStep / 2) * Math.tan(angleStep / 2)) - 1) / 3;
+    
+    // Point on the arc at angle1
+    const cosAngle1 = Math.cos(angle1);
+    const sinAngle1 = Math.sin(angle1);
+    const pointX1 = cx + rx * (cosAngle1 * cosPhi - sinAngle1 * sinPhi);
+    const pointY1 = cy + ry * (cosAngle1 * sinPhi + sinAngle1 * cosPhi);
+    
+    // Tangent vector at angle1
+    const tangentX1 = -rx * sinAngle1 * cosPhi - ry * cosAngle1 * sinPhi;
+    const tangentY1 = -rx * sinAngle1 * sinPhi + ry * cosAngle1 * cosPhi;
+    
+    // Control point 1
+    const cp1x = pointX1 + alpha * tangentX1;
+    const cp1y = pointY1 + alpha * tangentY1;
+    
+    // Point on the arc at angle2
+    const cosAngle2 = Math.cos(angle2);
+    const sinAngle2 = Math.sin(angle2);
+    const pointX2 = cx + rx * (cosAngle2 * cosPhi - sinAngle2 * sinPhi);
+    const pointY2 = cy + ry * (cosAngle2 * sinPhi + sinAngle2 * cosPhi);
+    
+    // Tangent vector at angle2
+    const tangentX2 = -rx * sinAngle2 * cosPhi - ry * cosAngle2 * sinPhi;
+    const tangentY2 = -rx * sinAngle2 * sinPhi + ry * cosAngle2 * cosPhi;
+    
+    // Control point 2
+    const cp2x = pointX2 - alpha * tangentX2;
+    const cp2y = pointY2 - alpha * tangentY2;
+    
+    // Add the control points and end point
+    points.push(
+      { x: cp1x, y: cp1y },
+      { x: cp2x, y: cp2y },
+      { x: pointX2, y: pointY2 }
     );
-    
-    // Add to result
-    result.push(...segPoints);
   }
   
-  return result;
+  return points;
 };
 
-// Helper function to approximate a single arc segment with a cubic bezier curve
-const approximateArcSegment = (
-  cx: number, cy: number, 
-  rx: number, ry: number, 
-  startAngle: number, endAngle: number, 
-  phi: number
-): Point[] => {
-  // Calculate curve points
-  const sinPhi = Math.sin(phi);
-  const cosPhi = Math.cos(phi);
-  
-  // Calculate angle constant
-  const alpha = Math.sin(endAngle - startAngle) * 
-                (Math.sqrt(4 + 3 * Math.pow(Math.tan((endAngle - startAngle) / 2), 2)) - 1) / 3;
-  
-  // Calculate start and end points
-  const cosStart = Math.cos(startAngle);
-  const sinStart = Math.sin(startAngle);
-  const cosEnd = Math.cos(endAngle);
-  const sinEnd = Math.sin(endAngle);
-  
-  // Calculate control points
-  const p1x = cx + rx * (cosPhi * cosStart - sinPhi * sinStart);
-  const p1y = cy + ry * (sinPhi * cosStart + cosPhi * sinStart);
-  
-  const p2x = cx + rx * (cosPhi * cosEnd - sinPhi * sinEnd);
-  const p2y = cy + ry * (sinPhi * cosEnd + cosPhi * sinEnd);
-  
-  const q1x = p1x - alpha * rx * (cosPhi * sinStart + sinPhi * cosStart);
-  const q1y = p1y - alpha * ry * (cosPhi * sinStart - sinPhi * cosStart);
-  
-  const q2x = p2x + alpha * rx * (cosPhi * sinEnd + sinPhi * cosEnd);
-  const q2y = p2y + alpha * ry * (cosPhi * sinEnd - sinPhi * cosEnd);
-  
-  // Return points for a cubic bezier approximation of the arc segment
-  return [
-    { x: q1x, y: q1y },
-    { x: q2x, y: q2y },
-    { x: p2x, y: p2y }
-  ];
+// Read SVG file from input element
+export const readSVGFile = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    
+    reader.onload = (e) => {
+      resolve(e.target?.result as string);
+    };
+    
+    reader.onerror = (e) => {
+      reject(new Error('Error reading SVG file'));
+    };
+    
+    reader.readAsText(file);
+  });
 };

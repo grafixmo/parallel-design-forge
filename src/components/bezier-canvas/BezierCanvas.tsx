@@ -1,10 +1,11 @@
-
-import React, { useEffect } from 'react';
-import { Point, BezierObject, SelectionRect, SelectedPoint } from '@/types/bezier';
-import { useCanvasSetup } from './hooks/useCanvasSetup';
+import React, { useRef, useEffect, useCallback } from 'react';
+import { BezierObject, SelectedPoint, ControlPointType, Point } from '@/types/bezier';
 import { useCanvasHandlers } from './hooks/useCanvasHandlers';
-import { useCanvasRenderer } from './hooks/useCanvasRenderer';
-import { useResizeObserver } from '@/hooks/useResizeObserver';
+import { useCanvasSetup } from './hooks/useCanvasSetup';
+import { CanvasToolbar } from './components/CanvasToolbar';
+import { CanvasInstructions } from './components/CanvasInstructions';
+import { CanvasStatusInfo } from './components/CanvasStatusInfo';
+import { BezierObjectRenderer } from '@/components/BezierObject';
 
 interface BezierCanvasProps {
   width: number;
@@ -33,75 +34,187 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
   onUndo,
   backgroundImage,
   backgroundOpacity,
-  isDrawingMode = false
+  isDrawingMode = true
 }) => {
-  // Canvas setup
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const animationFrameRef = useRef<number>();
+  const selectedPointRef = useRef<SelectedPoint | null>(null);
+  
+  // Use our custom hooks for canvas functionality
   const {
-    canvasRef,
-    containerRef,
+    mousePos,
+    setMousePos,
+    instructionMessage,
     zoom,
     setZoom,
     panOffset,
     setPanOffset,
-    mousePos,
-    setMousePos,
-    screenToCanvas
+    isDrawingMode: isInDrawingMode,
+    currentDrawingObjectId,
+    setCurrentDrawingObjectId,
+    backgroundImageObj,
+    screenToCanvas,
+    canvasToScreen,
+    renderCanvas,
+    canvasDimensions
   } = useCanvasSetup({
+    canvasRef,
+    wrapperRef,
     width,
     height,
-    isDrawingMode
-  });
-  
-  // Get actual container dimensions
-  const { width: containerWidth, height: containerHeight } = useResizeObserver(containerRef);
-  
-  // Current drawing object state
-  const [currentDrawingObjectId, setCurrentDrawingObjectId] = React.useState<string | null>(null);
-  const [selectedPoint, setSelectedPoint] = React.useState<SelectedPoint | null>(null);
-  const [isSelecting, setIsSelecting] = React.useState<boolean>(false);
-  const [selectionRect, setSelectionRect] = React.useState<SelectionRect | null>(null);
-  const [backgroundImageObj, setBackgroundImageObj] = React.useState<HTMLImageElement | null>(null);
-  
-  // Load background image if provided
-  useEffect(() => {
-    if (backgroundImage) {
-      const img = new Image();
-      img.src = backgroundImage;
-      img.onload = () => {
-        setBackgroundImageObj(img);
-        console.log("Background image loaded");
-      };
-    } else {
-      setBackgroundImageObj(null);
-    }
-  }, [backgroundImage]);
-  
-  // Canvas rendering hook
-  const renderCanvas = useCanvasRenderer({
-    canvasRef,
-    objects,
-    selectedObjectIds,
-    selectedPoint,
-    mousePos,
-    zoom,
-    panOffset,
-    isSelecting,
-    selectionRect,
-    backgroundImageObj,
-    backgroundOpacity,
     isDrawingMode,
-    currentDrawingObjectId,
-    onObjectSelect
+    backgroundImage,
+    backgroundOpacity,
+    objects,
+    selectedObjectIds
   });
+
+  // Handle point selection
+  const handlePointSelect = useCallback((point: SelectedPoint | null) => {
+    selectedPointRef.current = point;
+    console.log("Selected point:", point);
+  }, []);
+
+  // Handle point movement
+  const handlePointMove = useCallback((
+    objectId: string, 
+    pointIndex: number, 
+    type: ControlPointType, 
+    position: Point
+  ) => {
+    // Create a new array of objects with the updated point
+    const updatedObjects = objects.map(obj => {
+      if (obj.id === objectId) {
+        const updatedPoints = [...obj.points];
+        
+        if (type === ControlPointType.MAIN) {
+          // When moving a main point, calculate the relative movement for the handles
+          const originalPoint = updatedPoints[pointIndex];
+          const deltaX = position.x - originalPoint.x;
+          const deltaY = position.y - originalPoint.y;
+          
+          updatedPoints[pointIndex] = {
+            ...originalPoint,
+            x: position.x,
+            y: position.y,
+            handleIn: {
+              x: originalPoint.handleIn.x + deltaX,
+              y: originalPoint.handleIn.y + deltaY
+            },
+            handleOut: {
+              x: originalPoint.handleOut.x + deltaX,
+              y: originalPoint.handleOut.y + deltaY
+            }
+          };
+        } else if (type === ControlPointType.HANDLE_IN) {
+          updatedPoints[pointIndex] = {
+            ...updatedPoints[pointIndex],
+            handleIn: position
+          };
+        } else if (type === ControlPointType.HANDLE_OUT) {
+          updatedPoints[pointIndex] = {
+            ...updatedPoints[pointIndex],
+            handleOut: position
+          };
+        }
+        
+        return {
+          ...obj,
+          points: updatedPoints
+        };
+      }
+      return obj;
+    });
+    
+    onObjectsChange(updatedObjects);
+  }, [objects, onObjectsChange]);
   
-  // Canvas interaction handlers
+  // Draw all bezier objects on the canvas
+  const renderObjects = useCallback((ctx: CanvasRenderingContext2D) => {
+    // Adjust for high DPI screens
+    const dpr = window.devicePixelRatio || 1;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    // Apply zoom and pan transformations
+    ctx.save();
+    ctx.translate(panOffset.x, panOffset.y);
+    ctx.scale(zoom, zoom);
+    
+    // Draw all bezier objects
+    for (const object of objects) {
+      const isObjectSelected = selectedObjectIds.includes(object.id);
+      const isDrawingObject = object.id === currentDrawingObjectId;
+      
+      const bezierObject = new BezierObjectRenderer({
+        object,
+        isSelected: isObjectSelected || isDrawingObject,
+        zoom,
+        selectedPoint: selectedPointRef.current,
+        onPointSelect: handlePointSelect,
+        onPointMove: handlePointMove,
+        onSelect: onObjectSelect
+      });
+      
+      bezierObject.renderObject(ctx);
+      
+      // Add special visual indicator for the object being drawn
+      if (isDrawingObject && object.points.length > 0) {
+        // Draw a hint line from the last point to the mouse position
+        const lastPoint = object.points[object.points.length - 1];
+        
+        ctx.strokeStyle = 'rgba(46, 204, 113, 0.6)';
+        ctx.lineWidth = 2 / zoom;
+        ctx.setLineDash([5 / zoom, 5 / zoom]);
+        
+        ctx.beginPath();
+        ctx.moveTo(lastPoint.x, lastPoint.y);
+        ctx.lineTo(mousePos.x, mousePos.y);
+        ctx.stroke();
+        
+        ctx.setLineDash([]);
+        
+        // Text hint to show number of points in the drawing
+        ctx.fillStyle = 'rgba(46, 204, 113, 0.8)';
+        ctx.font = `${12 / zoom}px Arial`;
+        ctx.fillText(
+          `Drawing: ${object.points.length} point${object.points.length === 1 ? '' : 's'} (need at least 2)`, 
+          lastPoint.x + 10 / zoom, 
+          lastPoint.y - 10 / zoom
+        );
+      }
+    }
+    
+    ctx.restore();
+  }, [objects, selectedObjectIds, currentDrawingObjectId, mousePos, zoom, panOffset, onObjectSelect, handlePointMove, handlePointSelect]);
+  
+  // Enhanced render method with object rendering included
+  const renderCanvasWithObjects = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    // First render the basic canvas (grid, background, etc.)
+    renderCanvas();
+    
+    // Then render the objects on top
+    renderObjects(ctx);
+    
+  }, [renderCanvas, renderObjects]);
+  
   const {
     handleMouseDown,
     handleMouseMove,
     handleMouseUp,
     handleContextMenu,
     handleDoubleClick,
-    handleWheel
+    handleWheel,
+    handleZoomIn,
+    handleZoomOut,
+    handleResetView
   } = useCanvasHandlers({
     canvasRef,
     objects,
@@ -120,99 +233,82 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     setCurrentDrawingObjectId,
     setMousePos,
     screenToCanvas,
-    renderCanvas
+    renderCanvas: renderCanvasWithObjects  // Use enhanced render method
   });
   
-  // Force an initial render
+  // Log key props for debugging - limiting to important changes only
   useEffect(() => {
-    console.log("Initial canvas render, dimensions:", width, "x", height);
-    renderCanvas();
-  }, [renderCanvas]);
+    console.log("BezierCanvas render - objects count:", objects.length);
+    console.log("BezierCanvas render - isDrawingMode:", isDrawingMode);
+  }, [objects.length, isDrawingMode]);
+
+  // Request animation frame for continuous rendering with performance optimization
+  const animate = useCallback(() => {
+    renderCanvasWithObjects();
+    animationFrameRef.current = window.requestAnimationFrame(animate);
+  }, [renderCanvasWithObjects]);
   
-  // Re-render when objects or selections change
   useEffect(() => {
-    renderCanvas();
-  }, [objects, selectedObjectIds, renderCanvas]);
-  
-  console.log("BezierCanvas rendering with width:", width, "height:", height, "objects:", objects.length);
-  
+    // Start the animation loop
+    animate();
+    
+    return () => {
+      // Clean up animation frame on unmount
+      if (animationFrameRef.current) {
+        window.cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
+  }, [animate]);
+
+  // To avoid passive event issues, we'll handle the actual canvas click events
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    // We need to add passive: false to prevent default behavior for wheel events
+    const wheelHandler = (e: WheelEvent) => {
+      e.preventDefault();
+      handleWheel(e as unknown as React.WheelEvent<HTMLCanvasElement>);
+    };
+    
+    canvas.addEventListener('wheel', wheelHandler, { passive: false });
+    
+    return () => {
+      canvas.removeEventListener('wheel', wheelHandler);
+    };
+  }, [handleWheel]);
+
   return (
-    <div 
-      ref={containerRef} 
-      className="bezier-canvas-container w-full h-full overflow-hidden relative"
-    >
+    <div ref={wrapperRef} className="relative w-full h-full">
       <canvas
         ref={canvasRef}
-        width={width}
-        height={height}
-        style={{
-          width: '100%',
-          height: '100%',
-          cursor: isDrawingMode ? 'crosshair' : 'default'
-        }}
+        width={canvasDimensions.width}
+        height={canvasDimensions.height}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
-        onContextMenu={handleContextMenu}
         onDoubleClick={handleDoubleClick}
-        onWheel={handleWheel}
+        onContextMenu={handleContextMenu}
+        className="border border-gray-300 w-full h-full"
+        style={{ minWidth: "400px", minHeight: "300px" }}
       />
+
+      <CanvasToolbar 
+        onZoomIn={handleZoomIn} 
+        onZoomOut={handleZoomOut} 
+        onResetView={handleResetView} 
+        onUndo={onUndo} 
+      />
+
+      <CanvasInstructions message={instructionMessage} />
       
-      {/* Canvas controls overlay */}
-      <div className="absolute bottom-4 right-4 flex gap-2">
-        <button 
-          className="bg-white p-2 rounded-full shadow-lg hover:bg-gray-100"
-          onClick={() => setZoom(Math.min(5, zoom * 1.2))}
-          title="Zoom In"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="11" cy="11" r="8"></circle>
-            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-            <line x1="11" y1="8" x2="11" y2="14"></line>
-            <line x1="8" y1="11" x2="14" y2="11"></line>
-          </svg>
-        </button>
-        
-        <button 
-          className="bg-white p-2 rounded-full shadow-lg hover:bg-gray-100"
-          onClick={() => setZoom(Math.max(0.1, zoom * 0.8))}
-          title="Zoom Out"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="11" cy="11" r="8"></circle>
-            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-            <line x1="8" y1="11" x2="14" y2="11"></line>
-          </svg>
-        </button>
-        
-        <button 
-          className="bg-white p-2 rounded-full shadow-lg hover:bg-gray-100"
-          onClick={() => {
-            setZoom(1);
-            setPanOffset({ x: 0, y: 0 });
-          }}
-          title="Reset View"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
-            <path d="M3 3v5h5"></path>
-          </svg>
-        </button>
-      </div>
-      
-      {/* Mode indicator */}
-      <div className="absolute top-4 left-4 bg-white px-3 py-1 rounded-md shadow-md">
-        <span className="font-medium">
-          Mode: {isDrawingMode ? 'Drawing' : 'Selection'}
-        </span>
-      </div>
-      
-      {/* Zoom level indicator */}
-      <div className="absolute bottom-4 left-4 bg-white px-3 py-1 rounded-md shadow-md">
-        <span className="font-medium">
-          Zoom: {Math.round(zoom * 100)}%
-        </span>
-      </div>
+      <CanvasStatusInfo 
+        width={canvasDimensions.width} 
+        height={canvasDimensions.height} 
+        zoom={zoom} 
+        isDrawingMode={isDrawingMode}
+        objectsCount={objects.length}
+      />
     </div>
   );
 };
