@@ -77,7 +77,7 @@ export const parseSVGContent = async (
     }
     
     // Get the root SVG element
-    const svgElement = svgDoc.querySelector('svg');
+    const svgElement = svgDoc.querySelector('svg') as SVGSVGElement;
     if (!svgElement) {
       throw new Error('No SVG element found');
     }
@@ -108,7 +108,7 @@ export const parseSVGContent = async (
     }
     
     // Find all path elements
-    const pathElements = Array.from(svgDoc.querySelectorAll('path'));
+    const pathElements = Array.from(svgDoc.querySelectorAll('path')) as SVGPathElement[];
     if (pathElements.length === 0) {
       throw new Error('No paths found in the SVG');
     }
