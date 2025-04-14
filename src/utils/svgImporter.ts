@@ -1,5 +1,5 @@
 
-import { ControlPoint, BezierObject, CurveConfig, TransformSettings } from '../types/bezier';
+import { ControlPoint, BezierObject, CurveConfig, TransformSettings, Point } from '../types/bezier';
 import { generateId } from './bezierUtils';
 
 interface SVGPathData {
