@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, memo } from 'react';
 import { 
   Dialog, 
@@ -204,6 +205,8 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
     if (!open) return; // Don't fetch if gallery is closed
     
     setIsLoading(true);
+    setTemplates([]); // Clear current templates while loading
+    
     try {
       const response = activeCategory === 'all' 
         ? await getTemplates() 
@@ -242,7 +245,6 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
         };
         
         // Start processing
-        setTemplates([]);
         processNextChunk();
       };
       
@@ -264,6 +266,7 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
     setActiveCategory(category);
   };
   
+  // Improved template selection with error prevention
   const handleSelectTemplate = useCallback((template: Template) => {
     // Clear any previous errors
     setTemplateLoadError(null);
@@ -271,6 +274,7 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
     setLoadDialogOpen(true);
   }, []);
   
+  // Optimized template loading with memory cleanup
   const confirmLoadTemplate = useCallback(async (shouldClearCanvas: boolean = true) => {
     if (!templateToLoad) return;
     
@@ -293,20 +297,37 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
         throw new Error("Template has no design data");
       }
       
-      // Simple validation check
+      // Simple validation check with timeouts to prevent UI freezing
       let parsedData;
       try {
-        parsedData = JSON.parse(templateToLoad.design_data);
+        // Parse data in a non-blocking way
+        await new Promise<void>((resolve) => {
+          setTimeout(() => {
+            try {
+              parsedData = JSON.parse(templateToLoad.design_data);
+              resolve();
+            } catch (error) {
+              throw new Error("Invalid JSON format in template");
+            }
+          }, 0);
+        });
       } catch (error) {
         throw new Error("Invalid JSON format in template");
       }
       
-      if (!Array.isArray(parsedData)) {
-        throw new Error("Invalid template format: expected an array");
-      }
+      // Check data type with timeout to prevent blocking
+      await new Promise<void>((resolve, reject) => {
+        setTimeout(() => {
+          if (!Array.isArray(parsedData)) {
+            reject(new Error("Invalid template format: expected an array"));
+          } else {
+            resolve();
+          }
+        }, 0);
+      });
       
       // Add slight delay to allow UI to update and show loading progress
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise(resolve => setTimeout(resolve, 300));
       
       // Complete the loading process
       setLoadingProgress(100);
@@ -318,17 +339,23 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
       // First close dialog and clean up
       setLoadDialogOpen(false);
       
+      // Use a reference to the data but clear the template object
+      const designData = templateToLoad.design_data;
+      
+      // Clean up memory early
+      setTemplateToLoad(null);
+      parsedData = null;
+      
       // Then with a small delay to prevent UI freeze, load the template
       setTimeout(() => {
-        onSelectTemplate(templateToLoad.design_data, shouldClearCanvas);
+        onSelectTemplate(designData, shouldClearCanvas);
         
         toast({
           title: 'Template Loaded',
-          description: `"${templateToLoad.name}" has been loaded to the canvas`
+          description: `Template has been loaded to the canvas`
         });
         
         // Clean up after loading
-        setTemplateToLoad(null);
         setLoadingTemplate(false);
         setLoadingProgress(0);
         

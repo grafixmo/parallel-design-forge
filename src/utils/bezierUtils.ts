@@ -85,7 +85,7 @@ export const calculateParallelPoint = (
   };
 };
 
-// Generate SVG path data from control points
+// Improved SVG path data generation from control points
 export const generatePathData = (points: ControlPoint[], offset = 0): string => {
   if (points.length < 2) return '';
   
@@ -95,6 +95,7 @@ export const generatePathData = (points: ControlPoint[], offset = 0): string => 
     const current = points[i];
     const next = points[i + 1];
     
+    // Use properly calculated control points for smoother curves
     pathData += ` C ${current.handleOut.x} ${current.handleOut.y}, ${next.handleIn.x} ${next.handleIn.y}, ${next.x} ${next.y}`;
   }
   
@@ -111,57 +112,664 @@ export const isPointInSelectionRect = (point: Point, rect: SelectionRect): boole
   return point.x >= minX && point.x <= maxX && point.y >= minY && point.y <= maxY;
 };
 
-// Convert SVG path data to bezier points
+// Improved SVG path to bezier points converter with better handle placement
 export const svgPathToBezierPoints = (pathData: string): ControlPoint[] => {
   const points: ControlPoint[] = [];
-  const commands = pathData.match(/[MLCZ][^MLCZ]*/g);
+  const commands = pathData.match(/[MLCQTASZ][^MLCQTASZ]*/gi);
   
   if (!commands) return points;
   
   let currentX = 0;
   let currentY = 0;
+  let firstX = 0;
+  let firstY = 0;
+  let lastControlX = 0;
+  let lastControlY = 0;
+  let hasStartedPath = false;
   
   for (const cmd of commands) {
-    const type = cmd[0];
-    const values = cmd.substring(1).trim().split(/[\s,]+/).map(parseFloat);
+    const type = cmd[0].toUpperCase();
+    // More robust value parsing - handles different formats of numbers
+    const values = cmd.substring(1).trim().split(/[\s,]+/).map(parseFloat).filter(v => !isNaN(v));
     
-    if (type === 'M') {
-      currentX = values[0];
-      currentY = values[1];
-      
-      points.push({
-        x: currentX,
-        y: currentY,
-        handleIn: { x: currentX - 50, y: currentY },
-        handleOut: { x: currentX + 50, y: currentY },
-        id: generateId()
-      });
-    } 
-    else if (type === 'C') {
-      // Each cubic bezier command has 6 values: c1x, c1y, c2x, c2y, x, y
-      for (let i = 0; i < values.length; i += 6) {
-        const lastPoint = points[points.length - 1];
-        if (lastPoint) {
-          lastPoint.handleOut = { x: values[i], y: values[i + 1] };
+    // For relative commands, convert to absolute
+    const isRelative = cmd[0] !== cmd[0].toUpperCase();
+    
+    switch (type) {
+      case 'M': // Move to
+        if (values.length >= 2) {
+          const x = isRelative ? currentX + values[0] : values[0];
+          const y = isRelative ? currentY + values[1] : values[1];
+          
+          // Start a new path
+          if (!hasStartedPath) {
+            firstX = x;
+            firstY = y;
+            hasStartedPath = true;
+          }
+          
+          // Calculate proper handle positions
+          const handleOffset = 50; // Default handle distance
+          
+          const newPoint = {
+            x,
+            y,
+            handleIn: { 
+              x: x - handleOffset, 
+              y 
+            },
+            handleOut: { 
+              x: x + handleOffset, 
+              y 
+            },
+            id: generateId()
+          };
+          
+          points.push(newPoint);
+          
+          // Update current position
+          currentX = x;
+          currentY = y;
+          
+          // Process subsequent points as Line commands
+          for (let i = 2; i < values.length; i += 2) {
+            if (i + 1 < values.length) {
+              const lineX = isRelative ? currentX + values[i] : values[i];
+              const lineY = isRelative ? currentY + values[i+1] : values[i+1];
+              
+              // Create a smooth curve between points
+              const dx = lineX - currentX;
+              const dy = lineY - currentY;
+              const distance = Math.sqrt(dx*dx + dy*dy);
+              const handleLen = Math.min(distance / 3, 50);
+              
+              // Add handles to previous point
+              if (points.length > 0) {
+                const prevPoint = points[points.length - 1];
+                prevPoint.handleOut = {
+                  x: prevPoint.x + (dx / distance) * handleLen,
+                  y: prevPoint.y + (dy / distance) * handleLen
+                };
+              }
+              
+              // Add the new point
+              const linePoint = {
+                x: lineX,
+                y: lineY,
+                handleIn: {
+                  x: lineX - (dx / distance) * handleLen,
+                  y: lineY - (dy / distance) * handleLen
+                },
+                handleOut: {
+                  x: lineX + (dx / distance) * handleLen,
+                  y: lineY + (dy / distance) * handleLen
+                },
+                id: generateId()
+              };
+              
+              points.push(linePoint);
+              currentX = lineX;
+              currentY = lineY;
+            }
+          }
+        }
+        break;
+        
+      case 'L': // Line to
+        for (let i = 0; i < values.length; i += 2) {
+          if (i + 1 < values.length) {
+            const x = isRelative ? currentX + values[i] : values[i];
+            const y = isRelative ? currentY + values[i+1] : values[i+1];
+            
+            // Calculate direction and handle lengths
+            const dx = x - currentX;
+            const dy = y - currentY;
+            const distance = Math.sqrt(dx*dx + dy*dy);
+            const handleLen = Math.min(distance / 3, 50);
+            
+            // Add handles to previous point if it exists
+            if (points.length > 0) {
+              const prevPoint = points[points.length - 1];
+              prevPoint.handleOut = {
+                x: prevPoint.x + (dx / distance) * handleLen,
+                y: prevPoint.y + (dy / distance) * handleLen
+              };
+            }
+            
+            // Add the new point
+            const newPoint = {
+              x,
+              y,
+              handleIn: {
+                x: x - (dx / distance) * handleLen,
+                y: y - (dy / distance) * handleLen
+              },
+              handleOut: {
+                x: x + (dx / distance) * handleLen,
+                y: y + (dy / distance) * handleLen
+              },
+              id: generateId()
+            };
+            
+            points.push(newPoint);
+            currentX = x;
+            currentY = y;
+          }
+        }
+        break;
+        
+      case 'H': // Horizontal line
+        for (let i = 0; i < values.length; i++) {
+          const x = isRelative ? currentX + values[i] : values[i];
+          
+          // Calculate direction and handle lengths
+          const dx = x - currentX;
+          const distance = Math.abs(dx);
+          const handleLen = Math.min(distance / 3, 50);
+          const direction = dx > 0 ? 1 : -1;
+          
+          // Add handles to previous point if it exists
+          if (points.length > 0) {
+            const prevPoint = points[points.length - 1];
+            prevPoint.handleOut = {
+              x: prevPoint.x + direction * handleLen,
+              y: prevPoint.y
+            };
+          }
+          
+          // Add the new point
+          const newPoint = {
+            x,
+            y: currentY,
+            handleIn: {
+              x: x - direction * handleLen,
+              y: currentY
+            },
+            handleOut: {
+              x: x + direction * handleLen,
+              y: currentY
+            },
+            id: generateId()
+          };
+          
+          points.push(newPoint);
+          currentX = x;
+        }
+        break;
+        
+      case 'V': // Vertical line
+        for (let i = 0; i < values.length; i++) {
+          const y = isRelative ? currentY + values[i] : values[i];
+          
+          // Calculate direction and handle lengths
+          const dy = y - currentY;
+          const distance = Math.abs(dy);
+          const handleLen = Math.min(distance / 3, 50);
+          const direction = dy > 0 ? 1 : -1;
+          
+          // Add handles to previous point if it exists
+          if (points.length > 0) {
+            const prevPoint = points[points.length - 1];
+            prevPoint.handleOut = {
+              x: prevPoint.x,
+              y: prevPoint.y + direction * handleLen
+            };
+          }
+          
+          // Add the new point
+          const newPoint = {
+            x: currentX,
+            y,
+            handleIn: {
+              x: currentX,
+              y: y - direction * handleLen
+            },
+            handleOut: {
+              x: currentX,
+              y: y + direction * handleLen
+            },
+            id: generateId()
+          };
+          
+          points.push(newPoint);
+          currentY = y;
+        }
+        break;
+        
+      case 'C': // Cubic Bezier
+        for (let i = 0; i < values.length; i += 6) {
+          if (i + 5 < values.length) {
+            const c1x = isRelative ? currentX + values[i] : values[i];
+            const c1y = isRelative ? currentY + values[i+1] : values[i+1];
+            const c2x = isRelative ? currentX + values[i+2] : values[i+2];
+            const c2y = isRelative ? currentY + values[i+3] : values[i+3];
+            const x = isRelative ? currentX + values[i+4] : values[i+4];
+            const y = isRelative ? currentY + values[i+5] : values[i+5];
+            
+            // Improve existing points with better handle placement
+            if (points.length > 0) {
+              const prevPoint = points[points.length - 1];
+              // Set handle out for the previous point
+              prevPoint.handleOut = { x: c1x, y: c1y };
+            }
+            
+            // Add the new end point with both handles
+            const newPoint = {
+              x,
+              y,
+              handleIn: { x: c2x, y: c2y },
+              handleOut: { 
+                // Mirror the handleIn by default
+                x: x + (x - c2x),
+                y: y + (y - c2y)
+              },
+              id: generateId()
+            };
+            
+            points.push(newPoint);
+            
+            // Update current position and last control point
+            currentX = x;
+            currentY = y;
+            lastControlX = c2x;
+            lastControlY = c2y;
+          }
+        }
+        break;
+        
+      case 'S': // Smooth cubic Bezier
+        for (let i = 0; i < values.length; i += 4) {
+          if (i + 3 < values.length) {
+            // Calculate the first control point by reflecting the last control point
+            let c1x, c1y;
+            
+            if (points.length > 0 && (type === 'S' || type === 'T')) {
+              // Reflect the previous control point
+              c1x = 2 * currentX - lastControlX;
+              c1y = 2 * currentY - lastControlY;
+            } else {
+              // If no previous curve, control point is coincident with current point
+              c1x = currentX;
+              c1y = currentY;
+            }
+            
+            const c2x = isRelative ? currentX + values[i] : values[i];
+            const c2y = isRelative ? currentY + values[i+1] : values[i+1];
+            const x = isRelative ? currentX + values[i+2] : values[i+2];
+            const y = isRelative ? currentY + values[i+3] : values[i+3];
+            
+            // Update existing points with better handle placement
+            if (points.length > 0) {
+              const prevPoint = points[points.length - 1];
+              prevPoint.handleOut = { x: c1x, y: c1y };
+            }
+            
+            // Add the new end point with both handles
+            const newPoint = {
+              x,
+              y,
+              handleIn: { x: c2x, y: c2y },
+              handleOut: { 
+                x: x + (x - c2x),
+                y: y + (y - c2y)
+              },
+              id: generateId()
+            };
+            
+            points.push(newPoint);
+            
+            // Update current position and last control point
+            currentX = x;
+            currentY = y;
+            lastControlX = c2x;
+            lastControlY = c2y;
+          }
+        }
+        break;
+        
+      case 'Q': // Quadratic Bezier
+        for (let i = 0; i < values.length; i += 4) {
+          if (i + 3 < values.length) {
+            const qx = isRelative ? currentX + values[i] : values[i];
+            const qy = isRelative ? currentY + values[i+1] : values[i+1];
+            const x = isRelative ? currentX + values[i+2] : values[i+2];
+            const y = isRelative ? currentY + values[i+3] : values[i+3];
+            
+            // Convert quadratic to cubic control points
+            // CP1 = start + 2/3 * (QP - start)
+            // CP2 = end + 2/3 * (QP - end)
+            const cp1x = currentX + 2/3 * (qx - currentX);
+            const cp1y = currentY + 2/3 * (qy - currentY);
+            const cp2x = x + 2/3 * (qx - x);
+            const cp2y = y + 2/3 * (qy - y);
+            
+            // Update existing points with better handle placement
+            if (points.length > 0) {
+              const prevPoint = points[points.length - 1];
+              prevPoint.handleOut = { x: cp1x, y: cp1y };
+            }
+            
+            // Add the new end point with both handles
+            const newPoint = {
+              x,
+              y,
+              handleIn: { x: cp2x, y: cp2y },
+              handleOut: { 
+                x: x + (x - cp2x),
+                y: y + (y - cp2y)
+              },
+              id: generateId()
+            };
+            
+            points.push(newPoint);
+            
+            // Update current position and last control point
+            currentX = x;
+            currentY = y;
+            lastControlX = qx;
+            lastControlY = qy;
+          }
+        }
+        break;
+        
+      case 'T': // Smooth quadratic Bezier
+        for (let i = 0; i < values.length; i += 2) {
+          if (i + 1 < values.length) {
+            // Calculate the control point by reflecting the last control point
+            let qx, qy;
+            
+            if (type === 'T' && (points.length > 0)) {
+              // Reflect the previous control point
+              qx = 2 * currentX - lastControlX;
+              qy = 2 * currentY - lastControlY;
+            } else {
+              // If no previous curve, control point is coincident with current point
+              qx = currentX;
+              qy = currentY;
+            }
+            
+            const x = isRelative ? currentX + values[i] : values[i];
+            const y = isRelative ? currentY + values[i+1] : values[i+1];
+            
+            // Convert quadratic to cubic control points
+            const cp1x = currentX + 2/3 * (qx - currentX);
+            const cp1y = currentY + 2/3 * (qy - currentY);
+            const cp2x = x + 2/3 * (qx - x);
+            const cp2y = y + 2/3 * (qy - y);
+            
+            // Update existing points with better handle placement
+            if (points.length > 0) {
+              const prevPoint = points[points.length - 1];
+              prevPoint.handleOut = { x: cp1x, y: cp1y };
+            }
+            
+            // Add the new end point with both handles
+            const newPoint = {
+              x,
+              y,
+              handleIn: { x: cp2x, y: cp2y },
+              handleOut: { 
+                x: x + (x - cp2x),
+                y: y + (y - cp2y)
+              },
+              id: generateId()
+            };
+            
+            points.push(newPoint);
+            
+            // Update current position and last control point
+            currentX = x;
+            currentY = y;
+            lastControlX = qx;
+            lastControlY = qy;
+          }
+        }
+        break;
+        
+      case 'A': // Arc
+        // Elliptical arc requires complex calculations to convert to cubic bezier
+        for (let i = 0; i < values.length; i += 7) {
+          if (i + 6 < values.length) {
+            const rx = values[i];
+            const ry = values[i+1];
+            const angle = values[i+2];
+            const largeArcFlag = values[i+3];
+            const sweepFlag = values[i+4];
+            const x = isRelative ? currentX + values[i+5] : values[i+5];
+            const y = isRelative ? currentY + values[i+6] : values[i+6];
+            
+            // Convert arc to cubic bezier segments
+            const arcToBezier = approximateArcToBezier(
+              currentX, currentY, 
+              rx, ry, 
+              angle * Math.PI / 180, 
+              largeArcFlag, 
+              sweepFlag, 
+              x, y
+            );
+            
+            // Add all segments
+            for (let j = 0; j < arcToBezier.length; j += 6) {
+              const c1x = arcToBezier[j];
+              const c1y = arcToBezier[j+1];
+              const c2x = arcToBezier[j+2];
+              const c2y = arcToBezier[j+3];
+              const endX = arcToBezier[j+4];
+              const endY = arcToBezier[j+5];
+              
+              // Add handles to previous point
+              if (points.length > 0) {
+                const prevPoint = points[points.length - 1];
+                prevPoint.handleOut = { x: c1x, y: c1y };
+              }
+              
+              // Add the new point
+              const newPoint = {
+                x: endX,
+                y: endY,
+                handleIn: { x: c2x, y: c2y },
+                handleOut: { 
+                  x: endX + (endX - c2x),
+                  y: endY + (endY - c2y)
+                },
+                id: generateId()
+              };
+              
+              points.push(newPoint);
+              
+              // Update tracking variables
+              currentX = endX;
+              currentY = endY;
+              lastControlX = c2x;
+              lastControlY = c2y;
+            }
+          }
+        }
+        break;
+        
+      case 'Z': // Close path
+        if (points.length > 0 && (currentX !== firstX || currentY !== firstY)) {
+          // Calculate direction to first point
+          const dx = firstX - currentX;
+          const dy = firstY - currentY;
+          const distance = Math.sqrt(dx*dx + dy*dy);
+          const handleLen = Math.min(distance / 3, 50);
+          
+          // Add handles to last point
+          if (points.length > 0) {
+            const lastPoint = points[points.length - 1];
+            lastPoint.handleOut = {
+              x: lastPoint.x + (dx / distance) * handleLen,
+              y: lastPoint.y + (dy / distance) * handleLen
+            };
+          }
+          
+          // Create handles for the first point
+          if (points.length > 0) {
+            const firstPoint = points[0];
+            firstPoint.handleIn = {
+              x: firstPoint.x - (dx / distance) * handleLen,
+              y: firstPoint.y - (dy / distance) * handleLen
+            };
+          }
+          
+          // Reset to first point
+          currentX = firstX;
+          currentY = firstY;
         }
         
-        const newPoint = {
-          x: values[i + 4],
-          y: values[i + 5],
-          handleIn: { x: values[i + 2], y: values[i + 3] },
-          handleOut: { x: values[i + 4] + 50, y: values[i + 5] },
-          id: generateId()
-        };
-        
-        points.push(newPoint);
-        currentX = newPoint.x;
-        currentY = newPoint.y;
-      }
+        // Reset path tracking
+        hasStartedPath = false;
+        break;
     }
   }
   
   return points;
 };
+
+// Approximate an elliptical arc with cubic bezier curves
+function approximateArcToBezier(
+  x1: number, y1: number, 
+  rx: number, ry: number, 
+  phi: number, 
+  largeArcFlag: number, 
+  sweepFlag: number, 
+  x2: number, y2: number
+): number[] {
+  // If the endpoints are identical, then this is equivalent to omitting the arc
+  if (x1 === x2 && y1 === y2) {
+    return [];
+  }
+  
+  // If rx = 0 or ry = 0 then this arc is treated as a straight line
+  if (rx === 0 || ry === 0) {
+    // Return a line segment
+    return [
+      x1, y1,    // First control point (coincident with start)
+      x2, y2,    // Second control point (coincident with end)
+      x2, y2     // End point
+    ];
+  }
+  
+  // Make sure rx and ry are positive
+  rx = Math.abs(rx);
+  ry = Math.abs(ry);
+  
+  // Transform from endpoint to center parameterization
+  const cosPhi = Math.cos(phi);
+  const sinPhi = Math.sin(phi);
+  
+  // Step 1: Compute (x1', y1')
+  const dx = (x1 - x2) / 2;
+  const dy = (y1 - y2) / 2;
+  const x1p = cosPhi * dx + sinPhi * dy;
+  const y1p = -sinPhi * dx + cosPhi * dy;
+  
+  // Step 2: Compute (cx', cy')
+  let rxSq = rx * rx;
+  let rySq = ry * ry;
+  const x1pSq = x1p * x1p;
+  const y1pSq = y1p * y1p;
+  
+  // Check if the radii are big enough
+  const radiiCheck = x1pSq / rxSq + y1pSq / rySq;
+  if (radiiCheck > 1) {
+    rx *= Math.sqrt(radiiCheck);
+    ry *= Math.sqrt(radiiCheck);
+    rxSq = rx * rx;
+    rySq = ry * ry;
+  }
+  
+  // Step 3: Compute (cx', cy')
+  let sign = (largeArcFlag === sweepFlag) ? -1 : 1;
+  let sq = ((rxSq * rySq) - (rxSq * y1pSq) - (rySq * x1pSq)) / ((rxSq * y1pSq) + (rySq * x1pSq));
+  sq = sq < 0 ? 0 : sq;
+  const coef = sign * Math.sqrt(sq);
+  const cxp = coef * ((rx * y1p) / ry);
+  const cyp = coef * (-(ry * x1p) / rx);
+  
+  // Step 4: Compute (cx, cy) from (cx', cy')
+  const cx = cosPhi * cxp - sinPhi * cyp + (x1 + x2) / 2;
+  const cy = sinPhi * cxp + cosPhi * cyp + (y1 + y2) / 2;
+  
+  // Step 5: Compute start and sweep angles
+  const ux = (x1p - cxp) / rx;
+  const uy = (y1p - cyp) / ry;
+  const vx = (-x1p - cxp) / rx;
+  const vy = (-y1p - cyp) / ry;
+  
+  // Compute the angle start
+  let n = Math.sqrt(ux * ux + uy * uy);
+  let p = ux; // cos(startAngle)
+  sign = uy < 0 ? -1 : 1;
+  let startAngle = sign * Math.acos(p / n);
+  
+  // Compute the sweep angle
+  n = Math.sqrt((ux * ux + uy * uy) * (vx * vx + vy * vy));
+  p = ux * vx + uy * vy;
+  sign = (ux * vy - uy * vx) < 0 ? -1 : 1;
+  let sweepAngle = sign * Math.acos(p / n);
+  
+  if (sweepFlag === 0 && sweepAngle > 0) {
+    sweepAngle -= 2 * Math.PI;
+  } else if (sweepFlag === 1 && sweepAngle < 0) {
+    sweepAngle += 2 * Math.PI;
+  }
+  
+  // Approximation constants based on the sweet angle
+  const arcSegs = Math.ceil(Math.abs(sweepAngle) / (Math.PI / 2));
+  const result: number[] = [];
+  
+  // Approximate the arc using bezier curves
+  for (let i = 0; i < arcSegs; i++) {
+    const theta1 = startAngle + i * sweepAngle / arcSegs;
+    const theta2 = startAngle + (i + 1) * sweepAngle / arcSegs;
+    
+    const bezierPoints = approxArcSegment(
+      cx, cy, rx, ry, phi, theta1, theta2
+    );
+    
+    result.push(...bezierPoints);
+  }
+  
+  return result;
+}
+
+// Approximate a single arc segment with a cubic bezier curve
+function approxArcSegment(
+  cx: number, cy: number, 
+  rx: number, ry: number, 
+  phi: number, 
+  theta1: number, theta2: number
+): number[] {
+  // Angle constant
+  const alpha = Math.sin(theta2 - theta1) * (Math.sqrt(4 + 3 * Math.pow(Math.tan((theta2 - theta1) / 2), 2)) - 1) / 3;
+  
+  // Calculate points
+  const sinTheta1 = Math.sin(theta1);
+  const cosTheta1 = Math.cos(theta1);
+  const sinTheta2 = Math.sin(theta2);
+  const cosTheta2 = Math.cos(theta2);
+  
+  const sinPhi = Math.sin(phi);
+  const cosPhi = Math.cos(phi);
+  
+  // Calculate the start and end points
+  const x1 = cx + rx * (cosPhi * cosTheta1 - sinPhi * sinTheta1);
+  const y1 = cy + ry * (sinPhi * cosTheta1 + cosPhi * sinTheta1);
+  
+  const x2 = cx + rx * (cosPhi * cosTheta2 - sinPhi * sinTheta2);
+  const y2 = cy + ry * (sinPhi * cosTheta2 + cosPhi * sinTheta2);
+  
+  // Calculate control points
+  const c1x = x1 + alpha * (-rx * cosPhi * sinTheta1 - ry * sinPhi * cosTheta1);
+  const c1y = y1 + alpha * (-rx * sinPhi * sinTheta1 + ry * cosPhi * cosTheta1);
+  
+  const c2x = x2 - alpha * (-rx * cosPhi * sinTheta2 - ry * sinPhi * cosTheta2);
+  const c2y = y2 - alpha * (-rx * sinPhi * sinTheta2 + ry * cosPhi * cosTheta2);
+  
+  return [c1x, c1y, c2x, c2y, x2, y2];
+}
 
 // Process SVG path objects into control points
 export const processSVGPathObjects = (svgObjects: any[]): ControlPoint[] => {
@@ -209,304 +817,3 @@ export const convertShapesDataToObjects = (shapesData: any): BezierObject[] => {
         console.log('Found objects array in data object');
         dataArray = dataArray.objects;
       } else {
-        // Try to treat the single object as a shape
-        console.log('Treating single object as a shape');
-        dataArray = [dataArray];
-      }
-    } else {
-      console.error('Could not convert to array:', dataArray);
-      return objects;
-    }
-  }
-  
-  // Check if dataArray is now an array
-  if (!Array.isArray(dataArray)) {
-    console.error('Failed to normalize to array:', dataArray);
-    return objects;
-  }
-  
-  // Process each item in the array
-  dataArray.forEach((item, index) => {
-    // Skip null or undefined items
-    if (item === null || item === undefined) {
-      console.warn('Skipping null/undefined item at index', index);
-      return;
-    }
-    
-    // Log each item type to help with debugging
-    console.log(`Processing item ${index}:`, typeof item, item.type || 'no type');
-    
-    if (item.type === 'path' || item.d) {
-      // This is SVG path data
-      const pathData = item.d || '';
-      const pathPoints = pathData ? svgPathToBezierPoints(pathData) : [];
-      
-      if (pathPoints.length > 0) {
-        objects.push({
-          id: item.id || generateId(),
-          points: pathPoints,
-          curveConfig: {
-            styles: [
-              { 
-                color: item.stroke || item.fill || '#000000', 
-                width: item.strokeWidth || 5 
-              }
-            ],
-            parallelCount: 0,
-            spacing: 0
-          },
-          transform: {
-            rotation: item.rotation || 0,
-            scaleX: item.scaleX || 1.0,
-            scaleY: item.scaleY || 1.0
-          },
-          name: `Imported Path ${index + 1}`,
-          isSelected: false
-        });
-      }
-    } else if (item.type === 'spiral' || item.type === 'triangle' || item.type === 'circle') {
-      // This is shape data - create simple control points for visualization
-      const centerX = item.x || 0;
-      const centerY = item.y || 0;
-      const width = item.width || 100;
-      const height = item.height || 100;
-      
-      // Determine color - handle both stroke and fill with fallbacks
-      const color = item.stroke && item.strokeWidth > 0 
-        ? item.stroke 
-        : (item.fill || '#000000');
-        
-      const strokeWidth = typeof item.strokeWidth === 'number' ? item.strokeWidth : 5;
-      
-      let simplePoints: ControlPoint[] = [];
-      
-      if (item.type === 'circle') {
-        // Create circle using 4 bezier curve points (more natural than straight lines)
-        const radius = Math.min(width, height) / 2;
-        const cp = 0.552284749831 * radius; // Control point distance for approximating a circle
-        
-        simplePoints = [
-          // Top point
-          {
-            x: centerX, 
-            y: centerY - radius,
-            handleIn: { x: centerX - cp, y: centerY - radius },
-            handleOut: { x: centerX + cp, y: centerY - radius },
-            id: generateId()
-          },
-          // Right point
-          {
-            x: centerX + radius, 
-            y: centerY,
-            handleIn: { x: centerX + radius, y: centerY - cp },
-            handleOut: { x: centerX + radius, y: centerY + cp },
-            id: generateId()
-          },
-          // Bottom point
-          {
-            x: centerX, 
-            y: centerY + radius,
-            handleIn: { x: centerX + cp, y: centerY + radius },
-            handleOut: { x: centerX - cp, y: centerY + radius },
-            id: generateId()
-          },
-          // Left point
-          {
-            x: centerX - radius, 
-            y: centerY,
-            handleIn: { x: centerX - radius, y: centerY + cp },
-            handleOut: { x: centerX - radius, y: centerY - cp },
-            id: generateId()
-          }
-        ];
-      } else if (item.type === 'triangle') {
-        // Create a triangle
-        const halfWidth = width / 2;
-        const halfHeight = height / 2;
-        
-        simplePoints = [
-          // Top point
-          {
-            x: centerX, 
-            y: centerY - halfHeight,
-            handleIn: { x: centerX - 20, y: centerY - halfHeight },
-            handleOut: { x: centerX + 20, y: centerY - halfHeight },
-            id: generateId()
-          },
-          // Bottom right
-          {
-            x: centerX + halfWidth, 
-            y: centerY + halfHeight,
-            handleIn: { x: centerX + halfWidth - 20, y: centerY + halfHeight },
-            handleOut: { x: centerX + halfWidth + 20, y: centerY + halfHeight },
-            id: generateId()
-          },
-          // Bottom left
-          {
-            x: centerX - halfWidth, 
-            y: centerY + halfHeight,
-            handleIn: { x: centerX - halfWidth - 20, y: centerY + halfHeight },
-            handleOut: { x: centerX - halfWidth + 20, y: centerY + halfHeight },
-            id: generateId()
-          }
-        ];
-      } else if (item.type === 'spiral') {
-        // Create a spiral
-        const turns = item.spiralTurns || 3;
-        const spacing = item.spiralSpacing || 5;
-        const numPoints = turns * 8; // 8 points per turn for smoothness
-        
-        simplePoints = [];
-        
-        // Generate points for the spiral
-        for (let i = 0; i <= numPoints; i++) {
-          const angle = (i / numPoints) * turns * Math.PI * 2;
-          const radius = (i / numPoints) * Math.min(width, height) / 2;
-          
-          const x = centerX + Math.cos(angle) * radius;
-          const y = centerY + Math.sin(angle) * radius;
-          
-          // Calculate handle positions
-          const angleStep = (Math.PI * 2) / 16;
-          const handleInAngle = angle - angleStep;
-          const handleOutAngle = angle + angleStep;
-          const handleDistance = (radius * Math.PI) / 8;
-          
-          simplePoints.push({
-            x,
-            y,
-            handleIn: {
-              x: x - Math.cos(handleInAngle) * handleDistance,
-              y: y - Math.sin(handleInAngle) * handleDistance
-            },
-            handleOut: {
-              x: x + Math.cos(handleOutAngle) * handleDistance,
-              y: y + Math.sin(handleOutAngle) * handleDistance
-            },
-            id: generateId()
-          });
-        }
-      }
-      
-      if (simplePoints.length > 0) {
-        objects.push({
-          id: item.id || generateId(),
-          points: simplePoints,
-          curveConfig: {
-            styles: [
-              { color, width: strokeWidth }
-            ],
-            parallelCount: 0,
-            spacing: 0
-          },
-          transform: {
-            rotation: item.rotation || 0,
-            scaleX: 1.0,
-            scaleY: 1.0
-          },
-          name: `Imported ${item.type} ${index + 1}`,
-          isSelected: false
-        });
-      }
-    } else if (item.points && Array.isArray(item.points)) {
-      // This format already has points defined
-      const pointsWithIds = item.points.map((point: any) => ({
-        ...point,
-        id: point.id || generateId(),
-        handleIn: point.handleIn || { x: point.x - 50, y: point.y },
-        handleOut: point.handleOut || { x: point.x + 50, y: point.y }
-      }));
-      
-      if (pointsWithIds.length > 0) {
-        objects.push({
-          id: item.id || generateId(),
-          points: pointsWithIds,
-          curveConfig: {
-            styles: [
-              { 
-                color: item.stroke || item.fill || '#000000', 
-                width: item.strokeWidth || 5 
-              }
-            ],
-            parallelCount: 0,
-            spacing: 0
-          },
-          transform: {
-            rotation: item.rotation || 0,
-            scaleX: item.scaleX || 1.0,
-            scaleY: item.scaleY || 1.0
-          },
-          name: `Imported Object ${index + 1}`,
-          isSelected: false
-        });
-      }
-    } else if (item.shapes && Array.isArray(item.shapes)) {
-      // Special case for collections of shapes
-      console.log('Processing nested shapes array:', item.shapes.length);
-      const nestedObjects = convertShapesDataToObjects(item.shapes);
-      objects.push(...nestedObjects);
-    } else {
-      console.log('Unknown item format:', item);
-    }
-  });
-  
-  console.log(`Converted ${objects.length} bezier objects`);
-  
-  return objects;
-};
-
-// Apply transformation to a point
-export const transformPoint = (
-  point: Point, 
-  centerX: number, 
-  centerY: number, 
-  rotation: number, 
-  scaleX: number, 
-  scaleY: number
-): Point => {
-  // Translate to origin
-  const x = point.x - centerX;
-  const y = point.y - centerY;
-  
-  // Rotate
-  const radians = (rotation * Math.PI) / 180;
-  const cos = Math.cos(radians);
-  const sin = Math.sin(radians);
-  
-  const xRot = x * cos - y * sin;
-  const yRot = x * sin + y * cos;
-  
-  // Scale
-  const xScaled = xRot * scaleX;
-  const yScaled = yRot * scaleY;
-  
-  // Translate back
-  return {
-    x: xScaled + centerX,
-    y: yScaled + centerY
-  };
-};
-
-// Apply transformation to all control points
-export const transformControlPoints = (
-  points: ControlPoint[],
-  centerX: number,
-  centerY: number,
-  rotation: number,
-  scaleX: number,
-  scaleY: number
-): ControlPoint[] => {
-  return points.map(point => {
-    const transformedPoint = transformPoint(point, centerX, centerY, rotation, scaleX, scaleY);
-    const transformedHandleIn = transformPoint(point.handleIn, centerX, centerY, rotation, scaleX, scaleY);
-    const transformedHandleOut = transformPoint(point.handleOut, centerX, centerY, rotation, scaleX, scaleY);
-    
-    return {
-      ...point,
-      x: transformedPoint.x,
-      y: transformedPoint.y,
-      handleIn: transformedHandleIn,
-      handleOut: transformedHandleOut
-    };
-  });
-};
