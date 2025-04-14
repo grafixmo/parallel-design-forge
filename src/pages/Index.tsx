@@ -1,18 +1,16 @@
+
 import { useState, useEffect } from 'react';
 import { 
   ControlPoint, 
-  CurveStyle, 
   DesignData, 
-  TransformSettings,
   SavedDesign,
-  CurveConfig,
   BezierObject
 } from '@/types/bezier';
 import BezierCanvas from '@/components/BezierCanvas';
 import Header from '@/components/Header';
 import LibraryPanel from '@/components/LibraryPanel';
 import { generateId } from '@/utils/bezierUtils';
-import { exportAsSVG, downloadSVG } from '@/utils/svgExporter';
+import { exportAsSVG, downloadSVG, createDesignSVG } from '@/utils/svgExporter';
 import { saveDesign, saveTemplate, Template } from '@/services/supabaseClient';
 import { useToast } from '@/hooks/use-toast';
 import { useBezierObjects } from '@/hooks/useBezierObjects';
@@ -151,31 +149,8 @@ const Index = () => {
       return;
     }
     
-    // Prepare data for export
-    const designData: DesignData = {
-      objects: objects,
-      backgroundImage: backgroundImage ? {
-        url: backgroundImage,
-        opacity: backgroundOpacity
-      } : undefined
-    };
-    
-    // Generate SVG content
-    const svgContent = exportAsSVG(
-      objects.flatMap(obj => obj.points),
-      objects[0]?.curveConfig || {
-        styles: [{ color: '#000000', width: 5 }],
-        parallelCount: 2,
-        spacing: 8
-      }, 
-      objects[0]?.transform || {
-        rotation: 0,
-        scaleX: 1.0,
-        scaleY: 1.0
-      },
-      canvasWidth,
-      canvasHeight
-    );
+    // Generate SVG content using all objects
+    const svgContent = createDesignSVG(objects, canvasWidth, canvasHeight);
     
     downloadSVG(svgContent, 'soutache-design.svg');
     
@@ -210,59 +185,44 @@ const Index = () => {
       } : undefined
     };
     
-    // Generate SVG content for thumbnail
-    const svgContent = exportAsSVG(
-      objects.flatMap(obj => obj.points),
-      objects[0]?.curveConfig || {
-        styles: [{ color: '#000000', width: 5 }],
-        parallelCount: 2,
-        spacing: 8
-      }, 
-      objects[0]?.transform || {
-        rotation: 0,
-        scaleX: 1.0,
-        scaleY: 1.0
-      },
-      canvasWidth,
-      canvasHeight
-    );
+    // Generate SVG content for thumbnail and storage
+    const svgContent = createDesignSVG(objects, canvasWidth, canvasHeight);
     
     // Generate thumbnail from SVG
     let thumbnail;
     try {
       thumbnail = await generateThumbnailFromSVG(svgContent);
+      console.log("Thumbnail generated successfully");
     } catch (err) {
       console.error('Error generating thumbnail:', err);
       // Continue without thumbnail if generation fails
     }
     
-    // Save design to the designs table (legacy)
-    const design: SavedDesign = {
-      name,
-      category,
-      shapes_data: JSON.stringify(designData)
-    };
-    
     try {
-      const { data, error } = await saveDesign(design);
-      
-      if (error) {
-        throw new Error(error.message);
-      }
-      
-      // Also save as a template to the new templates table
+      // Save as a template to the templates table
       const template: Template = {
         name,
         category,
         design_data: JSON.stringify(designData),
         description: description || '',
         likes: 0,
-        thumbnail: thumbnail || ''
+        thumbnail: thumbnail || '',
+        svg_content: svgContent // Store the raw SVG content
       };
+      
+      console.log("Saving template with data:", {
+        name,
+        category,
+        description,
+        hasDesignData: !!template.design_data,
+        hasThumbnail: !!thumbnail,
+        hasSvgContent: !!svgContent
+      });
       
       const templateResult = await saveTemplate(template);
       
       if (templateResult.error) {
+        console.error("Supabase error details:", templateResult.error);
         throw new Error(templateResult.error.message);
       }
       

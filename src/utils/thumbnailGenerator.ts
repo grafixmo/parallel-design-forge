@@ -58,4 +58,3 @@ export const generateThumbnailFromSVG = async (svgContent: string): Promise<stri
 export const getTemplateCategories = (): string[] => {
   return ['Earrings', 'Rings', 'Necklaces', 'Prototypes', 'Paper'];
 };
-

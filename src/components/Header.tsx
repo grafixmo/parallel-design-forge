@@ -148,14 +148,14 @@ const Header: React.FC<HeaderProps> = ({
         
         <Dialog open={saveDialogOpen} onOpenChange={setSaveDialogOpen}>
           <DialogTrigger asChild>
-            <Button>
+            <Button onClick={handleSaveClick}>
               <Save className="h-4 w-4 mr-2" />
               Save Design
             </Button>
           </DialogTrigger>
           <DialogContent className="sm:max-w-[425px]">
             <DialogHeader>
-              <DialogTitle>Save Design</DialogTitle>
+              <DialogTitle className="text-xl">Save Design</DialogTitle>
               <DialogDescription>
                 Save your design to the database for future use.
               </DialogDescription>

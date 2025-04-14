@@ -45,6 +45,7 @@ export interface Template {
   description?: string;
   likes?: number;
   thumbnail?: string;
+  svg_content?: string;  // Added field for raw SVG content
   created_at?: string;
 }
 
