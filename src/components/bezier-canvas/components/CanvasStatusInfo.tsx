@@ -7,6 +7,7 @@ interface CanvasStatusInfoProps {
   zoom?: number;
   isDrawingMode?: boolean;
   objectsCount?: number;
+  parallelCurves?: number;
 }
 
 export const CanvasStatusInfo: React.FC<CanvasStatusInfoProps> = ({ 
@@ -14,7 +15,8 @@ export const CanvasStatusInfo: React.FC<CanvasStatusInfoProps> = ({
   height,
   zoom = 1,
   isDrawingMode = true,
-  objectsCount = 0
+  objectsCount = 0,
+  parallelCurves = 0
 }) => {
   return (
     <div className="absolute bottom-2 left-2 text-xs text-gray-600 bg-white bg-opacity-70 p-1 rounded">
@@ -22,6 +24,7 @@ export const CanvasStatusInfo: React.FC<CanvasStatusInfoProps> = ({
       <div>Zoom: {Math.round(zoom * 100)}%</div>
       <div>Mode: {isDrawingMode ? 'Drawing' : 'Selection'}</div>
       <div>Objects: {objectsCount}</div>
+      {parallelCurves > 0 && <div>Parallel curves: {parallelCurves}</div>}
     </div>
   );
 };

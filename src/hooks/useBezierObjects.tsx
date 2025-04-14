@@ -1,4 +1,3 @@
-
 import { useState, useCallback } from 'react';
 import { 
   BezierObject, 
@@ -13,13 +12,10 @@ import { toast } from '@/hooks/use-toast';
 
 const DEFAULT_CURVE_CONFIG: CurveConfig = {
   styles: [
-    { color: '#000000', width: 5 },
-    { color: '#ff0000', width: 5 },
-    { color: '#0000ff', width: 5 },
-    { color: '#00ff00', width: 5 }
+    { color: '#000000', width: 2 }
   ],
-  parallelCount: 2,
-  spacing: 8
+  parallelCount: 0,
+  spacing: 0
 };
 
 const DEFAULT_TRANSFORM: TransformSettings = {
@@ -309,4 +305,3 @@ export function useBezierObjects() {
     saveCurrentState
   };
 }
-

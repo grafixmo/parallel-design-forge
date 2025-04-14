@@ -94,8 +94,8 @@ export const parseSVGContent = (svgContent: string): SVGImportResult => {
     const objects: BezierObject[] = pathsData.map((pathData, index) => {
       const points = convertPathToPoints(pathData.path, pathData.transform);
       
-      // Create curve config that respects original styling
-      // Use parallel curves only if specifically requested
+      // Create curve config that preserves original styling
+      // Use exactly one curve with the original stroke properties
       const curveConfig: CurveConfig = {
         styles: [
           { 
@@ -103,7 +103,7 @@ export const parseSVGContent = (svgContent: string): SVGImportResult => {
             width: pathData.width 
           }
         ],
-        parallelCount: 0, // No parallel curves by default
+        parallelCount: 0, // No parallel curves for imported SVGs
         spacing: 0
       };
       
