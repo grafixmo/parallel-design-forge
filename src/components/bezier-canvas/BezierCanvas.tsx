@@ -6,6 +6,7 @@ import { useCanvasSetup } from './hooks/useCanvasSetup';
 import { CanvasToolbar } from './components/CanvasToolbar';
 import { CanvasInstructions } from './components/CanvasInstructions';
 import { CanvasStatusInfo } from './components/CanvasStatusInfo';
+import { BezierObjectRenderer } from '@/components/BezierObject';
 
 interface BezierCanvasProps {
   width: number;
@@ -54,6 +55,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     setCurrentDrawingObjectId,
     backgroundImageObj,
     screenToCanvas,
+    canvasToScreen,
     renderCanvas,
     canvasDimensions
   } = useCanvasSetup({
@@ -67,6 +69,81 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     objects,
     selectedObjectIds
   });
+  
+  // Draw all bezier objects on the canvas
+  const renderObjects = useCallback((ctx: CanvasRenderingContext2D) => {
+    // Adjust for high DPI screens
+    const dpr = window.devicePixelRatio || 1;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    // Apply zoom and pan transformations
+    ctx.save();
+    ctx.translate(panOffset.x, panOffset.y);
+    ctx.scale(zoom, zoom);
+    
+    // Draw all bezier objects
+    for (const object of objects) {
+      const isObjectSelected = selectedObjectIds.includes(object.id);
+      const isDrawingObject = object.id === currentDrawingObjectId;
+      
+      const bezierObject = new BezierObjectRenderer({
+        object,
+        isSelected: isObjectSelected || isDrawingObject,
+        zoom,
+        selectedPoint: null, // We'll handle this in the handlers
+        onPointSelect: () => {}, // We'll handle this in the handlers
+        onPointMove: () => {}, // This is handled by the parent component
+        onSelect: onObjectSelect
+      });
+      
+      bezierObject.renderObject(ctx);
+      
+      // Add special visual indicator for the object being drawn
+      if (isDrawingObject && object.points.length > 0) {
+        // Draw a hint line from the last point to the mouse position
+        const lastPoint = object.points[object.points.length - 1];
+        
+        ctx.strokeStyle = 'rgba(46, 204, 113, 0.6)';
+        ctx.lineWidth = 2 / zoom;
+        ctx.setLineDash([5 / zoom, 5 / zoom]);
+        
+        ctx.beginPath();
+        ctx.moveTo(lastPoint.x, lastPoint.y);
+        ctx.lineTo(mousePos.x, mousePos.y);
+        ctx.stroke();
+        
+        ctx.setLineDash([]);
+        
+        // Text hint to show number of points in the drawing
+        ctx.fillStyle = 'rgba(46, 204, 113, 0.8)';
+        ctx.font = `${12 / zoom}px Arial`;
+        ctx.fillText(
+          `Drawing: ${object.points.length} point${object.points.length === 1 ? '' : 's'} (need at least 2)`, 
+          lastPoint.x + 10 / zoom, 
+          lastPoint.y - 10 / zoom
+        );
+      }
+    }
+    
+    ctx.restore();
+  }, [objects, selectedObjectIds, currentDrawingObjectId, mousePos, zoom, panOffset, onObjectSelect]);
+  
+  // Enhanced render method with object rendering included
+  const renderCanvasWithObjects = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    // First render the basic canvas (grid, background, etc.)
+    renderCanvas();
+    
+    // Then render the objects on top
+    renderObjects(ctx);
+    
+  }, [renderCanvas, renderObjects]);
   
   const {
     handleMouseDown,
@@ -96,7 +173,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     setCurrentDrawingObjectId,
     setMousePos,
     screenToCanvas,
-    renderCanvas
+    renderCanvas: renderCanvasWithObjects  // Use enhanced render method
   });
   
   // Log key props for debugging - limiting to important changes only
@@ -107,9 +184,9 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
 
   // Request animation frame for continuous rendering with performance optimization
   const animate = useCallback(() => {
-    renderCanvas();
+    renderCanvasWithObjects();
     animationFrameRef.current = window.requestAnimationFrame(animate);
-  }, [renderCanvas]);
+  }, [renderCanvasWithObjects]);
   
   useEffect(() => {
     // Start the animation loop

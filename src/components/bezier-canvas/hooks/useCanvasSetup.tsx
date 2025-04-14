@@ -1,8 +1,11 @@
 
-import { useState, useEffect, RefObject, useCallback, useLayoutEffect } from 'react';
-import { Point, BezierObject } from '@/types/bezier';
+import { useState, useEffect, RefObject, useCallback } from 'react';
+import { 
+  Point, 
+  BezierObject,
+  SelectedPoint
+} from '@/types/bezier';
 import { toast } from '@/hooks/use-toast';
-import { BezierObjectRenderer } from '@/components/BezierObject';
 
 interface CanvasSetupProps {
   canvasRef: RefObject<HTMLCanvasElement>;
@@ -27,21 +30,22 @@ export const useCanvasSetup = ({
   objects,
   selectedObjectIds
 }: CanvasSetupProps) => {
-  // State for canvas setup and configuration
+  // Canvas state
   const [mousePos, setMousePos] = useState<Point>({ x: 0, y: 0 });
   const [instructionMessage, setInstructionMessage] = useState<string>(
     'Click to place first control point (ESC to cancel)'
   );
   const [backgroundImageObj, setBackgroundImageObj] = useState<HTMLImageElement | null>(null);
+  
+  // Zoom and pan state
   const [zoom, setZoom] = useState<number>(1);
   const [panOffset, setPanOffset] = useState<Point>({ x: 0, y: 0 });
+  
+  // Drawing state
   const [currentDrawingObjectId, setCurrentDrawingObjectId] = useState<string | null>(null);
-  const [isSelecting, setIsSelecting] = useState(false);
-  const [selectionRect, setSelectionRect] = useState<any | null>(null);
-  const [canvasDimensions, setCanvasDimensions] = useState<{width: number, height: number}>({
-    width: width || 800,
-    height: height || 600
-  });
+  
+  // Canvas dimensions
+  const [canvasDimensions, setCanvasDimensions] = useState({ width, height });
   
   // Initialize background image if URL is provided
   useEffect(() => {
@@ -50,42 +54,21 @@ export const useCanvasSetup = ({
       img.src = backgroundImage;
       img.onload = () => {
         setBackgroundImageObj(img);
+        console.log("Background image loaded:", img.width, "x", img.height);
+      };
+      img.onerror = (err) => {
+        console.error("Error loading background image:", err);
+        toast({
+          title: "Image Error",
+          description: "Failed to load background image",
+          variant: "destructive"
+        });
       };
     } else {
       setBackgroundImageObj(null);
     }
   }, [backgroundImage]);
 
-  // Set canvas dimensions only when width/height props or wrapper dimensions change
-  useLayoutEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    
-    let newWidth = width;
-    let newHeight = height;
-    
-    // If width/height not provided, fallback to container size
-    if (!width || !height) {
-      const container = wrapperRef.current;
-      if (container) {
-        newWidth = container.clientWidth || 800;
-        newHeight = container.clientHeight || 600;
-      } else {
-        // Last resort fallback
-        newWidth = 800;
-        newHeight = 600;
-      }
-    }
-    
-    // Only update canvas if dimensions have changed
-    if (newWidth !== canvasDimensions.width || newHeight !== canvasDimensions.height) {
-      console.log(`Canvas dimensions updated to ${newWidth}x${newHeight}`);
-      canvas.width = newWidth;
-      canvas.height = newHeight;
-      setCanvasDimensions({ width: newWidth, height: newHeight });
-    }
-  }, [width, height, canvasRef, wrapperRef]);
-  
   // Update instruction message based on current state
   useEffect(() => {
     if (isDrawingMode) {
@@ -97,19 +80,92 @@ export const useCanvasSetup = ({
         setInstructionMessage('Click to place first control point (ESC to cancel)');
       }
     } else {
-      setInstructionMessage('Click to select objects or Shift+Drag to select multiple objects');
+      if (selectedObjectIds.length > 0) {
+        setInstructionMessage('Drag selected objects or their points to move them, press DEL to delete');
+      } else {
+        setInstructionMessage('Click to select objects or Shift+Drag to select multiple objects');
+      }
     }
-  }, [isDrawingMode, currentDrawingObjectId]);
+  }, [isDrawingMode, currentDrawingObjectId, selectedObjectIds.length]);
   
-  // Convert screen coordinates to canvas coordinates (accounting for zoom)
-  const screenToCanvas = useCallback((x: number, y: number): Point => {
+  // Make sure canvas size is properly set
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    // Calculate dimensions based on available space or provided props
+    let newWidth = width;
+    let newHeight = height;
+    
+    // If width/height are not explicitly provided, use container dimensions
+    if (!width || !height) {
+      const container = wrapperRef.current;
+      if (container) {
+        newWidth = container.clientWidth || 800;
+        newHeight = container.clientHeight || 600;
+      } else {
+        // Fallback to defaults
+        newWidth = 800;
+        newHeight = 600;
+      }
+    }
+    
+    // Set canvas dimensions with device pixel ratio for high DPI screens
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = newWidth * dpr;
+    canvas.height = newHeight * dpr;
+    
+    // Adjust canvas display size with CSS
+    canvas.style.width = `${newWidth}px`;
+    canvas.style.height = `${newHeight}px`;
+    
+    // Store dimensions for other calculations
+    setCanvasDimensions({ width: newWidth, height: newHeight });
+    
+    console.log(`Canvas dimensions set to ${newWidth}x${newHeight} (DPR: ${dpr})`);
+  }, [width, height, canvasRef, wrapperRef]);
+  
+  // Convert screen coordinates to canvas coordinates (accounting for zoom and pan)
+  const screenToCanvas = useCallback((screenX: number, screenY: number): Point => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    
+    // Adjust for high DPI screens
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    
+    // Calculate the scale factor between CSS pixels and canvas pixels
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    
+    // Convert to canvas coordinates (accounting for pan and zoom)
     return {
-      x: (x - panOffset.x) / zoom,
-      y: (y - panOffset.y) / zoom
+      x: ((screenX - panOffset.x) / zoom) * scaleX / dpr,
+      y: ((screenY - panOffset.y) / zoom) * scaleY / dpr
     };
-  }, [zoom, panOffset]);
+  }, [canvasRef, zoom, panOffset]);
   
-  // Optimize the render function with throttling to prevent excessive repaints
+  // Convert canvas coordinates to screen coordinates
+  const canvasToScreen = useCallback((canvasX: number, canvasY: number): Point => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    
+    // Adjust for high DPI screens
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    
+    // Calculate the scale factor between canvas pixels and CSS pixels
+    const scaleX = rect.width / canvas.width;
+    const scaleY = rect.height / canvas.height;
+    
+    // Convert to screen coordinates
+    return {
+      x: canvasX * scaleX * dpr * zoom + panOffset.x,
+      y: canvasY * scaleY * dpr * zoom + panOffset.y
+    };
+  }, [canvasRef, zoom, panOffset]);
+  
+  // Render the canvas
   const renderCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -117,183 +173,117 @@ export const useCanvasSetup = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     
-    try {
-      // Clear canvas
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // Adjust for high DPI screens
+    const dpr = window.devicePixelRatio || 1;
+    ctx.resetTransform();
+    ctx.scale(dpr, dpr);
+    
+    // Clear canvas with white background
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, 0, canvas.width / dpr, canvas.height / dpr);
+    
+    // Apply zoom and pan transformations
+    ctx.save();
+    ctx.translate(panOffset.x, panOffset.y);
+    ctx.scale(zoom, zoom);
+    
+    // Draw background image if available
+    if (backgroundImageObj) {
+      ctx.globalAlpha = backgroundOpacity;
       
-      // Apply zoom and pan transformations
-      ctx.save();
-      ctx.translate(panOffset.x, panOffset.y);
-      ctx.scale(zoom, zoom);
+      // Calculate scaling to fit the canvas while maintaining aspect ratio
+      const scale = Math.min(
+        (canvas.width / dpr) / backgroundImageObj.width,
+        (canvas.height / dpr) / backgroundImageObj.height
+      ) / zoom; // Adjust for zoom
       
-      // Draw background image if available
-      if (backgroundImageObj) {
-        ctx.globalAlpha = backgroundOpacity;
-        
-        // Calculate scaling to fit the canvas while maintaining aspect ratio
-        const scale = Math.min(
-          canvas.width / backgroundImageObj.width,
-          canvas.height / backgroundImageObj.height
-        ) / zoom; // Adjust for zoom
-        
-        const scaledWidth = backgroundImageObj.width * scale;
-        const scaledHeight = backgroundImageObj.height * scale;
-        
-        const x = (canvas.width / zoom - scaledWidth) / 2;
-        const y = (canvas.height / zoom - scaledHeight) / 2;
-        
-        ctx.drawImage(backgroundImageObj, x, y, scaledWidth, scaledHeight);
-        ctx.globalAlpha = 1.0;
-      }
+      const scaledWidth = backgroundImageObj.width * scale;
+      const scaledHeight = backgroundImageObj.height * scale;
       
-      // Draw grid
-      ctx.strokeStyle = '#f0f0f0';
-      ctx.lineWidth = 1 / zoom; // Adjust line width for zoom
+      const x = ((canvas.width / dpr) / zoom - scaledWidth) / 2;
+      const y = ((canvas.height / dpr) / zoom - scaledHeight) / 2;
       
-      const gridSize = 20;
-      const visibleWidth = canvas.width / zoom;
-      const visibleHeight = canvas.height / zoom;
-      const offsetX = -panOffset.x / zoom;
-      const offsetY = -panOffset.y / zoom;
-      
-      // Calculate grid bounds
-      const startX = Math.floor(offsetX / gridSize) * gridSize;
-      const startY = Math.floor(offsetY / gridSize) * gridSize;
-      const endX = offsetX + visibleWidth;
-      const endY = offsetY + visibleHeight;
-      
-      for (let x = startX; x < endX; x += gridSize) {
-        ctx.beginPath();
-        ctx.moveTo(x, offsetY);
-        ctx.lineTo(x, offsetY + visibleHeight);
-        ctx.stroke();
-      }
-      
-      for (let y = startY; y < endY; y += gridSize) {
-        ctx.beginPath();
-        ctx.moveTo(offsetX, y);
-        ctx.lineTo(offsetX + visibleWidth, y);
-        ctx.stroke();
-      }
-      
-      // Draw all bezier objects
-      if (objects.length > 0) {
-        for (const object of objects) {
-          try {
-            const isObjectSelected = selectedObjectIds.includes(object.id);
-            const isDrawingObject = object.id === currentDrawingObjectId;
-            
-            const bezierObject = new BezierObjectRenderer({
-              object,
-              isSelected: isObjectSelected || isDrawingObject,
-              zoom,
-              selectedPoint: null, // This will be passed from the handlers
-              onPointSelect: () => {}, // This will be handled by the handlers
-              onPointMove: () => {}, // This will be handled by the handlers
-              onSelect: () => {} // This will be handled by the handlers
-            });
-            
-            bezierObject.renderObject(ctx);
-            
-            // Add special visual indicator for the object being drawn
-            if (isDrawingObject && object.points.length > 0) {
-              // Draw a hint line from the last point to the mouse position
-              const lastPoint = object.points[object.points.length - 1];
-              
-              ctx.strokeStyle = 'rgba(46, 204, 113, 0.6)';
-              ctx.lineWidth = 2 / zoom;
-              ctx.setLineDash([5 / zoom, 5 / zoom]);
-              
-              ctx.beginPath();
-              ctx.moveTo(lastPoint.x, lastPoint.y);
-              ctx.lineTo(mousePos.x, mousePos.y);
-              ctx.stroke();
-              
-              ctx.setLineDash([]);
-              
-              // Text hint to show number of points in the drawing
-              ctx.fillStyle = 'rgba(46, 204, 113, 0.8)';
-              ctx.font = `${12 / zoom}px Arial`;
-              ctx.fillText(
-                `Drawing: ${object.points.length} point${object.points.length === 1 ? '' : 's'} (need at least 2)`, 
-                lastPoint.x + 10 / zoom, 
-                lastPoint.y - 10 / zoom
-              );
-            }
-          } catch (error) {
-            console.error('Error rendering object:', error, object);
-          }
-        }
-      }
-      
-      // Draw selection rectangle if selecting
-      if (isSelecting && selectionRect) {
-        ctx.strokeStyle = 'rgba(52, 152, 219, 0.8)';
-        ctx.fillStyle = 'rgba(52, 152, 219, 0.2)';
-        ctx.lineWidth = 2 / zoom; // Adjust for zoom
-        
-        ctx.beginPath();
-        ctx.rect(
-          selectionRect.startX,
-          selectionRect.startY,
-          selectionRect.width,
-          selectionRect.height
-        );
-        ctx.fill();
-        ctx.stroke();
-      }
-      
-      // Draw zoom level indicator
-      ctx.restore(); // Restore original context without zoom
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-      ctx.font = '12px Arial';
-      ctx.fillText(`Zoom: ${Math.round(zoom * 100)}%`, 10, 20);
-      
-      // Show current mode indicator
-      ctx.fillStyle = isDrawingMode ? 'rgba(46, 204, 113, 0.6)' : 'rgba(231, 76, 60, 0.6)';
-      ctx.font = '12px Arial';
-      ctx.fillText(`Mode: ${isDrawingMode ? 'Drawing' : 'Selection'}`, 10, 40);
-      
-      // Show drawing status if applicable
-      if (currentDrawingObjectId) {
-        const drawingObject = objects.find(obj => obj.id === currentDrawingObjectId);
-        if (drawingObject) {
-          ctx.fillStyle = 'rgba(46, 204, 113, 0.6)';
-          ctx.font = '12px Arial';
-          ctx.fillText(
-            `Drawing object: ${drawingObject.points.length} point${drawingObject.points.length === 1 ? '' : 's'}`, 
-            10, 60
-          );
-        }
-      }
-      
-      // Debug coordinates
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-      ctx.font = '12px Arial';
-      ctx.fillText(`Mouse: ${Math.round(mousePos.x)},${Math.round(mousePos.y)}`, 10, canvas.height - 10);
-    } catch (error) {
-      console.error('Error during canvas rendering:', error);
+      ctx.drawImage(backgroundImageObj, x, y, scaledWidth, scaledHeight);
+      ctx.globalAlpha = 1.0;
     }
+    
+    // Draw grid
+    ctx.strokeStyle = '#f0f0f0';
+    ctx.lineWidth = 1 / zoom; // Adjust line width for zoom
+    
+    const gridSize = 20;
+    const visibleWidth = (canvas.width / dpr) / zoom;
+    const visibleHeight = (canvas.height / dpr) / zoom;
+    const offsetX = -panOffset.x / zoom;
+    const offsetY = -panOffset.y / zoom;
+    
+    // Calculate grid bounds
+    const startX = Math.floor(offsetX / gridSize) * gridSize;
+    const startY = Math.floor(offsetY / gridSize) * gridSize;
+    const endX = offsetX + visibleWidth;
+    const endY = offsetY + visibleHeight;
+    
+    for (let x = startX; x < endX; x += gridSize) {
+      ctx.beginPath();
+      ctx.moveTo(x, offsetY);
+      ctx.lineTo(x, offsetY + visibleHeight);
+      ctx.stroke();
+    }
+    
+    for (let y = startY; y < endY; y += gridSize) {
+      ctx.beginPath();
+      ctx.moveTo(offsetX, y);
+      ctx.lineTo(offsetX + visibleWidth, y);
+      ctx.stroke();
+    }
+    
+    // Draw coordinate axes for debugging
+    ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
+    ctx.lineWidth = 2 / zoom;
+    ctx.beginPath();
+    ctx.moveTo(0, -1000);
+    ctx.lineTo(0, 1000);
+    ctx.stroke();
+    
+    ctx.strokeStyle = 'rgba(0, 0, 255, 0.5)';
+    ctx.beginPath();
+    ctx.moveTo(-1000, 0);
+    ctx.lineTo(1000, 0);
+    ctx.stroke();
+    
+    // Add axes labels for debugging
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    ctx.font = `${12 / zoom}px Arial`;
+    ctx.fillText('X', 50 / zoom, 10 / zoom);
+    ctx.fillText('Y', 10 / zoom, 50 / zoom);
+    ctx.fillText('0', 5 / zoom, 15 / zoom);
+    
+    // Restore context
+    ctx.restore();
+    
+    // Draw debug info
+    // Draw zoom level indicator
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.font = '12px Arial';
+    ctx.fillText(`Zoom: ${Math.round(zoom * 100)}%`, 10, 20);
+    ctx.fillText(`Mouse: ${Math.round(mousePos.x)},${Math.round(mousePos.y)}`, 10, 40);
+    ctx.fillText(`Canvas: ${canvas.width / dpr}x${canvas.height / dpr}`, 10, 60);
+    ctx.fillText(`Mode: ${isDrawingMode ? 'Drawing' : 'Selection'}`, 10, 80);
+    
   }, [
-    canvasRef, 
-    zoom, 
-    panOffset, 
-    backgroundImageObj, 
+    canvasRef,
+    backgroundImageObj,
     backgroundOpacity,
+    zoom,
+    panOffset,
     mousePos,
-    isDrawingMode,
-    currentDrawingObjectId,
-    objects,
-    selectedObjectIds,
-    isSelecting,
-    selectionRect
+    isDrawingMode
   ]);
   
   return {
     mousePos,
     setMousePos,
     instructionMessage,
-    backgroundImageObj,
     zoom,
     setZoom,
     panOffset,
@@ -301,11 +291,9 @@ export const useCanvasSetup = ({
     isDrawingMode,
     currentDrawingObjectId,
     setCurrentDrawingObjectId,
-    isSelecting,
-    setIsSelecting,
-    selectionRect,
-    setSelectionRect,
+    backgroundImageObj,
     screenToCanvas,
+    canvasToScreen,
     renderCanvas,
     canvasDimensions
   };

@@ -7,7 +7,7 @@ interface CanvasInstructionsProps {
 
 export const CanvasInstructions: React.FC<CanvasInstructionsProps> = ({ message }) => {
   return (
-    <div className="absolute bottom-2 left-2 text-sm text-gray-700 bg-white/80 px-2 py-1 rounded shadow">
+    <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-white/80 backdrop-blur-sm px-4 py-2 rounded-lg shadow text-sm font-medium text-gray-800">
       {message}
     </div>
   );

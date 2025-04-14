@@ -1,106 +1,245 @@
 
-import React, { useRef, useEffect } from 'react';
+import React from 'react';
 import { 
-  BezierObject as BezierObjectType, 
+  BezierObject, 
   ControlPoint, 
-  Point,
-  ControlPointType, 
-  SelectedPoint 
+  Point, 
+  ControlPointType,
+  SelectedPoint
 } from '@/types/bezier';
 import { 
-  isPointNear, 
-  calculateParallelPoint 
+  calculateBezierPoint, 
+  calculateDistance, 
+  generatePathData,
+  isPointNear
 } from '@/utils/bezierUtils';
 
-interface BezierObjectProps {
-  object: BezierObjectType;
+interface BezierObjectRendererProps {
+  object: BezierObject;
   isSelected: boolean;
   zoom: number;
   selectedPoint: SelectedPoint | null;
-  onPointSelect: (point: SelectedPoint) => void;
-  onPointMove: (objectId: string, points: ControlPoint[]) => void;
+  onPointSelect: (point: SelectedPoint | null) => void;
+  onPointMove: (objectId: string, pointIndex: number, type: ControlPointType, position: Point) => void;
   onSelect: (objectId: string, multiSelect: boolean) => void;
 }
 
-// Create a utility class that can be used by the component
 export class BezierObjectRenderer {
-  object: BezierObjectType;
-  isSelected: boolean;
-  zoom: number;
-  selectedPoint: SelectedPoint | null;
-  onPointSelect: (point: SelectedPoint) => void;
-  onPointMove: (objectId: string, points: ControlPoint[]) => void;
-  onSelect: (objectId: string, multiSelect: boolean) => void;
-  
-  POINT_RADIUS = 8;
-  HANDLE_RADIUS = 6;
-  POINT_COLOR = '#3498db'; // Blue
-  CONTROL_POINT_COLOR = '#2ecc71'; // Green
-  SELECTED_COLOR = '#e74c3c'; // Red
-  HANDLE_LINE_COLOR = 'rgba(52, 152, 219, 0.5)';
-  
-  constructor(props: BezierObjectProps) {
-    this.object = props.object;
-    this.isSelected = props.isSelected;
-    this.zoom = props.zoom;
-    this.selectedPoint = props.selectedPoint;
-    this.onPointSelect = props.onPointSelect;
-    this.onPointMove = props.onPointMove;
-    this.onSelect = props.onSelect;
+  private object: BezierObject;
+  private isSelected: boolean;
+  private zoom: number;
+  private selectedPoint: SelectedPoint | null;
+  private onPointSelect: (point: SelectedPoint | null) => void;
+  private onPointMove: (objectId: string, pointIndex: number, type: ControlPointType, position: Point) => void;
+  private onSelect: (objectId: string, multiSelect: boolean) => void;
+
+  constructor({
+    object,
+    isSelected,
+    zoom,
+    selectedPoint,
+    onPointSelect,
+    onPointMove,
+    onSelect
+  }: BezierObjectRendererProps) {
+    this.object = object;
+    this.isSelected = isSelected;
+    this.zoom = zoom;
+    this.selectedPoint = selectedPoint;
+    this.onPointSelect = onPointSelect;
+    this.onPointMove = onPointMove;
+    this.onSelect = onSelect;
+  }
+
+  // Render the object to the canvas
+  renderObject(ctx: CanvasRenderingContext2D): void {
+    const { object, isSelected } = this;
+    
+    if (object.points.length < 2) {
+      // Render just the points if not enough to form a curve
+      this.renderPoints(ctx);
+      return;
+    }
+    
+    const { curveConfig, transform } = object;
+    
+    // Apply transformation
+    ctx.save();
+    
+    // Calculate object center for transformations
+    const center = this.calculateObjectCenter();
+    
+    // Translate to center, apply transforms, then translate back
+    ctx.translate(center.x, center.y);
+    ctx.rotate((transform.rotation * Math.PI) / 180);
+    ctx.scale(transform.scaleX, transform.scaleY);
+    ctx.translate(-center.x, -center.y);
+    
+    // Draw the main curve with all its styles
+    curveConfig.styles.forEach((style, styleIndex) => {
+      ctx.strokeStyle = style.color;
+      ctx.lineWidth = style.width / this.zoom;
+      
+      if (curveConfig.parallelCount === 0) {
+        // Draw a single path
+        ctx.beginPath();
+        this.drawBezierPath(ctx, 0);
+        ctx.stroke();
+      } else {
+        // Draw parallel paths
+        const parallelCount = curveConfig.parallelCount;
+        const spacing = curveConfig.spacing;
+        
+        for (let i = -Math.floor(parallelCount / 2); i <= Math.floor(parallelCount / 2); i++) {
+          ctx.beginPath();
+          this.drawBezierPath(ctx, i * spacing);
+          ctx.stroke();
+        }
+      }
+    });
+    
+    // Draw object label if selected
+    if (isSelected) {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+      ctx.font = `${12 / this.zoom}px Arial`;
+      ctx.fillText(object.name, center.x, center.y - 20 / this.zoom);
+    }
+    
+    // Draw the control points and handles if selected
+    if (isSelected) {
+      this.renderPoints(ctx);
+    }
+    
+    ctx.restore();
   }
   
-  // Check if point is within object to know if we should select
-  isPointInObject(x: number, y: number, radius: number): boolean {
-    const points = this.object.points;
+  // Draw the bezier path
+  private drawBezierPath(ctx: CanvasRenderingContext2D, offset: number): void {
+    const { points } = this.object;
+    if (points.length < 2) return;
     
-    // First check all control points
+    // Move to first point
+    ctx.moveTo(points[0].x, points[0].y);
+    
+    // Draw curve segments
+    for (let i = 0; i < points.length - 1; i++) {
+      const current = points[i];
+      const next = points[i + 1];
+      
+      ctx.bezierCurveTo(
+        current.handleOut.x,
+        current.handleOut.y,
+        next.handleIn.x,
+        next.handleIn.y,
+        next.x,
+        next.y
+      );
+    }
+  }
+  
+  // Render control points and handles
+  private renderPoints(ctx: CanvasRenderingContext2D): void {
+    const { points } = this.object;
+    const { selectedPoint } = this;
+    
     for (let i = 0; i < points.length; i++) {
       const point = points[i];
       
-      // Check main point
-      if (isPointNear({ x, y }, point, radius)) {
-        return true;
-      }
+      // Draw handle lines
+      ctx.beginPath();
+      ctx.strokeStyle = 'rgba(150, 150, 150, 0.6)';
+      ctx.lineWidth = 1 / this.zoom;
+      ctx.moveTo(point.handleIn.x, point.handleIn.y);
+      ctx.lineTo(point.x, point.y);
+      ctx.lineTo(point.handleOut.x, point.handleOut.y);
+      ctx.stroke();
       
-      // Check handles
-      if (isPointNear({ x, y }, point.handleIn, radius)) {
-        return true;
-      }
+      // Draw main point
+      const isThisPointSelected = selectedPoint && 
+                                selectedPoint.objectId === this.object.id && 
+                                selectedPoint.pointIndex === i &&
+                                selectedPoint.type === ControlPointType.MAIN;
       
-      if (isPointNear({ x, y }, point.handleOut, radius)) {
-        return true;
-      }
+      ctx.beginPath();
+      ctx.fillStyle = isThisPointSelected ? 'rgba(231, 76, 60, 0.8)' : 'rgba(52, 152, 219, 0.8)';
+      ctx.strokeStyle = 'white';
+      ctx.lineWidth = 1.5 / this.zoom;
+      ctx.arc(point.x, point.y, 6 / this.zoom, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      
+      // Draw point number
+      ctx.fillStyle = 'white';
+      ctx.font = `${10 / this.zoom}px Arial`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText((i + 1).toString(), point.x, point.y);
+      
+      // Draw handle in
+      const isHandleInSelected = selectedPoint && 
+                                selectedPoint.objectId === this.object.id && 
+                                selectedPoint.pointIndex === i &&
+                                selectedPoint.type === ControlPointType.HANDLE_IN;
+      
+      ctx.beginPath();
+      ctx.fillStyle = isHandleInSelected ? 'rgba(231, 76, 60, 0.8)' : 'rgba(46, 204, 113, 0.8)';
+      ctx.arc(point.handleIn.x, point.handleIn.y, 4 / this.zoom, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      
+      // Draw handle out
+      const isHandleOutSelected = selectedPoint && 
+                                selectedPoint.objectId === this.object.id && 
+                                selectedPoint.pointIndex === i &&
+                                selectedPoint.type === ControlPointType.HANDLE_OUT;
+      
+      ctx.beginPath();
+      ctx.fillStyle = isHandleOutSelected ? 'rgba(231, 76, 60, 0.8)' : 'rgba(46, 204, 113, 0.8)';
+      ctx.arc(point.handleOut.x, point.handleOut.y, 4 / this.zoom, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+  }
+  
+  // Calculate the center of the object (average of all points)
+  calculateObjectCenter(): Point {
+    const { points } = this.object;
+    if (points.length === 0) return { x: 0, y: 0 };
+    
+    let sumX = 0;
+    let sumY = 0;
+    
+    for (const point of points) {
+      sumX += point.x;
+      sumY += point.y;
     }
     
-    // If we have at least 2 points, check if point is near the curve
-    if (points.length >= 2) {
-      // Sample points along the curve and check if the clicked point is near any of them
-      const sampleDistance = 5; // Lower means more accuracy but more computation
+    return {
+      x: sumX / points.length,
+      y: sumY / points.length
+    };
+  }
+  
+  // Check if a point is inside or near the object
+  isPointInObject(x: number, y: number, threshold: number): boolean {
+    const { points } = this.object;
+    if (points.length < 2) return false;
+    
+    // For each curve segment
+    for (let i = 0; i < points.length - 1; i++) {
+      const p0 = points[i];
+      const p1 = { x: p0.handleOut.x, y: p0.handleOut.y };
+      const p2 = { x: points[i + 1].handleIn.x, y: points[i + 1].handleIn.y };
+      const p3 = points[i + 1];
       
-      for (let i = 0; i < points.length - 1; i++) {
-        const current = points[i];
-        const next = points[i + 1];
+      // Test multiple points along the curve
+      const steps = 20;
+      for (let t = 0; t <= steps; t++) {
+        const pt = calculateBezierPoint(p0, p1, p2, p3, t / steps);
+        const dist = calculateDistance(pt, { x, y });
         
-        const steps = Math.max(
-          Math.abs(next.x - current.x),
-          Math.abs(next.y - current.y)
-        ) / sampleDistance;
-        
-        for (let t = 0; t <= steps; t++) {
-          const normalizedT = t / steps;
-          
-          const curvePoint = calculateParallelPoint(
-            current,
-            current.handleOut,
-            next.handleIn,
-            next,
-            normalizedT,
-            0 // No offset for the main curve
-          );
-          
-          if (isPointNear({ x, y }, curvePoint, radius + this.object.curveConfig.styles[0].width / 2)) {
-            return true;
-          }
+        if (dist <= threshold) {
+          return true;
         }
       }
     }
@@ -108,239 +247,32 @@ export class BezierObjectRenderer {
     return false;
   }
   
-  // Handle mouse interaction on a control point
+  // Handle interactions with points and return info about what was clicked
   handlePointInteraction(
     x: number, 
     y: number, 
-    radius: number
+    threshold: number
   ): { found: boolean, pointIndex: number, type: ControlPointType } {
-    const points = this.object.points;
+    const { points } = this.object;
     
-    // Check if mouse is near any control point
+    // Check main points first
     for (let i = 0; i < points.length; i++) {
-      const point = points[i];
-      
-      // Check main point
-      if (isPointNear({ x, y }, point, radius)) {
+      if (isPointNear({ x, y }, points[i], threshold)) {
         return { found: true, pointIndex: i, type: ControlPointType.MAIN };
       }
-      
-      // Check handle in
-      if (isPointNear({ x, y }, point.handleIn, radius)) {
+    }
+    
+    // Then check handle points
+    for (let i = 0; i < points.length; i++) {
+      if (isPointNear({ x, y }, points[i].handleIn, threshold)) {
         return { found: true, pointIndex: i, type: ControlPointType.HANDLE_IN };
       }
       
-      // Check handle out
-      if (isPointNear({ x, y }, point.handleOut, radius)) {
+      if (isPointNear({ x, y }, points[i].handleOut, threshold)) {
         return { found: true, pointIndex: i, type: ControlPointType.HANDLE_OUT };
       }
     }
     
     return { found: false, pointIndex: -1, type: ControlPointType.MAIN };
   }
-  
-  // Draw the object in a canvas
-  renderObject(ctx: CanvasRenderingContext2D) {
-    const points = this.object.points;
-    const curveConfig = this.object.curveConfig;
-    const transform = this.object.transform;
-    const objectId = this.object.id;
-    
-    // Save the context state for transformation
-    ctx.save();
-    
-    // Calculate center point for transformation
-    let centerX = 0, centerY = 0;
-    
-    if (points.length > 0) {
-      const sumX = points.reduce((sum, point) => sum + point.x, 0);
-      const sumY = points.reduce((sum, point) => sum + point.y, 0);
-      centerX = sumX / points.length;
-      centerY = sumY / points.length;
-    }
-    
-    // Apply transformations
-    ctx.translate(centerX, centerY);
-    ctx.rotate((transform.rotation * Math.PI) / 180);
-    ctx.scale(transform.scaleX, transform.scaleY);
-    ctx.translate(-centerX, -centerY);
-    
-    // Draw curves if we have enough points
-    if (points.length >= 2) {
-      // Draw parallel curves first (behind main curve)
-      for (let p = 1; p <= curveConfig.parallelCount; p++) {
-        const offset = p * curveConfig.spacing;
-        const color = curveConfig.styles[p] ? curveConfig.styles[p].color : curveConfig.styles[0].color;
-        const width = curveConfig.styles[p] ? curveConfig.styles[p].width : curveConfig.styles[0].width;
-        
-        ctx.strokeStyle = color;
-        ctx.lineWidth = width / this.zoom; // Adjust for zoom
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        
-        ctx.beginPath();
-        
-        // Draw each segment between control points
-        for (let i = 0; i < points.length - 1; i++) {
-          const current = points[i];
-          const next = points[i + 1];
-          
-          // Sample points along the curve and offset them
-          const steps = 30; // More steps = smoother curve
-          
-          for (let t = 0; t <= steps; t++) {
-            const normalizedT = t / steps;
-            
-            const offsetPoint = calculateParallelPoint(
-              current,
-              current.handleOut,
-              next.handleIn,
-              next,
-              normalizedT,
-              offset
-            );
-            
-            if (t === 0) {
-              ctx.moveTo(offsetPoint.x, offsetPoint.y);
-            } else {
-              ctx.lineTo(offsetPoint.x, offsetPoint.y);
-            }
-          }
-        }
-        
-        ctx.stroke();
-      }
-      
-      // Draw main curve
-      const mainStyle = curveConfig.styles[0] || { color: '#000000', width: 5 };
-      ctx.strokeStyle = mainStyle.color;
-      ctx.lineWidth = mainStyle.width / this.zoom; // Adjust for zoom
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      
-      ctx.beginPath();
-      
-      // Draw bezier curve through all points
-      ctx.moveTo(points[0].x, points[0].y);
-      
-      for (let i = 0; i < points.length - 1; i++) {
-        const current = points[i];
-        const next = points[i + 1];
-        
-        ctx.bezierCurveTo(
-          current.handleOut.x, current.handleOut.y,
-          next.handleIn.x, next.handleIn.y,
-          next.x, next.y
-        );
-      }
-      
-      ctx.stroke();
-    }
-    
-    // Restore the context state (remove transformation)
-    ctx.restore();
-    
-    // Only draw handles and points if the object is selected
-    if (this.isSelected) {
-      // Draw handle lines
-      ctx.strokeStyle = this.HANDLE_LINE_COLOR;
-      ctx.lineWidth = 1 / this.zoom; // Adjust for zoom
-      
-      for (let i = 0; i < points.length; i++) {
-        const point = points[i];
-        
-        // Draw handle lines
-        ctx.beginPath();
-        ctx.moveTo(point.x, point.y);
-        ctx.lineTo(point.handleIn.x, point.handleIn.y);
-        ctx.stroke();
-        
-        ctx.beginPath();
-        ctx.moveTo(point.x, point.y);
-        ctx.lineTo(point.handleOut.x, point.handleOut.y);
-        ctx.stroke();
-        
-        // Draw handle points
-        // Handle In
-        ctx.beginPath();
-        ctx.arc(point.handleIn.x, point.handleIn.y, this.HANDLE_RADIUS / this.zoom, 0, Math.PI * 2);
-        if (this.selectedPoint && 
-            this.selectedPoint.objectId === objectId && 
-            this.selectedPoint.pointIndex === i && 
-            this.selectedPoint.type === ControlPointType.HANDLE_IN) {
-          ctx.fillStyle = this.SELECTED_COLOR;
-        } else {
-          ctx.fillStyle = this.CONTROL_POINT_COLOR;
-        }
-        ctx.fill();
-        
-        // Handle Out
-        ctx.beginPath();
-        ctx.arc(point.handleOut.x, point.handleOut.y, this.HANDLE_RADIUS / this.zoom, 0, Math.PI * 2);
-        if (this.selectedPoint && 
-            this.selectedPoint.objectId === objectId && 
-            this.selectedPoint.pointIndex === i && 
-            this.selectedPoint.type === ControlPointType.HANDLE_OUT) {
-          ctx.fillStyle = this.SELECTED_COLOR;
-        } else {
-          ctx.fillStyle = this.CONTROL_POINT_COLOR;
-        }
-        ctx.fill();
-        
-        // Draw main point
-        ctx.beginPath();
-        ctx.arc(point.x, point.y, this.POINT_RADIUS / this.zoom, 0, Math.PI * 2);
-        
-        // Change color if selected
-        if (this.selectedPoint && 
-            this.selectedPoint.objectId === objectId && 
-            this.selectedPoint.pointIndex === i && 
-            this.selectedPoint.type === ControlPointType.MAIN) {
-          ctx.fillStyle = this.SELECTED_COLOR;
-        } else {
-          ctx.fillStyle = this.POINT_COLOR;
-        }
-        
-        ctx.fill();
-      }
-    } else {
-      // When not selected, just highlight with a bounding box
-      if (points.length > 0) {
-        // Find min/max bounds
-        const xValues = points.map(p => p.x);
-        const yValues = points.map(p => p.y);
-        const minX = Math.min(...xValues);
-        const minY = Math.min(...yValues);
-        const maxX = Math.max(...xValues);
-        const maxY = Math.max(...yValues);
-        
-        // Add padding
-        const padding = 10 / this.zoom;
-        
-        // Draw dashed rectangle around object
-        ctx.strokeStyle = 'rgba(52, 152, 219, 0.5)';
-        ctx.lineWidth = 1 / this.zoom;
-        ctx.setLineDash([5 / this.zoom, 3 / this.zoom]);
-        
-        ctx.beginPath();
-        ctx.rect(
-          minX - padding, 
-          minY - padding, 
-          maxX - minX + padding * 2, 
-          maxY - minY + padding * 2
-        );
-        ctx.stroke();
-        ctx.setLineDash([]);
-      }
-    }
-  }
 }
-
-// The actual React component that now properly returns JSX
-const BezierObject: React.FC<BezierObjectProps> = (props) => {
-  // This component doesn't actually render anything visible
-  // It's a utility component that provides methods for the canvas
-  return null;
-};
-
-export default BezierObject;

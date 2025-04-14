@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
   ControlPoint, 
@@ -27,7 +28,7 @@ const Index = () => {
   const [backgroundOpacity, setBackgroundOpacity] = useState(0.3);
   const [backgroundImage, setBackgroundImage] = useState<string | undefined>();
   const [isDrawingMode, setIsDrawingMode] = useState<boolean>(true);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(false); // Added isLoading state
   
   // Use our hooks for Bezier objects
   const {
