@@ -1,4 +1,3 @@
-
 import { useState, useEffect, RefObject, useCallback } from 'react';
 import { 
   Point, 
@@ -260,15 +259,6 @@ export const useCanvasSetup = ({
     
     // Restore context
     ctx.restore();
-    
-    // Draw debug info
-    // Draw zoom level indicator
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-    ctx.font = '12px Arial';
-    ctx.fillText(`Zoom: ${Math.round(zoom * 100)}%`, 10, 20);
-    ctx.fillText(`Mouse: ${Math.round(mousePos.x)},${Math.round(mousePos.y)}`, 10, 40);
-    ctx.fillText(`Canvas: ${canvas.width / dpr}x${canvas.height / dpr}`, 10, 60);
-    ctx.fillText(`Mode: ${isDrawingMode ? 'Drawing' : 'Selection'}`, 10, 80);
     
   }, [
     canvasRef,
