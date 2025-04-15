@@ -900,4 +900,4 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         // Get prev and next points if available
         const closestPoint = closestPointIndex >= 0 ? object.points[closestPointIndex] : null;
         const prevPoint = closestPointIndex > 0 ? object.points[closestPointIndex - 1] : null;
-        const nextPoint = closestPointIndex < object.points.length - 1
+        const nextPoint = closestPointIndex < object.points.length - 1 ? object.
