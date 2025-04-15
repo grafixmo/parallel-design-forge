@@ -1,3 +1,4 @@
+
 import { useState, useCallback, useRef } from 'react';
 import { 
   BezierObject, 
@@ -7,7 +8,7 @@ import {
 } from '@/types/bezier';
 import { generateId } from '@/utils/bezierUtils';
 import { toast } from '@/hooks/use-toast';
-import { loadTemplateAsync } from '@/utils/asyncTemplateLoader';
+import { loadTemplateAsync } from '@/utils/optimizedTemplateLoader';
 
 // Maximum number of undos
 const MAX_HISTORY = 30;

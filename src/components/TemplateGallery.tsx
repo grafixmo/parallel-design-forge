@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   Dialog, 
@@ -671,7 +670,7 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
           <AlertDialogFooter className="flex-col space-y-2 sm:space-y-0 sm:flex-row">
             <AlertDialogCancel 
               onClick={() => {
-                clearAllTimeouts();
+                cleanupAllTimeouts();
                 setLoadDialogOpen(false);
                 setTemplateToLoad(null);
                 setIsLoadingTemplate(false);
