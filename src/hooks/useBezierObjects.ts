@@ -96,54 +96,54 @@ export const useBezierObjects = (): UseBezierObjectsResult => {
     setIsLoading(true);
     setImportProgress(0);
     
-    loadTemplateAsync(
+    // Updated to use the new API format with an options object
+    const cancelLoader = loadTemplateAsync(
       templateData,
-      // Progress callback
-      (progress) => {
-        setImportProgress(progress);
-      },
-      // Success callback
-      (loadedObjects) => {
-        if (loadedObjects.length === 0) {
+      {
+        onProgress: (progress) => {
+          setImportProgress(progress);
+        },
+        onComplete: (loadedObjects) => {
+          if (loadedObjects.length === 0) {
+            toast({
+              title: "Import Warning",
+              description: "No valid objects found in the template.",
+              variant: "destructive"
+            });
+            setIsLoading(false);
+            setImportProgress(0);
+            return;
+          }
+          
+          setObjects(prevObjects => {
+            // Either replace all objects or add to existing
+            const newObjects = shouldClearCanvas ? loadedObjects : [...prevObjects, ...loadedObjects];
+            // Save to history
+            saveCurrentState(newObjects);
+            return newObjects;
+          });
+          
           toast({
-            title: "Import Warning",
-            description: "No valid objects found in the template.",
+            title: "Template Loaded",
+            description: `Successfully loaded ${loadedObjects.length} objects.`,
+            variant: "default"
+          });
+          
+          // Reset selection
+          setSelectedObjectIds([]);
+          setIsLoading(false);
+          setImportProgress(0);
+        },
+        onError: (error) => {
+          console.error("Error loading template:", error);
+          toast({
+            title: "Import Error",
+            description: error.message || "Failed to load template data.",
             variant: "destructive"
           });
           setIsLoading(false);
           setImportProgress(0);
-          return;
         }
-        
-        setObjects(prevObjects => {
-          // Either replace all objects or add to existing
-          const newObjects = shouldClearCanvas ? loadedObjects : [...prevObjects, ...loadedObjects];
-          // Save to history
-          saveCurrentState(newObjects);
-          return newObjects;
-        });
-        
-        toast({
-          title: "Template Loaded",
-          description: `Successfully loaded ${loadedObjects.length} objects.`,
-          variant: "default"
-        });
-        
-        // Reset selection
-        setSelectedObjectIds([]);
-        setIsLoading(false);
-        setImportProgress(0);
-      },
-      // Error callback
-      (error) => {
-        console.error("Error loading template:", error);
-        toast({
-          title: "Import Error",
-          description: error.message || "Failed to load template data.",
-          variant: "destructive"
-        });
-        setIsLoading(false);
-        setImportProgress(0);
       }
     );
   }, []);
