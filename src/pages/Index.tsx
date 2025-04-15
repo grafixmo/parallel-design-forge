@@ -5,7 +5,7 @@ import {
   SavedDesign,
   BezierObject
 } from '@/types/bezier';
-import BezierCanvas from '@/components/bezier-canvas';
+import BezierCanvas from '@/components/bezier-canvas';  // This imports the default export from the index.ts file
 import Header from '@/components/Header';
 import LibraryPanel from '@/components/LibraryPanel';
 import { generateId } from '@/utils/bezierUtils';
@@ -286,20 +286,8 @@ const Index = () => {
             </div>
           )}
           
-          <BezierCanvas
-            width={canvasWidth}
-            height={canvasHeight}
-            objects={objects}
-            selectedObjectIds={selectedObjectIds}
-            onObjectSelect={selectObject}
-            onObjectsChange={updateObjects}
-            onCreateObject={handleCreateObject}
-            onSaveState={saveCurrentState}
-            onUndo={undo}
-            backgroundImage={backgroundImage}
-            backgroundOpacity={backgroundOpacity}
-            isDrawingMode={isDrawingMode}
-          />
+          {/* Using BezierCanvas component which is correctly re-exported from index.ts */}
+          <BezierCanvas />
         </div>
         
         {selectedObjectIds.length > 0 && !isDrawingMode && (

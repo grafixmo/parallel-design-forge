@@ -302,12 +302,14 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
 
       <CanvasInstructions message={instructionMessage} />
       
+      {/* Make sure the CanvasStatusInfo is conditionally rendered with visible prop */}
       <CanvasStatusInfo 
         width={canvasDimensions.width} 
         height={canvasDimensions.height} 
         zoom={zoom} 
         isDrawingMode={isDrawingMode}
         objectsCount={objects.length}
+        visible={false}
       />
     </div>
   );

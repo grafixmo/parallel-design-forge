@@ -1,7 +1,8 @@
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import BezierCanvas from './BezierCanvas';
 import { useBezierObjects } from '@/hooks/useBezierObjects';
-import { CanvasStatusInfo } from './bezier-canvas/components/CanvasStatusInfo';
+import { CanvasStatusInfo } from './components/CanvasStatusInfo';
 import { BezierObject } from '@/types/bezier';
 
 const BezierCanvasContainer: React.FC = () => {
@@ -66,6 +67,16 @@ const BezierCanvasContainer: React.FC = () => {
         backgroundImage={backgroundImage}
         backgroundOpacity={backgroundOpacity}
         isDrawingMode={isDrawingMode}
+      />
+      
+      {/* Using CanvasStatusInfo with visible prop set to false to hide it by default */}
+      <CanvasStatusInfo 
+        width={width} 
+        height={height} 
+        zoom={1} 
+        isDrawingMode={isDrawingMode}
+        objectsCount={objects.length}
+        visible={false}
       />
     </div>
   );
