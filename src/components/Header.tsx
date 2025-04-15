@@ -1,7 +1,7 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { PenLine, Trash2, Upload, Save, Database, MousePointer, Image, Import, FileUp, Download } from 'lucide-react';
+import { PenLine, Trash2, Upload, Save, Database, MousePointer, Image } from 'lucide-react';
 import {
   Tooltip,
   TooltipContent,
@@ -20,24 +20,15 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
 import TemplateGallery from './TemplateGallery';
-import { getTemplateCategories } from '@/utils/thumbnailGenerator';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 
 interface HeaderProps {
   onClearCanvas: () => void;
-  onSaveDesign: (name: string, category: string, description?: string) => void;
+  onSaveDesign: (name: string, category: string) => void;
   onLoadDesigns: () => void;
   onExportSVG: () => void;
-  onImportSVG?: (svgContent: string) => void;
-  onLoadTemplate?: (templateData: string) => void;
+  onLoadTemplate?: (templateData: string) => void; // New prop for loading templates
   isDrawingMode?: boolean;
   onToggleDrawingMode?: () => void;
 }
@@ -47,18 +38,14 @@ const Header: React.FC<HeaderProps> = ({
   onSaveDesign,
   onLoadDesigns,
   onExportSVG,
-  onImportSVG,
   onLoadTemplate,
   isDrawingMode = true,
   onToggleDrawingMode
 }) => {
   const [designName, setDesignName] = useState('');
-  const [designCategory, setDesignCategory] = useState('Earrings');
-  const [designDescription, setDesignDescription] = useState('');
+  const [designCategory, setDesignCategory] = useState('Collares');
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [galleryOpen, setGalleryOpen] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const categories = getTemplateCategories();
   
   const handleSaveClick = () => {
     setSaveDialogOpen(true);
@@ -66,56 +53,14 @@ const Header: React.FC<HeaderProps> = ({
   
   const handleSaveDesign = () => {
     if (designName.trim().length === 0) return;
-    onSaveDesign(designName, designCategory, designDescription);
+    onSaveDesign(designName, designCategory);
     setSaveDialogOpen(false);
     setDesignName('');
-    setDesignDescription('');
   };
 
   const handleSelectTemplate = (templateData: string) => {
     if (onLoadTemplate) {
       onLoadTemplate(templateData);
-    }
-  };
-  
-  const handleImportClick = () => {
-    fileInputRef.current?.click();
-  };
-  
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    
-    // Check if it's an SVG file
-    if (!file.name.toLowerCase().endsWith('.svg')) {
-      toast({
-        title: "Invalid File Type",
-        description: "Please select an SVG file.",
-        variant: "destructive"
-      });
-      return;
-    }
-    
-    try {
-      // Read file content
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const content = event.target?.result as string;
-        if (content && onImportSVG) {
-          onImportSVG(content);
-        }
-      };
-      reader.readAsText(file);
-      
-      // Reset the input to allow selecting the same file again
-      e.target.value = '';
-    } catch (error) {
-      console.error('Error importing SVG:', error);
-      toast({
-        title: "Import Failed",
-        description: "Failed to import the SVG file. Please try again.",
-        variant: "destructive"
-      });
     }
   };
   
@@ -198,14 +143,14 @@ const Header: React.FC<HeaderProps> = ({
         
         <Dialog open={saveDialogOpen} onOpenChange={setSaveDialogOpen}>
           <DialogTrigger asChild>
-            <Button onClick={handleSaveClick}>
+            <Button>
               <Save className="h-4 w-4 mr-2" />
               Save Design
             </Button>
           </DialogTrigger>
           <DialogContent className="sm:max-w-[425px]">
             <DialogHeader>
-              <DialogTitle className="text-xl">Save Design</DialogTitle>
+              <DialogTitle>Save Design</DialogTitle>
               <DialogDescription>
                 Save your design to the database for future use.
               </DialogDescription>
@@ -235,23 +180,12 @@ const Header: React.FC<HeaderProps> = ({
                     <SelectValue placeholder="Select category" />
                   </SelectTrigger>
                   <SelectContent>
-                    {categories.map((category) => (
-                      <SelectItem key={category} value={category}>{category}</SelectItem>
-                    ))}
+                    <SelectItem value="Collares">Collares</SelectItem>
+                    <SelectItem value="Anillos">Anillos</SelectItem>
+                    <SelectItem value="Pendientes">Pendientes</SelectItem>
+                    <SelectItem value="Prototipos">Prototipos</SelectItem>
                   </SelectContent>
                 </Select>
-              </div>
-              <div className="grid grid-cols-4 items-start gap-4">
-                <Label htmlFor="description" className="text-right pt-2">
-                  Description
-                </Label>
-                <Textarea
-                  id="description"
-                  placeholder="Describe your design (optional)"
-                  value={designDescription}
-                  onChange={(e) => setDesignDescription(e.target.value)}
-                  className="col-span-3 min-h-[80px]"
-                />
               </div>
             </div>
             <DialogFooter>
@@ -265,34 +199,23 @@ const Header: React.FC<HeaderProps> = ({
           </DialogContent>
         </Dialog>
         
-        {/* SVG Import/Export Dropdown */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="default" className="bg-indigo-600 hover:bg-indigo-700">
-              <Database className="h-4 w-4 mr-2" />
-              SVG Actions
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent>
-            <DropdownMenuItem onClick={onExportSVG} className="cursor-pointer">
-              <Download className="h-4 w-4 mr-2" />
-              Export SVG
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={handleImportClick} className="cursor-pointer">
-              <FileUp className="h-4 w-4 mr-2" />
-              Import SVG
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-        
-        {/* Hidden file input for SVG import */}
-        <input
-          type="file"
-          ref={fileInputRef}
-          accept=".svg"
-          onChange={handleFileChange}
-          style={{ display: 'none' }}
-        />
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button 
+                variant="default" 
+                onClick={onExportSVG}
+                className="bg-indigo-600 hover:bg-indigo-700"
+              >
+                <Database className="h-4 w-4 mr-2" />
+                Export SVG
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Export design as SVG file</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       </div>
       
       {/* Gallery component */}

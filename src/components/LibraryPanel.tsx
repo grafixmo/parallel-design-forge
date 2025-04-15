@@ -10,11 +10,9 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { SavedDesign, BezierObject, DesignData } from '@/types/bezier';
+import { SavedDesign } from '@/types/bezier';
 import { getDesigns, getDesignsByCategory } from '@/services/supabaseClient';
 import { X } from 'lucide-react';
-import { convertShapesDataToObjects } from '@/utils/bezierUtils';
-import { useToast } from '@/hooks/use-toast';
 
 interface LibraryPanelProps {
   onClose: () => void;
@@ -26,7 +24,6 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign }) 
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const { toast } = useToast();
 
   useEffect(() => {
     fetchDesigns();
@@ -49,31 +46,7 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign }) 
         throw new Error(response.error.message);
       }
       
-      // Process each design to validate its content before displaying
-      const processedDesigns = (response.data || []).map((design: SavedDesign) => {
-        try {
-          // Ensure shapes_data is a string before trying to parse it
-          if (design.shapes_data) {
-            if (typeof design.shapes_data !== 'string') {
-              // If it's already an object, stringify it
-              console.log('Found non-string data in design:', design.id);
-              design.shapes_data = JSON.stringify(design.shapes_data);
-            }
-            
-            // Test parsing to validate JSON
-            JSON.parse(design.shapes_data);
-          }
-          return design;
-        } catch (err) {
-          console.error(`Invalid JSON in design ${design.id}:`, err);
-          return {
-            ...design,
-            hasError: true // Mark designs with invalid data
-          };
-        }
-      });
-      
-      setDesigns(processedDesigns);
+      setDesigns(response.data || []);
     } catch (err) {
       setError('Failed to load designs. Please try again.');
       console.error('Error fetching designs:', err);
@@ -86,76 +59,9 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign }) 
     setSelectedCategory(category);
   };
 
-  const validateAndSelectDesign = (design: SavedDesign) => {
-    try {
-      // Check if design was marked as having an error
-      if ((design as any).hasError) {
-        throw new Error('This design contains invalid data');
-      }
-      
-      // Ensure we have some data to work with
-      if (!design.shapes_data) {
-        throw new Error('Design contains no data');
-      }
-      
-      let parsedData;
-      
-      // Handle the case where shapes_data might already be an object
-      if (typeof design.shapes_data === 'string') {
-        parsedData = JSON.parse(design.shapes_data);
-      } else {
-        console.warn('Design data was not a string, using as-is');
-        parsedData = design.shapes_data;
-      }
-      
-      console.log('Design data format:', parsedData);
-      
-      // Validate the data before proceeding
-      let validFormat = false;
-      let objectCount = 0;
-      let bezierObjects: BezierObject[] = [];
-      
-      // Check if we have an array of shapes or objects
-      if (Array.isArray(parsedData)) {
-        // Try to pre-process the data with our utility function
-        bezierObjects = convertShapesDataToObjects(parsedData);
-        objectCount = bezierObjects.length;
-        validFormat = objectCount > 0;
-        
-        console.log(`Converted design to ${objectCount} objects`);
-      } 
-      // Check if it's an object with the DesignData structure
-      else if (typeof parsedData === 'object' && parsedData !== null) {
-        if (parsedData.objects && Array.isArray(parsedData.objects)) {
-          bezierObjects = convertShapesDataToObjects(parsedData.objects);
-          objectCount = bezierObjects.length;
-          validFormat = objectCount > 0;
-        } else if (parsedData.points && Array.isArray(parsedData.points)) {
-          // Legacy format with just points - create a single object
-          objectCount = 1;
-          validFormat = parsedData.points.length > 0;
-        }
-      }
-      
-      // If the format is valid, proceed with selecting the design
-      if (validFormat) {
-        onSelectDesign(design);
-        onClose();
-        return;
-      }
-      
-      // If we couldn't validate the format, show an error
-      throw new Error(`Could not process design format. Object count: ${objectCount}`);
-    } catch (err) {
-      console.error('Error validating design:', err);
-      setError(`Failed to load design "${design.name}". The format may be incompatible.`);
-      
-      toast({
-        title: 'Format Error',
-        description: `Design "${design.name}" has an incompatible format. Please try another design.`,
-        variant: 'destructive'
-      });
-    }
+  const handleSelectDesign = (design: SavedDesign) => {
+    onSelectDesign(design);
+    onClose();
   };
 
   return (
@@ -213,17 +119,14 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign }) 
               {designs.map((design) => (
                 <Card
                   key={design.id}
-                  className={`p-4 hover:shadow-md transition-shadow cursor-pointer ${(design as any).hasError ? 'opacity-50' : ''}`}
-                  onClick={() => validateAndSelectDesign(design)}
+                  className="p-4 hover:shadow-md transition-shadow cursor-pointer"
+                  onClick={() => handleSelectDesign(design)}
                 >
                   <div className="aspect-square mb-2 border rounded flex items-center justify-center bg-gray-50">
                     <div className="text-5xl text-gray-300">⌘</div>
                   </div>
                   <h3 className="font-medium text-sm truncate">{design.name}</h3>
                   <p className="text-xs text-gray-500 truncate">{design.category}</p>
-                  {(design as any).hasError && (
-                    <p className="text-xs text-red-500 mt-1">Invalid format</p>
-                  )}
                 </Card>
               ))}
             </div>

@@ -1,4 +1,3 @@
-
 export interface Point {
   x: number;
   y: number;
@@ -100,16 +99,4 @@ export interface ObjectGroup {
   objectIds: string[];
   name: string;
   isSelected: boolean;
-}
-
-// New interfaces for SVG import/export
-export interface SVGImportOptions {
-  replaceExisting: boolean;
-  importStyle: boolean;
-}
-
-export interface SVGExportOptions {
-  includeBackground: boolean;
-  includeBorder: boolean;
-  embedFonts: boolean;
 }
