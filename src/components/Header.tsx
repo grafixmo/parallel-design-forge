@@ -1,4 +1,3 @@
-
 import React, { useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { PenLine, Trash2, Upload, Save, Database, MousePointer, Image, Download } from 'lucide-react';
@@ -24,7 +23,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
 import TemplateGallery from './TemplateGallery';
 import { getTemplateCategories } from '@/utils/thumbnailGenerator';
-import { exportSVG, downloadSVG } from '@/utils/svgExporter';
+import { exportAsSVG, downloadSVG } from '@/utils/svgExporter';
 
 interface HeaderProps {
   onClearCanvas: () => void;
@@ -34,6 +33,9 @@ interface HeaderProps {
   onLoadTemplate?: (templateData: string, shouldClearCanvas?: boolean) => void;
   isDrawingMode?: boolean;
   onToggleDrawingMode?: () => void;
+  objects: any[]; // Added objects prop
+  width: number; // Added width prop
+  height: number; // Added height prop
 }
 
 const Header: React.FC<HeaderProps> = ({
@@ -43,7 +45,10 @@ const Header: React.FC<HeaderProps> = ({
   onExportSVG,
   onLoadTemplate,
   isDrawingMode = true,
-  onToggleDrawingMode
+  onToggleDrawingMode,
+  objects,
+  width,
+  height
 }) => {
   const [designName, setDesignName] = useState('');
   const [designCategory, setDesignCategory] = useState('Earrings');
@@ -67,6 +72,42 @@ const Header: React.FC<HeaderProps> = ({
   const handleSelectTemplate = (templateData: string, shouldClearCanvas: boolean) => {
     if (onLoadTemplate) {
       onLoadTemplate(templateData, shouldClearCanvas);
+    }
+  };
+
+  const handleExportSVG = () => {
+    try {
+      if (objects.length === 0) {
+        toast({
+          title: "Export Error",
+          description: "No objects to export. Create some shapes first.",
+          variant: "destructive"
+        });
+        return;
+      }
+      
+      // Use exportAsSVG instead of exportSVG
+      const svgContent = exportAsSVG(
+        objects[0].points, 
+        objects[0].curveConfig, 
+        objects[0].transform, 
+        width, 
+        height
+      );
+      
+      downloadSVG(svgContent, 'qordatta-design.svg');
+      
+      toast({
+        title: "SVG Exported",
+        description: "Design exported successfully"
+      });
+    } catch (error) {
+      console.error('Export error:', error);
+      toast({
+        title: "Export Failed",
+        description: "Could not export SVG",
+        variant: "destructive"
+      });
     }
   };
   
@@ -220,7 +261,7 @@ const Header: React.FC<HeaderProps> = ({
         <Button 
           variant="default" 
           className="bg-indigo-600 hover:bg-indigo-700" 
-          onClick={onExportSVG}
+          onClick={handleExportSVG}
         >
           <Download className="h-4 w-4 mr-2" />
           Export SVG
