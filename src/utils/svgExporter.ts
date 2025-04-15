@@ -24,15 +24,18 @@ export const exportAsSVG = (
   // Apply transform to the entire group
   svg += `<g transform="rotate(${transform.rotation} ${centerX} ${centerY}) scale(${transform.scaleX} ${transform.scaleY})">`;
   
-  // Draw parallel curves behind main curve
-  for (let i = 1; i <= curveConfig.parallelCount; i++) {
-    const offset = i * curveConfig.spacing;
-    const style = curveConfig.styles[i] || curveConfig.styles[0];
-    
-    // Draw a path for each parallel curve
-    const pathData = generatePathData(points, offset);
-    if (pathData) {
-      svg += `<path d="${pathData}" fill="none" stroke="${style.color}" stroke-width="${style.width}" stroke-linecap="round" stroke-linejoin="round"/>`;
+  // Only draw parallel curves if parallelCount is greater than 1
+  if (curveConfig.parallelCount > 1) {
+    // Draw parallel curves behind main curve
+    for (let i = 1; i <= curveConfig.parallelCount; i++) {
+      const offset = i * curveConfig.spacing;
+      const style = curveConfig.styles[i] || curveConfig.styles[0];
+      
+      // Draw a path for each parallel curve
+      const pathData = generatePathData(points, offset);
+      if (pathData) {
+        svg += `<path d="${pathData}" fill="none" stroke="${style.color}" stroke-width="${style.width}" stroke-linecap="round" stroke-linejoin="round"/>`;
+      }
     }
   }
   

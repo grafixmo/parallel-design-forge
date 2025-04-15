@@ -1,4 +1,3 @@
-
 import React, { useRef, useEffect } from 'react';
 import { 
   BezierObject as BezierObjectType, 
@@ -167,48 +166,51 @@ export class BezierObjectRenderer {
     
     // Draw curves if we have enough points
     if (points.length >= 2) {
-      // Draw parallel curves first (behind main curve)
-      for (let p = 1; p <= curveConfig.parallelCount; p++) {
-        const offset = p * curveConfig.spacing;
-        const color = curveConfig.styles[p] ? curveConfig.styles[p].color : curveConfig.styles[0].color;
-        const width = curveConfig.styles[p] ? curveConfig.styles[p].width : curveConfig.styles[0].width;
-        
-        ctx.strokeStyle = color;
-        ctx.lineWidth = width / this.zoom; // Adjust for zoom
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        
-        ctx.beginPath();
-        
-        // Draw each segment between control points
-        for (let i = 0; i < points.length - 1; i++) {
-          const current = points[i];
-          const next = points[i + 1];
+      // Only draw parallel curves if parallelCount is greater than 1
+      if (curveConfig.parallelCount > 1) {
+        // Draw parallel curves first (behind main curve)
+        for (let p = 1; p <= curveConfig.parallelCount; p++) {
+          const offset = p * curveConfig.spacing;
+          const color = curveConfig.styles[p] ? curveConfig.styles[p].color : curveConfig.styles[0].color;
+          const width = curveConfig.styles[p] ? curveConfig.styles[p].width : curveConfig.styles[0].width;
           
-          // Sample points along the curve and offset them
-          const steps = 30; // More steps = smoother curve
+          ctx.strokeStyle = color;
+          ctx.lineWidth = width / this.zoom; // Adjust for zoom
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
           
-          for (let t = 0; t <= steps; t++) {
-            const normalizedT = t / steps;
+          ctx.beginPath();
+          
+          // Draw each segment between control points
+          for (let i = 0; i < points.length - 1; i++) {
+            const current = points[i];
+            const next = points[i + 1];
             
-            const offsetPoint = calculateParallelPoint(
-              current,
-              current.handleOut,
-              next.handleIn,
-              next,
-              normalizedT,
-              offset
-            );
+            // Sample points along the curve and offset them
+            const steps = 30; // More steps = smoother curve
             
-            if (t === 0) {
-              ctx.moveTo(offsetPoint.x, offsetPoint.y);
-            } else {
-              ctx.lineTo(offsetPoint.x, offsetPoint.y);
+            for (let t = 0; t <= steps; t++) {
+              const normalizedT = t / steps;
+              
+              const offsetPoint = calculateParallelPoint(
+                current,
+                current.handleOut,
+                next.handleIn,
+                next,
+                normalizedT,
+                offset
+              );
+              
+              if (t === 0) {
+                ctx.moveTo(offsetPoint.x, offsetPoint.y);
+              } else {
+                ctx.lineTo(offsetPoint.x, offsetPoint.y);
+              }
             }
           }
+          
+          ctx.stroke();
         }
-        
-        ctx.stroke();
       }
       
       // Draw main curve
@@ -334,6 +336,9 @@ export class BezierObjectRenderer {
       }
     }
   }
+  
+  // Handle mouse interaction on a control point
+  
 }
 
 // The actual React component that now properly returns JSX
