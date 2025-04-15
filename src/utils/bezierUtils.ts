@@ -16,6 +16,65 @@ export const isPointNear = (p1: Point, p2: Point, radius: number): boolean => {
   return calculateDistance(p1, p2) <= radius;
 };
 
+// Calculate natural handle positions based on direction between points
+export const calculateNaturalHandles = (current: Point, prev?: Point, next?: Point, handleLength: number = 50): { handleIn: Point, handleOut: Point } => {
+  // Default handle positions (horizontal)
+  let handleIn: Point = { x: current.x - handleLength, y: current.y };
+  let handleOut: Point = { x: current.x + handleLength, y: current.y };
+  
+  if (prev && !next) {
+    // This is an end point with only a previous point
+    // Make handles follow the direction from previous point
+    const dx = current.x - prev.x;
+    const dy = current.y - prev.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    
+    if (distance > 0) {
+      const scale = handleLength / distance;
+      handleIn = { x: current.x - dx * scale, y: current.y - dy * scale };
+      handleOut = { x: current.x + dx * scale, y: current.y + dy * scale };
+    }
+  } else if (!prev && next) {
+    // This is a start point with only a next point
+    // Make handles follow the direction to next point
+    const dx = next.x - current.x;
+    const dy = next.y - current.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    
+    if (distance > 0) {
+      const scale = handleLength / distance;
+      handleIn = { x: current.x - dx * scale, y: current.y - dy * scale };
+      handleOut = { x: current.x + dx * scale, y: current.y + dy * scale };
+    }
+  } else if (prev && next) {
+    // This is a middle point with both previous and next points
+    // Make handles follow the average direction
+    const dx1 = current.x - prev.x;
+    const dy1 = current.y - prev.y;
+    const dx2 = next.x - current.x;
+    const dy2 = next.y - current.y;
+    
+    // Calculate average direction vector
+    const avgDx = (dx1 + dx2) / 2;
+    const avgDy = (dy1 + dy2) / 2;
+    const avgDistance = Math.sqrt(avgDx * avgDx + avgDy * avgDy);
+    
+    if (avgDistance > 0) {
+      const scale = handleLength / avgDistance;
+      
+      // Perpendicular vector (for smooth curves)
+      const perpDx = -avgDy * scale;
+      const perpDy = avgDx * scale;
+      
+      // Use perpendicular vector for handles to create smooth curve
+      handleIn = { x: current.x - perpDx, y: current.y - perpDy };
+      handleOut = { x: current.x + perpDx, y: current.y + perpDy };
+    }
+  }
+  
+  return { handleIn, handleOut };
+};
+
 // Calculate normal vector at a point on the bezier curve
 export const calculateNormal = (p0: Point, p1: Point): Point => {
   const dx = p1.x - p0.x;
