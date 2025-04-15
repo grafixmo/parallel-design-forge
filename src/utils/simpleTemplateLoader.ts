@@ -1,9 +1,11 @@
-// This file is being replaced by optimizedTemplateLoader.ts
-// Keeping this file for backward compatibility
+
 import { loadTemplateAsync } from './optimizedTemplateLoader';
 import { BezierObject } from '@/types/bezier';
 
-// Re-export the optimized function with a simpler interface
+/**
+ * Simplified template loader that forwards to the optimized implementation
+ * with proper cleanup handling
+ */
 export const loadTemplateData = async (
   templateData: string | BezierObject[],
   options: {
@@ -14,20 +16,34 @@ export const loadTemplateData = async (
 ): Promise<BezierObject[]> => {
   return new Promise((resolve, reject) => {
     try {
-      // Use the newer implementation with cancellation
-      const cancel = loadTemplateAsync(templateData, {
-        onProgress: options.onProgress,
+      // Reference to the cancel function
+      let cancelLoader: (() => void) | null = null;
+      
+      // Use the optimized implementation
+      cancelLoader = loadTemplateAsync(templateData, {
+        onProgress: options.onProgress || (() => {}),
         onComplete: (objects) => {
           options.onComplete?.(objects);
           resolve(objects);
+          cancelLoader = null; // Clear reference
         },
         onError: (error) => {
           options.onError?.(error);
           reject(error);
+          cancelLoader = null; // Clear reference
         }
       });
       
-      // Return the results directly for compatibility
+      // Handle potential external Promise rejection
+      // by ensuring we cancel the loader
+      setTimeout(() => {
+        if (cancelLoader) {
+          const cleanup = cancelLoader;
+          cancelLoader = null;
+          cleanup();
+        }
+      }, 15000); // Safety timeout
+      
     } catch (error) {
       options.onError?.(error instanceof Error ? error : new Error('Unknown error'));
       reject(error);

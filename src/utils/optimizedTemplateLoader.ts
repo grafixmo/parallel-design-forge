@@ -3,12 +3,14 @@ import { BezierObject } from '@/types/bezier';
 import { generateId } from './bezierUtils';
 import { importSVG } from './simpleSvgImporter';
 
-// Increased safety limit for better user experience
-const MAX_OBJECTS = 20;
+// Configuration constants
+const OBJECT_LIMIT = 20;
+const POINTS_LIMIT = 20;
+const BATCH_SIZE = 3;
+const BATCH_DELAY = 20;
 
 /**
- * Loads and processes templates with performance optimizations
- * Using proper chunking and batched processing to prevent UI freezing
+ * Unified template loader with improved memory management and cancellation
  */
 export const loadTemplateAsync = (
   templateData: string | BezierObject[],
@@ -19,45 +21,46 @@ export const loadTemplateAsync = (
     batchSize?: number;
     maxObjects?: number;
   }
-): () => void => {
+): (() => void) => {
   const {
     onProgress = () => {},
     onComplete = () => {},
     onError = () => {},
-    batchSize = 3,
-    maxObjects = MAX_OBJECTS
+    batchSize = BATCH_SIZE,
+    maxObjects = OBJECT_LIMIT
   } = options;
   
-  // Create an abort controller to allow cancellation
-  const abortController = new AbortController();
-  const signal = abortController.signal;
+  let isCancelled = false;
   
-  // Start processing in the next tick to allow UI to update
-  setTimeout(async () => {
-    if (signal.aborted) return;
-    
+  // Start processing in the next tick
+  const timeoutId = setTimeout(async () => {
     try {
+      if (isCancelled) return;
+      
       // Show initial progress
       onProgress(5);
       
       // Handle array input directly
       if (Array.isArray(templateData)) {
-        processObjectsInBatches(templateData, {
-          onProgress: p => onProgress(5 + p * 0.95),
-          onComplete,
-          batchSize,
-          maxObjects,
-          signal
-        });
+        if (isCancelled) return;
+        await processObjectsInBatches(
+          templateData, 
+          progress => onProgress(5 + progress * 0.95),
+          objects => !isCancelled && onComplete(objects),
+          error => !isCancelled && onError(error),
+          { batchSize, maxObjects, isCancelled: () => isCancelled }
+        );
         return;
       }
+      
+      if (isCancelled) return;
       
       // Try parsing as JSON first
       try {
         const parsed = JSON.parse(templateData);
         onProgress(10);
         
-        if (signal.aborted) return;
+        if (isCancelled) return;
         
         let objectsToProcess: BezierObject[] = [];
         
@@ -69,118 +72,119 @@ export const loadTemplateAsync = (
           throw new Error('Invalid JSON format');
         }
         
-        processObjectsInBatches(objectsToProcess, {
-          onProgress: p => onProgress(10 + p * 0.9),
-          onComplete,
-          batchSize,
-          maxObjects,
-          signal
-        });
+        if (isCancelled) return;
+        
+        await processObjectsInBatches(
+          objectsToProcess,
+          progress => onProgress(10 + progress * 0.9),
+          objects => !isCancelled && onComplete(objects),
+          error => !isCancelled && onError(error),
+          { batchSize, maxObjects, isCancelled: () => isCancelled }
+        );
       } catch (jsonError) {
         // Not valid JSON, try as SVG
+        if (isCancelled) return;
+        
         try {
-          if (signal.aborted) return;
-          
           onProgress(15);
           const objects = importSVG(templateData);
           onProgress(40);
           
-          if (signal.aborted) return;
+          if (isCancelled) return;
           
-          // Apply additional processing in batches
-          processObjectsInBatches(objects, {
-            onProgress: p => onProgress(40 + p * 0.6),
-            onComplete,
-            batchSize,
-            maxObjects,
-            signal
-          });
+          await processObjectsInBatches(
+            objects,
+            progress => onProgress(40 + progress * 0.6),
+            objects => !isCancelled && onComplete(objects),
+            error => !isCancelled && onError(error),
+            { batchSize, maxObjects, isCancelled: () => isCancelled }
+          );
         } catch (svgError) {
-          if (!signal.aborted) {
+          if (!isCancelled) {
             onError(new Error('Could not parse as JSON or SVG'));
           }
         }
       }
     } catch (error) {
-      if (!signal.aborted) {
-        onError(error instanceof Error ? error : new Error('Unknown error'));
+      if (!isCancelled) {
+        onError(error instanceof Error ? error : new Error('Unknown error loading template'));
       }
     }
   }, 50);
   
-  // Return cancel function
+  // Return cancel function that properly cleans up resources
   return () => {
-    abortController.abort();
+    isCancelled = true;
+    clearTimeout(timeoutId);
   };
 };
 
 /**
- * Process objects in batches with timeouts between batches
- * to prevent UI freezing
+ * Process objects in batches with improved memory management
  */
-const processObjectsInBatches = (
+const processObjectsInBatches = async (
   objects: BezierObject[],
+  onProgress: (progress: number) => void,
+  onComplete: (objects: BezierObject[]) => void,
+  onError: (error: Error) => void,
   options: {
-    onProgress: (progress: number) => void;
-    onComplete: (objects: BezierObject[]) => void;
     batchSize: number;
     maxObjects: number;
-    signal: AbortSignal;
+    isCancelled: () => boolean;
   }
-): void => {
-  const { onProgress, onComplete, batchSize, maxObjects, signal } = options;
+): Promise<void> => {
+  const { batchSize, maxObjects, isCancelled } = options;
   
-  // Limit the number of objects to prevent performance issues
-  const limitedObjects = objects.slice(0, maxObjects);
-  
-  if (objects.length > maxObjects) {
-    console.warn(`Limiting template objects from ${objects.length} to ${maxObjects}`);
-  }
-  
-  const totalBatches = Math.ceil(limitedObjects.length / batchSize);
-  const processedObjects: BezierObject[] = [];
-  
-  // Process objects in batches
-  const processBatch = (batchIndex: number) => {
-    if (signal.aborted) return;
+  try {
+    // Limit objects to prevent memory issues
+    const limitedObjects = objects.slice(0, maxObjects);
     
-    // If all batches are processed, complete
-    if (batchIndex >= totalBatches) {
-      onProgress(100);
-      onComplete(processedObjects);
-      return;
+    if (objects.length > maxObjects) {
+      console.warn(`Limiting template objects from ${objects.length} to ${maxObjects}`);
     }
     
-    // Calculate batch boundaries
-    const start = batchIndex * batchSize;
-    const end = Math.min(start + batchSize, limitedObjects.length);
-    const batch = limitedObjects.slice(start, end);
+    const totalBatches = Math.ceil(limitedObjects.length / batchSize);
+    const processedObjects: BezierObject[] = [];
     
-    // Process this batch
-    batch.forEach(obj => {
-      processedObjects.push(validateAndFixObject(obj));
-    });
+    for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+      if (isCancelled()) return;
+      
+      const start = batchIndex * batchSize;
+      const end = Math.min(start + batchSize, limitedObjects.length);
+      const batch = limitedObjects.slice(start, end);
+      
+      // Process this batch
+      batch.forEach(obj => {
+        processedObjects.push(validateAndFixObject(obj));
+      });
+      
+      // Update progress
+      const progress = Math.min(90, ((batchIndex + 1) / totalBatches) * 90);
+      onProgress(progress);
+      
+      // Yield to UI thread with a small delay
+      await new Promise(resolve => setTimeout(resolve, BATCH_DELAY));
+      
+      if (isCancelled()) return;
+    }
     
-    // Update progress
-    const progress = Math.min(90, (batchIndex + 1) / totalBatches * 90);
-    onProgress(progress);
-    
-    // Schedule next batch with a small delay to allow UI updates
-    setTimeout(() => processBatch(batchIndex + 1), 20);
-  };
-  
-  // Start processing from first batch
-  processBatch(0);
+    onProgress(100);
+    onComplete(processedObjects);
+  } catch (error) {
+    if (!isCancelled()) {
+      onError(error instanceof Error ? error : new Error('Error processing objects'));
+    }
+  }
 };
 
 /**
- * Ensure an object has all required properties and fix issues
+ * Ensure object has all required properties
  */
 const validateAndFixObject = (obj: BezierObject): BezierObject => {
   return {
     id: obj.id || generateId(),
     name: obj.name || 'Imported Object',
-    isSelected: false, // Always start unselected
+    isSelected: false,
     points: validateAndFixPoints(obj.points || []),
     curveConfig: {
       styles: obj.curveConfig?.styles || [{ color: '#000000', width: 2 }],
@@ -196,15 +200,13 @@ const validateAndFixObject = (obj: BezierObject): BezierObject => {
 };
 
 /**
- * Validate and fix points
+ * Validate and fix points with strict limits
  */
 const validateAndFixPoints = (points: any[]): any[] => {
-  // Reasonable point limit for good performance
-  const MAX_POINTS = 20;
-  
-  if (points.length > MAX_POINTS) {
-    console.warn(`Limiting points from ${points.length} to ${MAX_POINTS}`);
-    points = points.slice(0, MAX_POINTS);
+  // Limit points for performance
+  if (points.length > POINTS_LIMIT) {
+    console.warn(`Limiting points from ${points.length} to ${POINTS_LIMIT}`);
+    points = points.slice(0, POINTS_LIMIT);
   }
   
   if (points.length === 0) {

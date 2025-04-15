@@ -1,4 +1,3 @@
-
 import { useState, useCallback, useRef } from 'react';
 import { 
   BezierObject, 
@@ -173,7 +172,7 @@ export function useBezierObjects() {
     }
   }, [objects]);
   
-  // Optimized template loading with improved async handling
+  // Improved template loading with proper cancellation and memory management
   const loadObjectsFromTemplate = useCallback((templateData: BezierObject[] | string, clearExisting: boolean = false) => {
     // Cancel any active loader first to prevent competing operations
     if (activeLoaderCancelRef.current) {
@@ -185,9 +184,9 @@ export function useBezierObjects() {
     setImportProgress(0);
     
     try {
-      console.log('Loading template objects using optimized loader, clearExisting:', clearExisting);
+      console.log('Loading template with improved memory management, clearExisting:', clearExisting);
       
-      // Use our new optimized template loader with cancellation
+      // Use our optimized template loader with proper cancellation
       const cancelLoader = loadTemplateAsync(templateData, {
         onProgress: (progress) => {
           setImportProgress(progress);
@@ -198,7 +197,7 @@ export function useBezierObjects() {
             setObjects(processedObjects);
             setSelectedObjectIds([]);
           } else {
-            // More reasonable object limit
+            // Reasonable object limit
             const maxObjectsToAdd = 10;
             const limitedObjects = processedObjects.slice(0, maxObjectsToAdd);
             
@@ -229,6 +228,7 @@ export function useBezierObjects() {
           
           activeLoaderCancelRef.current = null;
           setIsLoading(false);
+          setImportProgress(0);
         },
         onError: (error) => {
           console.error('Error loading template:', error);
@@ -239,13 +239,30 @@ export function useBezierObjects() {
           });
           activeLoaderCancelRef.current = null;
           setIsLoading(false);
+          setImportProgress(0);
         },
         batchSize: 3,  // Process 3 objects at a time for smoother UI
-        maxObjects: 20 // More reasonable limit that won't freeze UI
+        maxObjects: 20 // Reasonable limit that won't freeze UI
       });
       
       // Store the cancellation function
       activeLoaderCancelRef.current = cancelLoader;
+      
+      // Set a safety timeout to cancel if it takes too long
+      setTimeout(() => {
+        if (activeLoaderCancelRef.current === cancelLoader) {
+          console.warn('Template loading timeout - cancelling operation');
+          cancelLoader();
+          activeLoaderCancelRef.current = null;
+          setIsLoading(false);
+          setImportProgress(0);
+          toast({
+            title: 'Loading Timeout',
+            description: 'Template loading took too long and was cancelled',
+            variant: 'destructive'
+          });
+        }
+      }, 15000); // 15-second safety timeout
       
     } catch (error) {
       console.error('Error in loadObjectsFromTemplate:', error);
@@ -255,6 +272,7 @@ export function useBezierObjects() {
         variant: 'destructive'
       });
       setIsLoading(false);
+      setImportProgress(0);
     }
   }, [objects, addToHistory]);
 

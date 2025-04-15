@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   Dialog, 
@@ -39,7 +40,8 @@ interface TemplateGalleryProps {
 }
 
 // Window size to limit visible templates for performance
-const TEMPLATE_WINDOW_SIZE = 12;
+const TEMPLATE_WINDOW_SIZE = 8;
+const LOADING_TIMEOUT = 10000; // 10 seconds
 
 const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSelectTemplate }) => {
   const { toast } = useToast();
@@ -61,45 +63,11 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
   // Refs for tracking timeouts and cancellation
   const loadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const loaderCancelRef = useRef<(() => void) | null>(null);
   const templateContainerRef = useRef<HTMLDivElement>(null);
-  
-  // Debounced search for better performance
   const debouncedSearchRef = useRef<NodeJS.Timeout | null>(null);
   
-  // Fetch templates when the gallery is opened or category changes
-  useEffect(() => {
-    if (open) {
-      fetchTemplates();
-    }
-    
-    // Clear all timeouts on unmount or category change
-    return () => {
-      clearAllTimeouts();
-    };
-  }, [open, activeCategory]);
-  
-  // Apply filtering with debouncing for better performance
-  useEffect(() => {
-    // Clear previous timeout
-    if (debouncedSearchRef.current) {
-      clearTimeout(debouncedSearchRef.current);
-    }
-    
-    // Set new timeout for debounced search
-    debouncedSearchRef.current = setTimeout(() => {
-      filterTemplates();
-    }, 300);
-    
-    return () => {
-      if (debouncedSearchRef.current) {
-        clearTimeout(debouncedSearchRef.current);
-      }
-    };
-  }, [searchQuery, templates]);
-  
-  // Clean up all timeouts and intervals
-  const clearAllTimeouts = () => {
+  // New cleanup function to prevent memory leaks
+  const cleanupAllTimeouts = useCallback(() => {
     if (loadTimeoutRef.current) {
       clearTimeout(loadTimeoutRef.current);
       loadTimeoutRef.current = null;
@@ -114,12 +82,43 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
       clearTimeout(debouncedSearchRef.current);
       debouncedSearchRef.current = null;
     }
-    
-    if (loaderCancelRef.current) {
-      loaderCancelRef.current();
-      loaderCancelRef.current = null;
+  }, []);
+  
+  // Fetch templates when the gallery is opened or category changes
+  useEffect(() => {
+    if (open) {
+      fetchTemplates();
     }
-  };
+    
+    // Clear all timeouts on unmount or category change
+    return () => {
+      cleanupAllTimeouts();
+    };
+  }, [open, activeCategory, cleanupAllTimeouts]);
+  
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      cleanupAllTimeouts();
+    };
+  }, [cleanupAllTimeouts]);
+  
+  // Apply filtering with debouncing for better performance
+  useEffect(() => {
+    if (debouncedSearchRef.current) {
+      clearTimeout(debouncedSearchRef.current);
+    }
+    
+    debouncedSearchRef.current = setTimeout(() => {
+      filterTemplates();
+    }, 300);
+    
+    return () => {
+      if (debouncedSearchRef.current) {
+        clearTimeout(debouncedSearchRef.current);
+      }
+    };
+  }, [searchQuery, templates]);
   
   // Apply filtering logic to templates
   const filterTemplates = useCallback(() => {
@@ -130,10 +129,12 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
     }
     
     const lowercaseQuery = searchQuery.toLowerCase();
-    const filtered = templates.filter(template => 
-      template.name.toLowerCase().includes(lowercaseQuery) ||
-      (template.description && template.description.toLowerCase().includes(lowercaseQuery))
-    ).slice(0, TEMPLATE_WINDOW_SIZE);
+    const filtered = templates
+      .filter(template => 
+        template.name.toLowerCase().includes(lowercaseQuery) ||
+        (template.description && template.description.toLowerCase().includes(lowercaseQuery))
+      )
+      .slice(0, TEMPLATE_WINDOW_SIZE);
     
     setDisplayedTemplates(filtered);
   }, [searchQuery, templates]);
@@ -213,7 +214,7 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
     
     try {
       // Clear any existing timeouts
-      clearAllTimeouts();
+      cleanupAllTimeouts();
       
       // Set loading state first
       setIsLoadingTemplate(true);
@@ -221,7 +222,7 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
       
       // Start a safety timeout to prevent infinite loading
       const timeout = setTimeout(() => {
-        clearAllTimeouts();
+        cleanupAllTimeouts();
         setIsLoadingTemplate(false);
         setLoadDialogOpen(false);
         onClose();
@@ -230,14 +231,14 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
           description: 'Loading took too long. Try a simpler template.',
           variant: 'destructive'
         });
-      }, 12000); // 12 second safety timeout
+      }, LOADING_TIMEOUT);
       
       loadTimeoutRef.current = timeout;
       
       // Fake progress updates for better UX
       const progressInterval = setInterval(() => {
         setLoadingProgress(prev => {
-          const newProgress = prev + (Math.random() * 3);
+          const newProgress = prev + (Math.random() * 2);
           return newProgress < 85 ? newProgress : 85;
         });
       }, 300);
@@ -267,7 +268,7 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
           setLoadingProgress(100);
           
           // Clear timeouts after successful handoff
-          clearAllTimeouts();
+          cleanupAllTimeouts();
           
           toast({
             title: 'Template Loaded',
@@ -282,7 +283,7 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
           }, 500);
         } catch (error) {
           console.error('Error starting template load:', error);
-          clearAllTimeouts();
+          cleanupAllTimeouts();
           setIsLoadingTemplate(false);
           setLoadDialogOpen(false);
           
@@ -295,7 +296,7 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
       }, 100);
     } catch (error) {
       console.error('Error in confirmLoadTemplate:', error);
-      clearAllTimeouts();
+      cleanupAllTimeouts();
       setLoadDialogOpen(false);
       setTemplateToLoad(null);
       setIsLoadingTemplate(false);
@@ -531,7 +532,7 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
   return (
     <>
       <Dialog open={open} onOpenChange={(open) => !open && !isLoadingTemplate && onClose()}>
-        <DialogContent className="w-full max-w-5xl max-h-[80vh] flex flex-col">
+        <DialogContent className="w-full max-w-4xl max-h-[80vh] flex flex-col">
           <DialogHeader>
             <DialogTitle className="text-xl">Design Gallery</DialogTitle>
           </DialogHeader>
