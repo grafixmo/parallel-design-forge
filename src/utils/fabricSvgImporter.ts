@@ -1,4 +1,3 @@
-
 import { Canvas as FabricCanvas, Path, Object as FabricObject } from 'fabric';
 import { BezierObject, ControlPoint, CurveConfig, TransformSettings, Point } from '@/types/bezier';
 import { generateId } from '@/utils/bezierUtils';
@@ -8,10 +7,10 @@ import { toast } from '@/hooks/use-toast';
  * Import SVG content using Fabric.js and convert to BezierObjects
  * This provides better SVG path parsing than our manual implementation
  */
-export const importSVG = (svgContent: string): BezierObject[] => {
+export const importSVG = async (svgContent: string): Promise<BezierObject[]> => {
   try {
     console.log('Starting SVG import with Fabric.js');
-    return parseSVGWithFabric(svgContent);
+    return await parseSVGWithFabric(svgContent);
   } catch (error) {
     console.error('Error importing SVG with Fabric.js:', error);
     toast({
@@ -45,7 +44,7 @@ export const readSVGFile = (file: File): Promise<string> => {
 /**
  * Parse SVG content using Fabric.js
  */
-const parseSVGWithFabric = (svgContent: string): BezierObject[] => {
+const parseSVGWithFabric = (svgContent: string): Promise<BezierObject[]> => {
   // Create a temporary canvas for Fabric.js
   const canvas = new FabricCanvas(undefined);
   const objects: BezierObject[] = [];
