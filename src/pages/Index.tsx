@@ -17,6 +17,7 @@ import { useBezierObjects } from '@/hooks/useBezierObjects';
 import ObjectControlsPanel from '@/components/ObjectControlsPanel';
 import { generateThumbnailFromSVG } from '@/utils/thumbnailGenerator';
 import { convertShapesDataToObjects } from '@/utils/bezierUtils';
+import { importSVGtoCurves } from '@/utils/curveImporter';
 
 const Index = () => {
   const { toast } = useToast();
@@ -27,13 +28,15 @@ const Index = () => {
   const [backgroundOpacity, setBackgroundOpacity] = useState(0.3);
   const [backgroundImage, setBackgroundImage] = useState<string | undefined>();
   const [isDrawingMode, setIsDrawingMode] = useState<boolean>(true);
-  const [isLoading, setIsLoading] = useState<boolean>(false); // Added isLoading state
+  const [isLoading, setIsLoading] = useState<boolean>(false); 
+  const [loadingProgress, setLoadingProgress] = useState<number>(0);
   
   // Use our hooks for Bezier objects
   const {
     objects,
     selectedObjectIds,
     isLoading: objectsLoading,
+    importProgress,
     createObject,
     setAllObjects,
     loadObjectsFromTemplate,
@@ -198,100 +201,96 @@ const Index = () => {
     }
   };
   
-  // Optimized Template Loading with error handling
+  // Optimized, safe template loading with progress tracking
   const handleLoadTemplate = useCallback(async (templateData: string, shouldClearCanvas: boolean) => {
     try {
       setIsLoading(true);
-      console.log('Loading template');
+      setLoadingProgress(0);
+      console.log('Loading template safely...');
       
-      // Process template data based on type
-      if (typeof templateData !== 'string') {
-        throw new Error('Invalid template data format');
-      }
-      
-      try {
-        // Try parsing as JSON first
-        const parsedData = JSON.parse(templateData);
-        
-        // Safely pass to loadObjectsFromTemplate
-        loadObjectsFromTemplate(parsedData, shouldClearCanvas);
-        
-        toast({
-          title: "Template Loaded",
-          description: "Template successfully loaded",
-          variant: "default"
+      // Track progress to update the UI
+      const progressInterval = setInterval(() => {
+        setLoadingProgress(prev => {
+          if (prev < 90) {
+            return prev + Math.random() * 5;
+          }
+          return prev;
         });
-      } catch (jsonError) {
-        // If JSON parsing fails, try as SVG
-        console.log('Trying as SVG');
-        try {
-          // Safety check - don't try to import huge SVGs
-          if (templateData.length > 100000) {
-            throw new Error('SVG file too large');
-          }
-          
-          // Import as SVG
-          const importedObjects = importSVGToObjects(templateData);
-          
-          if (shouldClearCanvas) {
-            setAllObjects(importedObjects);
-          }
-          
-          toast({
-            title: "SVG Template Loaded",
-            description: `Loaded ${importedObjects.length} shapes from SVG`,
-            variant: "default"
-          });
-        } catch (svgError) {
-          console.error('Error loading SVG template:', svgError);
-          toast({
-            title: "Template Load Error",
-            description: "Could not load as JSON or SVG",
-            variant: "destructive"
-          });
-        }
-      }
+      }, 200);
+      
+      // Safety timeout to prevent infinite loading
+      const timeout = setTimeout(() => {
+        clearInterval(progressInterval);
+        setIsLoading(false);
+        setLoadingProgress(0);
+        toast({
+          title: "Loading Timeout",
+          description: "Template loading took too long and was aborted",
+          variant: "destructive"
+        });
+      }, 30000);
+      
+      // Call the loadObjectsFromTemplate function with progress tracking
+      loadObjectsFromTemplate(templateData, shouldClearCanvas);
+      
+      // The actual load happens asynchronously via the hook, so we'll clean up here
+      clearInterval(progressInterval);
+      clearTimeout(timeout);
+      
+      setLoadingProgress(100);
+      
+      // Final cleanup with a small delay to allow UI to reflect completion
+      setTimeout(() => {
+        setIsLoading(false);
+        setLoadingProgress(0);
+      }, 500);
     } catch (error) {
-      console.error('Error loading template:', error);
+      console.error('Error in handleLoadTemplate:', error);
+      setIsLoading(false);
+      setLoadingProgress(0);
       toast({
         title: "Template Load Error",
-        description: "Failed to load template",
+        description: "Failed to process template data",
         variant: "destructive"
       });
-    } finally {
-      setIsLoading(false);
     }
-  }, [loadObjectsFromTemplate, importSVGToObjects, setAllObjects]);
+  }, [loadObjectsFromTemplate]);
   
-  // Import SVG content
+  // Import SVG content with improved error handling
   const handleImportSVG = async (svgContent: string) => {
     try {
-      // Use the importSVGToObjects function from our hook
-      const importedObjects = importSVGToObjects(svgContent);
+      setIsLoading(true);
+      
+      // Use our improved curve-focused SVG importer
+      const importedObjects = importSVGtoCurves(svgContent);
       
       if (!importedObjects || importedObjects.length === 0) {
         toast({
-          title: "Import Failed",
-          description: "No valid paths found in the SVG",
+          title: "Import Notice",
+          description: "No valid curves could be extracted from the SVG",
           variant: "destructive"
         });
+        setIsLoading(false);
         return;
       }
       
-      // Objects are already added to state in the importSVGToObjects function
+      // Add the imported objects to the canvas
+      setAllObjects([...objects, ...importedObjects]);
       saveCurrentState();
       
       toast({
         title: "SVG Imported",
-        description: `${importedObjects.length} paths imported successfully`
+        description: `${importedObjects.length} curves imported successfully`
       });
     } catch (error) {
       console.error('Error importing SVG:', error);
       toast({
         title: "Import Failed",
-        description: "There was an error processing the SVG",
+        description: "There was an error processing the SVG. Try a simpler file.",
         variant: "destructive"
       });
+    } finally {
+      setIsLoading(false);
     }
   };
   
@@ -335,7 +334,6 @@ const Index = () => {
         onLoadDesigns={handleLoadDesigns}
         onExportSVG={handleExportSVG}
         onImportSVG={handleImportSVG}
-        // Fix: Pass only expected arguments to onLoadTemplate
         onLoadTemplate={handleLoadTemplate}
         isDrawingMode={isDrawingMode}
         onToggleDrawingMode={handleToggleDrawingMode}
@@ -343,11 +341,27 @@ const Index = () => {
       
       <main className="flex-1 flex overflow-hidden">
         <div className="flex-1 p-4 overflow-hidden relative">
-          {isLoading && (
+          {(isLoading || objectsLoading) && (
             <div className="absolute inset-0 bg-white/70 flex items-center justify-center z-50">
-              <div className="flex flex-col items-center">
+              <div className="flex flex-col items-center max-w-md w-full px-4">
                 <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full mb-2"></div>
-                <p className="text-primary font-medium">Loading template...</p>
+                <p className="text-primary font-medium text-center mb-2">
+                  {loadingProgress > 0 ? 'Processing template data...' : 'Loading...'}
+                </p>
+                
+                {(loadingProgress > 0 || importProgress > 0) && (
+                  <>
+                    <div className="w-full bg-gray-200 rounded-full h-2.5 mb-1">
+                      <div 
+                        className="bg-primary h-2.5 rounded-full transition-all duration-300 ease-out"
+                        style={{ width: `${Math.max(loadingProgress, importProgress)}%` }}
+                      ></div>
+                    </div>
+                    <p className="text-xs text-muted-foreground text-center">
+                      {Math.round(Math.max(loadingProgress, importProgress))}% complete
+                    </p>
+                  </>
+                )}
               </div>
             </div>
           )}

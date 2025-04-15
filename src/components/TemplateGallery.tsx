@@ -46,6 +46,8 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
   const { toast } = useToast();
   const [templates, setTemplates] = useState<Template[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingTemplate, setIsLoadingTemplate] = useState(false);
+  const [loadingProgress, setLoadingProgress] = useState(0);
   const [activeCategory, setActiveCategory] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
@@ -55,6 +57,7 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
   const [newName, setNewName] = useState('');
   const [newDescription, setNewDescription] = useState('');
   const [templateToLoad, setTemplateToLoad] = useState<Template | null>(null);
+  const [loadTimeout, setLoadTimeout] = useState<NodeJS.Timeout | null>(null);
   
   // Fetch templates when the gallery is opened or category changes
   useEffect(() => {
@@ -62,6 +65,15 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
       fetchTemplates();
     }
   }, [open, activeCategory]);
+  
+  // Clean up timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (loadTimeout) {
+        clearTimeout(loadTimeout);
+      }
+    };
+  }, [loadTimeout]);
   
   const fetchTemplates = async () => {
     setIsLoading(true);
@@ -101,41 +113,91 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
     
     try {
       // Set loading state first
-      setIsLoading(true);
+      setIsLoadingTemplate(true);
+      setLoadingProgress(0);
       
-      // Add a small delay to allow UI to update
+      // Start a safety timeout to prevent infinite loading
+      const timeout = setTimeout(() => {
+        setIsLoadingTemplate(false);
+        onClose();
+        toast({
+          title: 'Template Loading Timeout',
+          description: 'Loading took too long. Try a simpler template.',
+          variant: 'destructive'
+        });
+      }, 30000); // 30 second safety timeout
+      
+      setLoadTimeout(timeout);
+      
+      // Fake progress updates for better UX
+      const progressInterval = setInterval(() => {
+        setLoadingProgress(prev => {
+          const newProgress = prev + Math.random() * 5;
+          return newProgress < 90 ? newProgress : 90;
+        });
+      }, 200);
+      
+      // Add a small delay to allow UI to update before starting the potentially heavy operation
       setTimeout(() => {
         try {
-          onSelectTemplate(templateToLoad.design_data, shouldClearCanvas);
-          onClose();
+          // Validate the template data
+          if (!templateToLoad.design_data) {
+            throw new Error('Template contains no design data');
+          }
+          
+          // Close the loading dialog and hand off to the parent component
+          setLoadDialogOpen(false);
+          
+          // Sanitize design_data
+          const sanitizedData = typeof templateToLoad.design_data === 'string' 
+            ? templateToLoad.design_data
+            : JSON.stringify(templateToLoad.design_data);
+          
+          // Call the parent's onSelectTemplate with validated data
+          onSelectTemplate(sanitizedData, shouldClearCanvas);
+          
+          // Clean up timeouts
+          clearTimeout(timeout);
+          clearInterval(progressInterval);
+          setLoadTimeout(null);
           
           toast({
             title: 'Template Loaded',
             description: `"${templateToLoad.name}" has been loaded to the canvas`
           });
+          
+          // Close the gallery after a short delay
+          setTimeout(() => {
+            setTemplateToLoad(null);
+            setIsLoadingTemplate(false);
+            onClose();
+          }, 500);
         } catch (error) {
-          console.error('Error loading template:', error);
+          console.error('Error starting template load:', error);
+          clearTimeout(timeout);
+          clearInterval(progressInterval);
+          setLoadTimeout(null);
+          setIsLoadingTemplate(false);
+          setLoadDialogOpen(false);
+          
           toast({
             title: 'Error Loading Template',
-            description: 'There was a problem processing the template data',
+            description: 'There was a problem with the template data format',
             variant: 'destructive'
           });
-        } finally {
-          setLoadDialogOpen(false);
-          setTemplateToLoad(null);
-          setIsLoading(false);
         }
       }, 100);
     } catch (error) {
-      console.error('Error loading template:', error);
-      toast({
-        title: 'Error Loading Template',
-        description: 'There was a problem processing the template data',
-        variant: 'destructive'
-      });
+      console.error('Error in confirmLoadTemplate:', error);
       setLoadDialogOpen(false);
       setTemplateToLoad(null);
-      setIsLoading(false);
+      setIsLoadingTemplate(false);
+      
+      toast({
+        title: 'Error Loading Template',
+        description: 'Unexpected error occurred',
+        variant: 'destructive'
+      });
     }
   };
   
@@ -262,7 +324,7 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
   
   return (
     <>
-      <Dialog open={open} onOpenChange={(open) => !open && onClose()}>
+      <Dialog open={open} onOpenChange={(open) => !open && !isLoadingTemplate && onClose()}>
         <DialogContent className="w-full max-w-5xl max-h-[80vh] flex flex-col">
           <DialogHeader>
             <DialogTitle className="text-xl">Design Gallery</DialogTitle>
@@ -321,8 +383,8 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
                   {filteredTemplates.map((template) => (
                     <div 
                       key={template.id}
-                      onClick={() => handleSelectTemplate(template)}
-                      className="group border rounded-md p-3 hover:shadow-md transition-all cursor-pointer bg-white flex flex-col"
+                      onClick={() => isLoadingTemplate ? null : handleSelectTemplate(template)}
+                      className={`group border rounded-md p-3 hover:shadow-md transition-all ${isLoadingTemplate ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'} bg-white flex flex-col`}
                     >
                       <div className="aspect-video mb-2 bg-gray-100 rounded flex items-center justify-center overflow-hidden relative">
                         {template.thumbnail ? (
@@ -353,9 +415,10 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
                       <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100">
                         <div className="flex items-center space-x-1 text-xs text-muted-foreground">
                           <button 
-                            onClick={(e) => handleLikeTemplate(template, e)}
-                            className="text-muted-foreground hover:text-red-500 transition-colors"
+                            onClick={(e) => !isLoadingTemplate && handleLikeTemplate(template, e)}
+                            className={`text-muted-foreground hover:text-red-500 transition-colors ${isLoadingTemplate ? 'cursor-not-allowed opacity-70' : ''}`}
                             title="Like this template"
+                            disabled={isLoadingTemplate}
                           >
                             <Heart className="h-3.5 w-3.5" fill={template.likes && template.likes > 0 ? "currentColor" : "none"} />
                           </button>
@@ -364,16 +427,18 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
                         
                         <div className="flex items-center space-x-1">
                           <button 
-                            onClick={(e) => handleOpenRenameDialog(template, e)} 
-                            className="text-muted-foreground hover:text-primary transition-colors"
+                            onClick={(e) => !isLoadingTemplate && handleOpenRenameDialog(template, e)} 
+                            className={`text-muted-foreground hover:text-primary transition-colors ${isLoadingTemplate ? 'cursor-not-allowed opacity-70' : ''}`}
                             title="Edit template"
+                            disabled={isLoadingTemplate}
                           >
                             <Edit className="h-3.5 w-3.5" />
                           </button>
                           <button 
-                            onClick={(e) => handleOpenDeleteDialog(template, e)}
-                            className="text-muted-foreground hover:text-destructive transition-colors"
+                            onClick={(e) => !isLoadingTemplate && handleOpenDeleteDialog(template, e)}
+                            className={`text-muted-foreground hover:text-destructive transition-colors ${isLoadingTemplate ? 'cursor-not-allowed opacity-70' : ''}`}
                             title="Delete template"
+                            disabled={isLoadingTemplate}
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
@@ -393,11 +458,11 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
           </Tabs>
           
           <DialogFooter className="mt-4">
-            <Button variant="outline" onClick={onClose} disabled={isLoading}>
-              {isLoading ? (
+            <Button variant="outline" onClick={onClose} disabled={isLoading || isLoadingTemplate}>
+              {isLoading || isLoadingTemplate ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Loading...
+                  {isLoadingTemplate ? 'Loading template...' : 'Loading...'}
                 </>
               ) : 'Close'}
             </Button>
@@ -423,8 +488,8 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
         </AlertDialogContent>
       </AlertDialog>
       
-      {/* Load confirmation dialog - update with loading state */}
-      <AlertDialog open={loadDialogOpen} onOpenChange={setLoadDialogOpen}>
+      {/* Load confirmation dialog with improved loading state */}
+      <AlertDialog open={loadDialogOpen} onOpenChange={(open) => !isLoadingTemplate && setLoadDialogOpen(open)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Load Template</AlertDialogTitle>
@@ -432,36 +497,56 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
               Do you want to replace the current canvas contents or add this template to the existing canvas?
             </AlertDialogDescription>
           </AlertDialogHeader>
+          
+          {isLoadingTemplate && (
+            <div className="py-4">
+              <div className="w-full bg-gray-200 rounded-full h-2.5 mb-4">
+                <div 
+                  className="bg-primary h-2.5 rounded-full transition-all duration-300 ease-out"
+                  style={{ width: `${loadingProgress}%` }}
+                ></div>
+              </div>
+              <p className="text-sm text-center text-muted-foreground">
+                Preparing template data... {Math.round(loadingProgress)}%
+              </p>
+            </div>
+          )}
+          
           <AlertDialogFooter className="flex-col space-y-2 sm:space-y-0 sm:flex-row">
             <AlertDialogCancel 
               onClick={() => {
+                if (loadTimeout) {
+                  clearTimeout(loadTimeout);
+                  setLoadTimeout(null);
+                }
                 setLoadDialogOpen(false);
                 setTemplateToLoad(null);
+                setIsLoadingTemplate(false);
               }}
-              disabled={isLoading}
+              disabled={isLoadingTemplate}
             >
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction 
               onClick={() => confirmLoadTemplate(true)} 
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              disabled={isLoading}
+              disabled={isLoadingTemplate}
             >
-              {isLoading ? (
+              {isLoadingTemplate ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Loading...
+                  Preparing...
                 </>
               ) : 'Replace Canvas'}
             </AlertDialogAction>
             <AlertDialogAction 
               onClick={() => confirmLoadTemplate(false)}
-              disabled={isLoading}
+              disabled={isLoadingTemplate}
             >
-              {isLoading ? (
+              {isLoadingTemplate ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Loading...
+                  Preparing...
                 </>
               ) : 'Add to Canvas'}
             </AlertDialogAction>

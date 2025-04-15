@@ -1,8 +1,8 @@
 
 import BezierCanvas from './BezierCanvas';
 import BezierCanvasContainer from './BezierCanvasContainer';
-import { importSVG } from '@/utils/simpleSvgImporter';
+import { importSVGtoCurves } from '@/utils/curveImporter';
 import { exportSVG, downloadSVG } from '@/utils/simpleSvgExporter';
 
-export { BezierCanvas, importSVG, exportSVG, downloadSVG };
+export { BezierCanvas, importSVGtoCurves, exportSVG, downloadSVG };
 export default BezierCanvasContainer;

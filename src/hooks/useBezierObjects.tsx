@@ -9,8 +9,9 @@ import {
 } from '@/types/bezier';
 import { generateId } from '@/utils/bezierUtils';
 import { toast } from '@/hooks/use-toast';
-import { importSVG } from '@/utils/simpleSvgImporter';
+import { importSVGtoCurves } from '@/utils/curveImporter';
 import { exportSVG, downloadSVG } from '@/utils/simpleSvgExporter';
+import { loadTemplateData } from '@/utils/safeTemplateLoader';
 
 const DEFAULT_CURVE_CONFIG: CurveConfig = {
   styles: [
@@ -32,6 +33,7 @@ export function useBezierObjects() {
   const [history, setHistory] = useState<HistoryState[]>([]);
   const [currentHistoryIndex, setCurrentHistoryIndex] = useState<number>(-1);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [importProgress, setImportProgress] = useState<number>(0);
   
   // Define addToHistory function first so it can be used by other functions
   const addToHistory = useCallback((updatedObjects: BezierObject[]) => {
@@ -89,21 +91,22 @@ export function useBezierObjects() {
     );
   }, []);
   
-  // Import SVG and convert to objects
+  // Import SVG and convert to objects using our curve-focused approach
   const importSVGToObjects = useCallback((svgContent: string) => {
     try {
       setIsLoading(true);
-      console.log('Importing SVG content');
+      console.log('Importing SVG content using curve-focused approach');
       
-      // Import SVG using our simplified importer
-      const importedObjects = importSVG(svgContent);
+      // Import SVG using our improved importer
+      const importedObjects = importSVGtoCurves(svgContent);
       
       if (importedObjects.length === 0) {
         toast({
           title: "Import Warning",
-          description: "No valid paths found in the SVG.",
+          description: "No valid curves could be extracted from the SVG.",
           variant: "destructive"
         });
+        setIsLoading(false);
         return [];
       }
       
@@ -116,10 +119,11 @@ export function useBezierObjects() {
       
       toast({
         title: "SVG Imported",
-        description: `Successfully imported ${importedObjects.length} shapes.`,
+        description: `Successfully imported ${importedObjects.length} curves.`,
         variant: "default"
       });
       
+      setIsLoading(false);
       return importedObjects;
     } catch (error) {
       console.error('Error importing SVG:', error);
@@ -128,9 +132,8 @@ export function useBezierObjects() {
         description: "The SVG file couldn't be imported. Please try a simpler file.",
         variant: "destructive"
       });
-      return [];
-    } finally {
       setIsLoading(false);
+      return [];
     }
   }, [objects, addToHistory]);
   
@@ -167,121 +170,63 @@ export function useBezierObjects() {
     }
   }, [objects]);
   
-  // Improved, safer template loading with error handling and timeouts
+  // Improved, safer template loading with our new safe loader
   const loadObjectsFromTemplate = useCallback((templateData: BezierObject[] | string, clearExisting: boolean = false) => {
     setIsLoading(true);
+    setImportProgress(0);
     
     try {
-      console.log('Loading template objects, clearExisting:', clearExisting);
+      console.log('Loading template objects using safe loader, clearExisting:', clearExisting);
       
-      // Process based on data type
-      let processedObjects: BezierObject[] = [];
-      
-      if (typeof templateData === 'string') {
-        // Try to parse as JSON first
-        try {
-          // Use a try/catch with setTimeout to prevent freezing
-          const parsedData = JSON.parse(templateData);
-          
-          if (Array.isArray(parsedData)) {
-            // Limit max objects for performance (prevent UI freeze)
-            const limitedData = parsedData.slice(0, 30);
-            console.log(`Limiting template from ${parsedData.length} to ${limitedData.length} objects`);
-            
-            processedObjects = limitedData.map(obj => ({
-              ...obj,
-              id: generateId(),
-              isSelected: false,
-              // Ensure points don't exceed reasonable limits
-              points: Array.isArray(obj.points) ? obj.points.slice(0, 50) : []
-            }));
-          } else if (parsedData.objects && Array.isArray(parsedData.objects)) {
-            // Limit max objects for performance
-            const limitedData = parsedData.objects.slice(0, 30);
-            console.log(`Limiting template from ${parsedData.objects.length} to ${limitedData.length} objects`);
-            
-            processedObjects = limitedData.map(obj => ({
-              ...obj,
-              id: generateId(),
-              isSelected: false,
-              // Ensure points don't exceed reasonable limits
-              points: Array.isArray(obj.points) ? obj.points.slice(0, 50) : []
-            }));
+      // Use our new safe template loader with progress updates
+      loadTemplateData(templateData, {
+        onProgress: (progress) => {
+          setImportProgress(progress);
+        },
+        onComplete: (processedObjects) => {
+          // Update state based on clearExisting flag
+          if (clearExisting) {
+            setObjects(processedObjects);
+            setSelectedObjectIds([]);
           } else {
-            throw new Error('Invalid template format');
+            setObjects(prevObjects => [...prevObjects, ...processedObjects]);
           }
-        } catch (e) {
-          console.error('Error parsing JSON template:', e);
-          // If not JSON, try as SVG
-          try {
-            const importedObjects = importSVG(templateData);
-            if (importedObjects.length > 0) {
-              processedObjects = importedObjects.map(obj => ({
-                ...obj,
-                id: generateId(),
-                isSelected: false
-              }));
-            } else {
-              throw new Error('No valid paths in SVG template');
-            }
-          } catch (svgError) {
-            console.error('Error parsing SVG template:', svgError);
-            toast({
-              title: 'Error Loading Template',
-              description: 'Invalid template format',
-              variant: 'destructive'
-            });
-            setIsLoading(false);
-            return;
-          }
-        }
-      } else if (Array.isArray(templateData)) {
-        // Already an array of BezierObjects - limit size for performance
-        const limitedData = templateData.slice(0, 30);
-        processedObjects = limitedData.map(obj => ({
-          ...obj,
-          id: generateId(),
-          isSelected: false,
-          // Ensure points don't exceed reasonable limits
-          points: Array.isArray(obj.points) ? obj.points.slice(0, 50) : []
-        }));
-      } else {
-        throw new Error('Invalid template data type');
-      }
-      
-      // Safety check - if still too many objects, limit further
-      if (processedObjects.length > 30) {
-        processedObjects = processedObjects.slice(0, 30);
-      }
-      
-      // Use setTimeout to avoid UI freezing during state update
-      setTimeout(() => {
-        if (clearExisting) {
-          // Replace all existing objects
-          setObjects(processedObjects);
-          setSelectedObjectIds([]);
-        } else {
-          // Add to existing objects
-          setObjects(prevObjects => [...prevObjects, ...processedObjects]);
-        }
-        
-        // Add to history
-        const updatedObjects = clearExisting 
-          ? processedObjects 
-          : [...objects, ...processedObjects];
           
-        addToHistory(updatedObjects);
-        
+          // Add to history
+          const updatedObjects = clearExisting 
+            ? processedObjects 
+            : [...objects, ...processedObjects];
+            
+          addToHistory(updatedObjects);
+          
+          toast({
+            title: 'Template Loaded',
+            description: `Loaded ${processedObjects.length} objects successfully`,
+            variant: 'default'
+          });
+          
+          setIsLoading(false);
+        },
+        onError: (error) => {
+          console.error('Error loading template:', error);
+          toast({
+            title: 'Error Loading Template',
+            description: error.message || 'Failed to load template',
+            variant: 'destructive'
+          });
+          setIsLoading(false);
+        }
+      }).catch(error => {
+        console.error('Unhandled error in template loader:', error);
         toast({
-          title: 'Template Loaded',
-          description: `Loaded ${processedObjects.length} objects successfully`,
-          variant: 'default'
+          title: 'Error Loading Template',
+          description: 'Unexpected error occurred',
+          variant: 'destructive'
         });
-        
         setIsLoading(false);
-      }, 0);
+      });
     } catch (error) {
-      console.error('Error loading template:', error);
+      console.error('Error in loadObjectsFromTemplate:', error);
       toast({
         title: 'Error Loading Template',
         description: 'There was a problem loading the template',
@@ -460,6 +405,7 @@ export function useBezierObjects() {
     objects,
     selectedObjectIds,
     isLoading,
+    importProgress,
     createObject,
     setAllObjects,
     loadObjectsFromTemplate,

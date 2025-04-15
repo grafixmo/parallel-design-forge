@@ -1,12 +1,12 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   BezierObject, 
   ControlPoint
 } from '@/types/bezier';
 import BezierCanvas from './BezierCanvas';
 import { toast } from '@/hooks/use-toast';
-import { importSVG } from '@/utils/simpleSvgImporter';
+import { importSVGtoCurves } from '@/utils/curveImporter';
 import { exportSVG, downloadSVG } from '@/utils/simpleSvgExporter';
 
 interface BezierCanvasContainerProps {
@@ -25,29 +25,32 @@ interface BezierCanvasContainerProps {
 }
 
 const BezierCanvasContainer: React.FC<BezierCanvasContainerProps> = (props) => {
-  // Handle SVG import with simplified approach
+  const [isImporting, setIsImporting] = useState(false);
+
+  // Handle SVG import with our improved curve-focused approach
   const handleSVGImport = (svgContent: string) => {
     try {
-      console.log('Starting SVG import process...');
+      console.log('Starting SVG import process with curve-focused importer...');
+      setIsImporting(true);
       
-      // Import SVG with our simplified approach
-      const importedObjects = importSVG(svgContent);
+      // Use the improved importer with fewer, better quality control points
+      const importedObjects = importSVGtoCurves(svgContent);
       
       if (importedObjects.length === 0) {
         toast({
-          title: "Import Error",
-          description: "No valid paths found in the SVG file.",
+          title: "Import Notice",
+          description: "No valid curves could be extracted from the SVG file.",
           variant: "destructive"
         });
         return [];
       }
       
-      console.log(`Successfully imported ${importedObjects.length} shapes with ${importedObjects.reduce((sum, obj) => sum + obj.points.length, 0)} total points`);
+      console.log(`Successfully imported ${importedObjects.length} curves with ${importedObjects.reduce((sum, obj) => sum + obj.points.length, 0)} total points`);
       
       // Return imported objects
       toast({
         title: "SVG Imported",
-        description: `Successfully imported ${importedObjects.length} shapes.`,
+        description: `Successfully imported ${importedObjects.length} curves.`,
         variant: "default"
       });
       
@@ -56,10 +59,12 @@ const BezierCanvasContainer: React.FC<BezierCanvasContainerProps> = (props) => {
       console.error("Error importing SVG:", error);
       toast({
         title: "Import Error",
-        description: "Failed to import SVG. Please try a simpler file.",
+        description: "Failed to import SVG. Try a simpler file.",
         variant: "destructive"
       });
       return [];
+    } finally {
+      setIsImporting(false);
     }
   };
   
@@ -98,12 +103,22 @@ const BezierCanvasContainer: React.FC<BezierCanvasContainerProps> = (props) => {
   
   // Pass through to the main BezierCanvas component
   return (
-    <BezierCanvas {...props} />
+    <div className="relative w-full h-full">
+      {isImporting && (
+        <div className="absolute inset-0 bg-white/70 flex items-center justify-center z-50">
+          <div className="flex flex-col items-center">
+            <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full mb-2"></div>
+            <p className="text-primary font-medium">Importing SVG...</p>
+          </div>
+        </div>
+      )}
+      <BezierCanvas {...props} />
+    </div>
   );
 };
 
 // Expose functions for external use
-export { importSVG } from '@/utils/simpleSvgImporter';
+export { importSVGtoCurves } from '@/utils/curveImporter';
 export { exportSVG, downloadSVG } from '@/utils/simpleSvgExporter';
 
 export default BezierCanvasContainer;
