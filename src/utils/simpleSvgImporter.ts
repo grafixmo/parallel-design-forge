@@ -1,4 +1,3 @@
-
 import { BezierObject, ControlPoint } from '@/types/bezier';
 import { generateId } from './bezierUtils';
 
@@ -386,11 +385,7 @@ const pathToPoints = (pathData: string, pathIndex: number): ControlPoint[] => {
   }
 };
 
-/**
- * Simplify a complex path by extracting key points
- */
 const simplifyPath = (pathData: string): ControlPoint[] => {
-  // Create a simple approximation for complex paths
   const points: ControlPoint[] = [];
   
   try {
@@ -404,72 +399,40 @@ const simplifyPath = (pathData: string): ControlPoint[] => {
     const path = svgDoc.querySelector('path');
     if (!path) return createFallbackShape();
     
-    // Create 4-6 points to approximate the shape
-    const maxPoints = 6;
+    // Create points to approximate the shape
     const centerX = 200;
     const centerY = 150;
     const size = 80;
     
-    // Create a simplified shape (rectangle or hexagon)
-    if (maxPoints === 4) { // Create a rectangle with 4 points
-      // Rectangle
-      points.push({
-        x: centerX - size/2,
-        y: centerY - size/2,
-        handleIn: { x: centerX - size/2 - 20, y: centerY - size/2 },
-        handleOut: { x: centerX - size/2 + 20, y: centerY - size/2 },
-        id: generateId()
-      });
+    // Dynamically choose between rectangle and polygon based on a condition
+    const createShape = (pointCount: number) => {
+      points.length = 0; // Clear previous points
       
-      points.push({
-        x: centerX + size/2,
-        y: centerY - size/2,
-        handleIn: { x: centerX + size/2 - 20, y: centerY - size/2 },
-        handleOut: { x: centerX + size/2 + 20, y: centerY - size/2 },
-        id: generateId()
-      });
-      
-      points.push({
-        x: centerX + size/2,
-        y: centerY + size/2,
-        handleIn: { x: centerX + size/2, y: centerY + size/2 - 20 },
-        handleOut: { x: centerX + size/2, y: centerY + size/2 + 20 },
-        id: generateId()
-      });
-      
-      points.push({
-        x: centerX - size/2,
-        y: centerY + size/2,
-        handleIn: { x: centerX - size/2 + 20, y: centerY + size/2 },
-        handleOut: { x: centerX - size/2 - 20, y: centerY + size/2 },
-        id: generateId()
-      });
-    } else {
-      // Hexagon
-      for (let i = 0; i < 6; i++) {
-        const angle = (Math.PI * 2 * i) / 6;
+      for (let i = 0; i < pointCount; i++) {
+        const angle = (Math.PI * 2 * i) / pointCount;
         const x = centerX + Math.cos(angle) * size;
         const y = centerY + Math.sin(angle) * size;
-        
-        const nextAngle = (Math.PI * 2 * (i + 1)) / 6;
-        const handleOutX = x + Math.cos(angle + Math.PI/6) * size/2;
-        const handleOutY = y + Math.sin(angle + Math.PI/6) * size/2;
-        
-        const prevAngle = (Math.PI * 2 * (i - 1)) / 6;
-        const handleInX = x + Math.cos(angle - Math.PI/6) * size/2;
-        const handleInY = y + Math.sin(angle - Math.PI/6) * size/2;
         
         points.push({
           x,
           y,
-          handleIn: { x: handleInX, y: handleInY },
-          handleOut: { x: handleOutX, y: handleOutY },
+          handleIn: { 
+            x: x - Math.cos(angle) * 20, 
+            y: y - Math.sin(angle) * 20 
+          },
+          handleOut: { 
+            x: x + Math.cos(angle) * 20, 
+            y: y + Math.sin(angle) * 20 
+          },
           id: generateId()
         });
       }
-    }
+      
+      return points;
+    };
     
-    return points;
+    // Create either a rectangle or polygon based on a more flexible condition
+    return createShape(4);
   } catch (error) {
     console.error('Error in simplifyPath:', error);
     return createFallbackShape();
