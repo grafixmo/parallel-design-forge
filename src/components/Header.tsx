@@ -1,6 +1,6 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { PenLine, Trash2, Upload, Save, Database, MousePointer, Image, FileUp, Download, Loader2, AlertCircle } from 'lucide-react';
+import { PenLine, Trash2, Upload, Save, Database, MousePointer, Image, FileUp, Download } from 'lucide-react';
 import {
   Tooltip,
   TooltipContent,
@@ -35,7 +35,7 @@ interface HeaderProps {
   onSaveDesign: (name: string, category: string, description?: string) => void;
   onLoadDesigns: () => void;
   onExportSVG: () => void;
-  onImportSVG?: (svgContent: string, onProgress?: (progress: number) => void) => Promise<void>; // Changed to return Promise<void>
+  onImportSVG?: (svgContent: string) => void;
   onLoadTemplate?: (templateData: string, shouldClearCanvas?: boolean) => void;
   isDrawingMode?: boolean;
   onToggleDrawingMode?: () => void;
@@ -57,106 +57,8 @@ const Header: React.FC<HeaderProps> = ({
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
-  const [importProgress, setImportProgress] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const categories = getTemplateCategories();
-  
-  // Add memory management for file import
-  const [svgBuffer, setSvgBuffer] = useState<string | null>(null);
-  const [importError, setImportError] = useState<string | null>(null);
-  
-  // Clear buffer on component unmount
-  useEffect(() => {
-    return () => {
-      setSvgBuffer(null);
-    };
-  }, []);
-  
-  // Debounced SVG import to prevent UI freezes
-  const debouncedSvgImport = useCallback((svgContent: string) => {
-    if (!onImportSVG) return;
-    
-    // Clear previous errors
-    setImportError(null);
-    
-    try {
-      // Basic validation before processing
-      if (!svgContent || typeof svgContent !== 'string') {
-        throw new Error('Invalid SVG: Empty content');
-      }
-      
-      if (svgContent.length < 10) {
-        throw new Error(`SVG file too small (${svgContent.length} bytes). This may not be a valid SVG.`);
-      }
-      
-      // Store in buffer to free the file input
-      setSvgBuffer(svgContent);
-      
-      // Show importing toast and reset progress
-      setIsImporting(true);
-      setImportProgress(0);
-      
-      toast({
-        title: "Importing SVG",
-        description: "Please wait while we process your SVG file...",
-      });
-      
-      // Use a small delay to allow UI to update before heavy processing
-      setTimeout(() => {
-        try {
-          // Pass the progress callback to track import progress
-          onImportSVG(svgContent, (progress) => {
-            setImportProgress(progress);
-          })
-          .then(() => {
-            toast({
-              title: "SVG Imported Successfully",
-              description: "Your SVG file has been imported and rendered on the canvas.",
-              variant: "default"
-            });
-          })
-          .catch((error) => {
-            console.error("Error during SVG import:", error);
-            setImportError(error?.message || "Failed to process SVG");
-            toast({
-              title: "Import Error",
-              description: error?.message || "There was an error processing the SVG. Please try a different file.",
-              variant: "destructive"
-            });
-          })
-          .finally(() => {
-            setIsImporting(false);
-            setImportProgress(0);
-            setSvgBuffer(null); // Clear buffer after processing
-          });
-        } catch (error: any) {
-          setIsImporting(false);
-          setImportProgress(0);
-          setSvgBuffer(null);
-          setImportError(error?.message || "Unknown error processing SVG");
-          
-          toast({
-            title: "Import Failed",
-            description: error?.message || "There was an error processing the SVG file.",
-            variant: "destructive"
-          });
-        }
-      }, 100);
-    } catch (error: any) {
-      console.error('Error importing SVG:', error);
-      setImportError(error?.message || "Unknown error");
-      
-      toast({
-        title: "Import Failed",
-        description: error?.message || "Failed to import the SVG file. Please try a different file.",
-        variant: "destructive"
-      });
-      
-      setIsImporting(false);
-      setImportProgress(0);
-      setSvgBuffer(null);
-    }
-  }, [onImportSVG]);
   
   const handleSaveClick = () => {
     setSaveDialogOpen(true);
@@ -170,22 +72,13 @@ const Header: React.FC<HeaderProps> = ({
     setDesignDescription('');
   };
 
-  const handleSelectTemplate = useCallback((templateData: string, shouldClearCanvas: boolean) => {
+  const handleSelectTemplate = (templateData: string, shouldClearCanvas: boolean) => {
     if (onLoadTemplate) {
-      // Close the gallery first to prevent UI freezing
-      setGalleryOpen(false);
-      
-      // Small delay to allow gallery to close before loading template
-      setTimeout(() => {
-        onLoadTemplate(templateData, shouldClearCanvas);
-      }, 200);
+      onLoadTemplate(templateData, shouldClearCanvas);
     }
-  }, [onLoadTemplate]);
+  };
   
   const handleImportClick = () => {
-    // Reset errors and state before trying to import
-    setImportError(null);
-    setSvgBuffer(null);
     fileInputRef.current?.click();
   };
   
@@ -203,59 +96,61 @@ const Header: React.FC<HeaderProps> = ({
       return;
     }
     
-    // Check file size
-    if (file.size > 5 * 1024 * 1024) { // 5MB
-      toast({
-        title: "File Too Large",
-        description: "SVG file exceeds the 5MB limit. Please use a smaller file.",
-        variant: "destructive"
-      });
-      return;
-    }
-    
     try {
+      // Show importing toast
+      setIsImporting(true);
+      toast({
+        title: "Importing SVG",
+        description: "Please wait while we process your SVG file...",
+      });
+      
       // Read file content
       const reader = new FileReader();
-      
       reader.onload = (event) => {
         const content = event.target?.result as string;
-        if (content) {
-          debouncedSvgImport(content);
+        if (content && onImportSVG) {
+          try {
+            onImportSVG(content);
+            toast({
+              title: "SVG Imported Successfully",
+              description: "Your SVG file has been imported and rendered on the canvas.",
+              variant: "default"
+            });
+          } catch (error) {
+            console.error("Error during SVG import:", error);
+            toast({
+              title: "Import Error",
+              description: "There was an error processing the SVG. Please try a simpler file.",
+              variant: "destructive"
+            });
+          } finally {
+            setIsImporting(false);
+          }
         }
       };
       
       reader.onerror = () => {
         toast({
           title: "Import Failed",
-          description: "Failed to read the SVG file. Please try again with a different file.",
+          description: "Failed to read the SVG file. Please try again.",
           variant: "destructive"
         });
         setIsImporting(false);
-        setImportProgress(0);
       };
       
       reader.readAsText(file);
       
       // Reset the input to allow selecting the same file again
       e.target.value = '';
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error importing SVG:', error);
       toast({
         title: "Import Failed",
-        description: error?.message || "Failed to import the SVG file. Please try again.",
+        description: "Failed to import the SVG file. Please try again.",
         variant: "destructive"
       });
       setIsImporting(false);
-      setImportProgress(0);
     }
-  };
-  
-  // Generate button label based on import progress
-  const importButtonLabel = () => {
-    if (!isImporting) return 'SVG Actions';
-    if (importProgress === 0) return 'Preparing...';
-    if (importProgress >= 100) return 'Finalizing...';
-    return `Importing ${Math.round(importProgress)}%`;
   };
   
   return (
@@ -310,7 +205,6 @@ const Header: React.FC<HeaderProps> = ({
               <Button 
                 variant="outline" 
                 onClick={() => setGalleryOpen(true)}
-                disabled={isImporting}
               >
                 <Image className="h-4 w-4 mr-2" />
                 Gallery
@@ -325,7 +219,7 @@ const Header: React.FC<HeaderProps> = ({
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="outline" onClick={onLoadDesigns} disabled={isImporting}>
+              <Button variant="outline" onClick={onLoadDesigns}>
                 <Upload className="h-4 w-4 mr-2" />
                 Load Reference
               </Button>
@@ -338,7 +232,7 @@ const Header: React.FC<HeaderProps> = ({
         
         <Dialog open={saveDialogOpen} onOpenChange={setSaveDialogOpen}>
           <DialogTrigger asChild>
-            <Button onClick={handleSaveClick} disabled={isImporting}>
+            <Button onClick={handleSaveClick}>
               <Save className="h-4 w-4 mr-2" />
               Save Design
             </Button>
@@ -405,28 +299,16 @@ const Header: React.FC<HeaderProps> = ({
           </DialogContent>
         </Dialog>
         
-        {/* SVG Import/Export Dropdown with Progress Indicator */}
+        {/* SVG Import/Export Dropdown */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="default" className="bg-indigo-600 hover:bg-indigo-700 relative" disabled={isImporting}>
-              {isImporting && (
-                <div className="absolute inset-0 flex items-center justify-center bg-indigo-600 rounded">
-                  <div className="flex items-center">
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    <span className="text-xs">{importButtonLabel()}</span>
-                  </div>
-                </div>
-              )}
-              {!isImporting && (
-                <>
-                  <Database className="h-4 w-4 mr-2" />
-                  SVG Actions
-                </>
-              )}
+            <Button variant="default" className="bg-indigo-600 hover:bg-indigo-700" disabled={isImporting}>
+              <Database className="h-4 w-4 mr-2" />
+              {isImporting ? 'Importing...' : 'SVG Actions'}
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent>
-            <DropdownMenuItem onClick={onExportSVG} className="cursor-pointer" disabled={isImporting}>
+            <DropdownMenuItem onClick={onExportSVG} className="cursor-pointer">
               <Download className="h-4 w-4 mr-2" />
               Export SVG
             </DropdownMenuItem>
@@ -436,19 +318,6 @@ const Header: React.FC<HeaderProps> = ({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        
-        {/* Error display */}
-        {importError && (
-          <div className="fixed bottom-4 right-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded max-w-sm z-50">
-            <div className="flex items-start">
-              <AlertCircle className="h-5 w-5 mr-2 flex-shrink-0 mt-0.5" />
-              <div>
-                <p className="font-bold">Import Error</p>
-                <p className="text-sm">{importError}</p>
-              </div>
-            </div>
-          </div>
-        )}
         
         {/* Hidden file input for SVG import */}
         <input
@@ -460,14 +329,12 @@ const Header: React.FC<HeaderProps> = ({
         />
       </div>
       
-      {/* Gallery component - lazy load to prevent freezing */}
-      {galleryOpen && (
-        <TemplateGallery
-          open={galleryOpen}
-          onClose={() => setGalleryOpen(false)}
-          onSelectTemplate={handleSelectTemplate}
-        />
-      )}
+      {/* Gallery component */}
+      <TemplateGallery
+        open={galleryOpen}
+        onClose={() => setGalleryOpen(false)}
+        onSelectTemplate={handleSelectTemplate}
+      />
     </div>
   );
 };
