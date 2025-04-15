@@ -66,6 +66,13 @@ const Header: React.FC<HeaderProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const categories = getTemplateCategories();
   
+  // Add the missing handleImportClick function
+  const handleImportClick = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    }
+  };
+  
   const handleSaveClick = () => {
     setSaveDialogOpen(true);
   };

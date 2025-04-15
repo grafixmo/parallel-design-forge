@@ -1,5 +1,4 @@
-
-import { supabase } from '@/services/supabaseClient';
+import supabase from '@/services/supabaseClient';
 import { BezierObject } from '@/types/bezier';
 import { toast } from '@/hooks/use-toast';
 import { importSVG } from './fabricSvgImporter';
