@@ -1,4 +1,3 @@
-
 import { BezierObject, ControlPoint } from '@/types/bezier';
 import { generateId } from './bezierUtils';
 
@@ -27,10 +26,12 @@ export const readSVGFile = (file: File): Promise<string> => {
 
 /**
  * Import SVG content and convert to BezierObjects
- * This is a much simpler version that creates fewer, better-positioned points
+ * This is a simplified and more robust version that handles complex SVGs better
  */
 export const importSVG = (svgContent: string): BezierObject[] => {
   try {
+    console.log('Starting simplified SVG import...');
+    
     // Parse SVG content
     const parser = new DOMParser();
     const svgDoc = parser.parseFromString(svgContent, 'image/svg+xml');
@@ -38,85 +39,91 @@ export const importSVG = (svgContent: string): BezierObject[] => {
     // Check for parsing errors
     const parserError = svgDoc.querySelector('parsererror');
     if (parserError) {
+      console.error('SVG parse error:', parserError.textContent);
       throw new Error('Invalid SVG format');
     }
     
-    // Get viewBox or width/height
+    // Get SVG dimensions
     const svgElement = svgDoc.querySelector('svg');
-    let viewBox = { width: 800, height: 600 };
+    if (!svgElement) {
+      throw new Error('No SVG element found');
+    }
     
-    if (svgElement) {
-      const viewBoxAttr = svgElement.getAttribute('viewBox');
-      if (viewBoxAttr) {
-        const [, , w, h] = viewBoxAttr.split(' ').map(parseFloat);
-        if (!isNaN(w) && !isNaN(h)) {
-          viewBox = { width: w, height: h };
-        }
-      } else {
-        const width = parseFloat(svgElement.getAttribute('width') || '800');
-        const height = parseFloat(svgElement.getAttribute('height') || '600');
-        viewBox = { width, height };
+    const width = parseFloat(svgElement.getAttribute('width') || '800');
+    const height = parseFloat(svgElement.getAttribute('height') || '600');
+    
+    // Parse viewBox if available for better scaling
+    let viewBox = undefined;
+    const viewBoxAttr = svgElement.getAttribute('viewBox');
+    if (viewBoxAttr) {
+      const viewBoxValues = viewBoxAttr.split(/\s+/).map(parseFloat);
+      if (viewBoxValues.length === 4) {
+        viewBox = {
+          minX: viewBoxValues[0],
+          minY: viewBoxValues[1],
+          width: viewBoxValues[2],
+          height: viewBoxValues[3]
+        };
       }
     }
     
     // Get all path elements
-    const pathElements = Array.from(svgDoc.querySelectorAll('path'));
+    const pathElements = svgDoc.querySelectorAll('path');
     if (pathElements.length === 0) {
       console.warn('No path elements found in SVG');
       return [];
     }
     
-    // Limit to max 5 paths to prevent freezing
-    const maxPaths = 5;
+    // Limit the number of paths to process
+    const maxPaths = 5; // Limit to 5 paths to prevent freezing
+    const processedElements = Array.from(pathElements).slice(0, maxPaths);
+    
     if (pathElements.length > maxPaths) {
-      console.warn(`SVG contains ${pathElements.length} paths, limiting to ${maxPaths} to prevent freezing`);
-      pathElements.length = maxPaths;
+      console.warn(`SVG contains ${pathElements.length} paths, processing only the first ${maxPaths} to prevent freezing`);
     }
     
-    // Convert paths to BezierObjects
+    // Convert paths to bezier objects
     const objects: BezierObject[] = [];
-    const canvasWidth = 800;
-    const canvasHeight = 600;
     
-    pathElements.forEach((pathElement, index) => {
+    processedElements.forEach((pathElement, index) => {
       const pathData = pathElement.getAttribute('d');
       if (!pathData) return;
       
-      // Create simple shapes based on path data
+      // Extract styling
+      const stroke = pathElement.getAttribute('stroke') || '#000000';
+      const strokeWidth = parseFloat(pathElement.getAttribute('stroke-width') || '2');
+      
+      // Extract transform if present
+      const transform = pathElement.getAttribute('transform');
+      
       try {
-        // Extract path properties
-        const stroke = pathElement.getAttribute('stroke') || '#000000';
-        const strokeWidth = parseFloat(pathElement.getAttribute('stroke-width') || '2');
-        
-        // Convert path to simple control points (maximum 8 points per shape)
-        const points = convertPathToPoints(pathData, index);
+        // Convert path to control points with intelligent simplification
+        const points = pathToPoints(pathData, index);
         
         if (points.length >= 2) {
-          // Scale points to fit canvas
-          const scaledPoints = scalePointsToCanvas(points, viewBox, canvasWidth, canvasHeight);
-          
           // Create bezier object
           objects.push({
             id: generateId(),
-            points: scaledPoints,
+            points,
             curveConfig: {
               styles: [{ color: stroke, width: strokeWidth }],
               parallelCount: 0,
               spacing: 0
             },
-            transform: {
-              rotation: 0,
-              scaleX: 1.0,
-              scaleY: 1.0
-            },
+            transform: parseTransform(transform),
             name: `Imported Shape ${index + 1}`,
             isSelected: false
           });
         }
-      } catch (error) {
-        console.error(`Error processing path ${index}:`, error);
+      } catch (err) {
+        console.error(`Error processing path ${index}:`, err);
       }
     });
+    
+    // Center and scale the objects to fit in the canvas
+    centerAndScaleObjects(objects);
+    
+    console.log(`Successfully imported ${objects.length} shapes with ${objects.reduce((sum, obj) => sum + obj.points.length, 0)} total points`);
     
     return objects;
   } catch (error) {
@@ -126,36 +133,64 @@ export const importSVG = (svgContent: string): BezierObject[] => {
 };
 
 /**
- * Convert SVG path data to control points with a simpler approach
- * Limits to max 8 points per shape and sets proper handles
+ * Parse SVG transform attribute
  */
-const convertPathToPoints = (pathData: string, pathIndex: number): ControlPoint[] => {
+const parseTransform = (transformAttr?: string | null) => {
+  const defaultTransform = {
+    rotation: 0,
+    scaleX: 1.0,
+    scaleY: 1.0
+  };
+  
+  if (!transformAttr) return defaultTransform;
+  
   try {
-    // Use a very simple approach: create a small number of evenly distributed points
-    // This prevents freezing and creates cleaner shapes
-    
-    // For demo purpose, if path is too complex, create simple shapes
-    if (pathData.length > 100) {
-      return createSimpleShape(pathIndex);
+    // Extract rotation
+    const rotateMatch = transformAttr.match(/rotate\(\s*([^)]+)\)/);
+    if (rotateMatch && rotateMatch[1]) {
+      defaultTransform.rotation = parseFloat(rotateMatch[1]);
     }
     
-    // Extract basic commands
+    // Extract scale
+    const scaleMatch = transformAttr.match(/scale\(\s*([^,)]+)(?:,\s*([^)]+))?\)/);
+    if (scaleMatch) {
+      if (scaleMatch[1]) {
+        defaultTransform.scaleX = parseFloat(scaleMatch[1]);
+        defaultTransform.scaleY = scaleMatch[2] ? parseFloat(scaleMatch[2]) : defaultTransform.scaleX;
+      }
+    }
+    
+    return defaultTransform;
+  } catch (e) {
+    console.error('Error parsing transform:', e);
+    return defaultTransform;
+  }
+};
+
+/**
+ * Convert SVG path data to control points
+ * This is a simplified version that creates fewer, better-quality points
+ */
+const pathToPoints = (pathData: string, pathIndex: number): ControlPoint[] => {
+  const points: ControlPoint[] = [];
+  
+  try {
+    // Parse the path data into commands
     const commands = pathData.match(/[a-zA-Z][^a-zA-Z]*/g) || [];
     
-    // If too many commands, create a simple shape instead
+    // Skip overly complex paths or simplify them
     if (commands.length > 20) {
-      return createSimpleShape(pathIndex);
+      console.warn(`Path ${pathIndex} has ${commands.length} commands, simplifying`);
+      return simplifyPath(pathData);
     }
     
-    // Try to parse the path data
-    const points: ControlPoint[] = [];
     let currentX = 0;
     let currentY = 0;
     let firstX = 0;
     let firstY = 0;
     
-    // Process only the main commands
-    for (let i = 0; i < Math.min(commands.length, 20); i++) {
+    // Process each command
+    for (let i = 0; i < commands.length; i++) {
       const command = commands[i];
       const type = command.charAt(0);
       const args = command.substring(1)
@@ -164,17 +199,23 @@ const convertPathToPoints = (pathData: string, pathIndex: number): ControlPoint[
         .map(parseFloat)
         .filter(n => !isNaN(n));
       
-      // Only handle the most common commands
       switch (type) {
         case 'M': // Move to (absolute)
+        case 'm': // Move to (relative)
           if (args.length >= 2) {
-            currentX = args[0];
-            currentY = args[1];
+            if (type === 'M') {
+              currentX = args[0];
+              currentY = args[1];
+            } else {
+              currentX += args[0];
+              currentY += args[1];
+            }
             
             if (points.length === 0) {
               firstX = currentX;
               firstY = currentY;
               
+              // Add first point
               points.push({
                 x: currentX,
                 y: currentY,
@@ -185,224 +226,412 @@ const convertPathToPoints = (pathData: string, pathIndex: number): ControlPoint[
             }
           }
           break;
-        
+          
         case 'L': // Line to (absolute)
+        case 'l': // Line to (relative)
           if (args.length >= 2) {
-            const newX = args[0];
-            const newY = args[1];
+            let endX, endY;
             
-            // Skip if too close to previous point
+            if (type === 'L') {
+              endX = args[0];
+              endY = args[1];
+            } else {
+              endX = currentX + args[0];
+              endY = currentY + args[1];
+            }
+            
+            // Check if this is a significant line segment
             if (points.length > 0) {
-              const prevPoint = points[points.length - 1];
-              const distance = Math.sqrt(
-                Math.pow(newX - prevPoint.x, 2) + 
-                Math.pow(newY - prevPoint.y, 2)
-              );
+              const lastPoint = points[points.length - 1];
+              const dx = endX - lastPoint.x;
+              const dy = endY - lastPoint.y;
+              const distance = Math.sqrt(dx*dx + dy*dy);
               
+              // Only add points that are significant
               if (distance > 10) {
-                // Add a point with reasonable handles
+                // Set handles at 1/3 of the distance
+                const handleDist = distance / 3;
+                const ratio = handleDist / distance;
+                
+                // Update previous point's handleOut
+                lastPoint.handleOut = {
+                  x: lastPoint.x + dx * ratio,
+                  y: lastPoint.y + dy * ratio
+                };
+                
+                // Add the new point
                 points.push({
-                  x: newX,
-                  y: newY,
-                  handleIn: { 
-                    x: newX - (newX - prevPoint.x) / 3, 
-                    y: newY - (newY - prevPoint.y) / 3 
+                  x: endX,
+                  y: endY,
+                  handleIn: {
+                    x: endX - dx * ratio,
+                    y: endY - dy * ratio
                   },
-                  handleOut: { 
-                    x: newX + (newX - prevPoint.x) / 3, 
-                    y: newY + (newY - prevPoint.y) / 3 
+                  handleOut: {
+                    x: endX + dx * ratio,
+                    y: endY + dy * ratio
                   },
                   id: generateId()
                 });
-                
-                currentX = newX;
-                currentY = newY;
               }
             }
+            
+            currentX = endX;
+            currentY = endY;
           }
           break;
-        
+          
+        case 'C': // Cubic Bézier (absolute)
+        case 'c': // Cubic Bézier (relative)
+          if (args.length >= 6) {
+            let control1X, control1Y, control2X, control2Y, endX, endY;
+            
+            if (type === 'C') {
+              control1X = args[0];
+              control1Y = args[1];
+              control2X = args[2];
+              control2Y = args[3];
+              endX = args[4];
+              endY = args[5];
+            } else {
+              control1X = currentX + args[0];
+              control1Y = currentY + args[1];
+              control2X = currentX + args[2];
+              control2Y = currentY + args[3];
+              endX = currentX + args[4];
+              endY = currentY + args[5];
+            }
+            
+            if (points.length > 0) {
+              // Check if this curve is significant
+              const lastPoint = points[points.length - 1];
+              const dx = endX - lastPoint.x;
+              const dy = endY - lastPoint.y;
+              const distance = Math.sqrt(dx*dx + dy*dy);
+              
+              if (distance > 10) {
+                // Update the previous point's handleOut
+                lastPoint.handleOut = {
+                  x: control1X,
+                  y: control1Y
+                };
+                
+                // Add the new point
+                points.push({
+                  x: endX,
+                  y: endY,
+                  handleIn: {
+                    x: control2X,
+                    y: control2Y
+                  },
+                  handleOut: {
+                    x: endX + (endX - control2X) * 0.5,
+                    y: endY + (endY - control2Y) * 0.5
+                  },
+                  id: generateId()
+                });
+              }
+            }
+            
+            currentX = endX;
+            currentY = endY;
+          }
+          break;
+          
         case 'Z': // Close path
+        case 'z':
+          // Close the path by connecting back to the first point
           if (points.length > 1) {
-            // Connect back to first point
             const lastPoint = points[points.length - 1];
-            const distance = Math.sqrt(
-              Math.pow(firstX - lastPoint.x, 2) + 
-              Math.pow(firstY - lastPoint.y, 2)
-            );
+            const firstPoint = points[0];
+            
+            // Calculate direction to first point
+            const dx = firstPoint.x - lastPoint.x;
+            const dy = firstPoint.y - lastPoint.y;
+            const distance = Math.sqrt(dx*dx + dy*dy);
             
             if (distance > 10) {
-              // Update the last point's handle
+              const handleDist = distance / 3;
+              const ratio = handleDist / distance;
+              
+              // Update last point's handleOut
               lastPoint.handleOut = {
-                x: lastPoint.x + (firstX - lastPoint.x) / 3,
-                y: lastPoint.y + (firstY - lastPoint.y) / 3
+                x: lastPoint.x + dx * ratio,
+                y: lastPoint.y + dy * ratio
               };
               
-              // Update the first point's handle
-              points[0].handleIn = {
-                x: firstX - (firstX - lastPoint.x) / 3,
-                y: firstY - (firstY - lastPoint.y) / 3
+              // Update first point's handleIn
+              firstPoint.handleIn = {
+                x: firstPoint.x - dx * ratio,
+                y: firstPoint.y - dy * ratio
               };
             }
           }
           break;
-      }
-      
-      // Limit to 8 points to prevent complexity
-      if (points.length >= 8) {
-        break;
       }
     }
     
-    // If we couldn't parse enough points, create a simple shape
-    if (points.length < 2) {
-      return createSimpleShape(pathIndex);
+    // If we ended up with too many points, simplify
+    if (points.length > 10) {
+      return simplifyPoints(points, 10);
     }
     
     return points;
   } catch (error) {
-    console.error('Error converting path to points:', error);
-    return createSimpleShape(pathIndex);
+    console.error('Error in pathToPoints:', error);
+    
+    // Return a simple fallback shape
+    return createFallbackShape();
   }
 };
 
 /**
- * Create a simple shape as a fallback
+ * Simplify a complex path by extracting key points
  */
-const createSimpleShape = (index: number): ControlPoint[] => {
-  // Offset each shape slightly
-  const offset = index * 30;
-  const centerX = 400 + offset;
-  const centerY = 300 + offset;
+const simplifyPath = (pathData: string): ControlPoint[] => {
+  // Create a simple approximation for complex paths
+  const points: ControlPoint[] = [];
   
-  // Create a simple square or circle
-  if (index % 2 === 0) {
-    // Square
-    const size = 100;
-    return [
-      {
+  try {
+    // Parse the path to get a rough bounding box
+    const parser = new DOMParser();
+    const svgDoc = parser.parseFromString(
+      `<svg><path d="${pathData}" /></svg>`, 
+      'image/svg+xml'
+    );
+    
+    const path = svgDoc.querySelector('path');
+    if (!path) return createFallbackShape();
+    
+    // Create 4-6 points to approximate the shape
+    const maxPoints = 6;
+    const centerX = 200;
+    const centerY = 150;
+    const size = 80;
+    
+    // Create a simplified shape (rectangle or hexagon)
+    if (maxPoints === 4) {
+      // Rectangle
+      points.push({
         x: centerX - size/2,
         y: centerY - size/2,
         handleIn: { x: centerX - size/2 - 20, y: centerY - size/2 },
         handleOut: { x: centerX - size/2 + 20, y: centerY - size/2 },
         id: generateId()
-      },
-      {
+      });
+      
+      points.push({
         x: centerX + size/2,
         y: centerY - size/2,
         handleIn: { x: centerX + size/2 - 20, y: centerY - size/2 },
         handleOut: { x: centerX + size/2 + 20, y: centerY - size/2 },
         id: generateId()
-      },
-      {
+      });
+      
+      points.push({
         x: centerX + size/2,
         y: centerY + size/2,
         handleIn: { x: centerX + size/2, y: centerY + size/2 - 20 },
         handleOut: { x: centerX + size/2, y: centerY + size/2 + 20 },
         id: generateId()
-      },
-      {
+      });
+      
+      points.push({
         x: centerX - size/2,
         y: centerY + size/2,
         handleIn: { x: centerX - size/2 + 20, y: centerY + size/2 },
         handleOut: { x: centerX - size/2 - 20, y: centerY + size/2 },
         id: generateId()
+      });
+    } else {
+      // Hexagon
+      for (let i = 0; i < 6; i++) {
+        const angle = (Math.PI * 2 * i) / 6;
+        const x = centerX + Math.cos(angle) * size;
+        const y = centerY + Math.sin(angle) * size;
+        
+        const nextAngle = (Math.PI * 2 * (i + 1)) / 6;
+        const handleOutX = x + Math.cos(angle + Math.PI/6) * size/2;
+        const handleOutY = y + Math.sin(angle + Math.PI/6) * size/2;
+        
+        const prevAngle = (Math.PI * 2 * (i - 1)) / 6;
+        const handleInX = x + Math.cos(angle - Math.PI/6) * size/2;
+        const handleInY = y + Math.sin(angle - Math.PI/6) * size/2;
+        
+        points.push({
+          x,
+          y,
+          handleIn: { x: handleInX, y: handleInY },
+          handleOut: { x: handleOutX, y: handleOutY },
+          id: generateId()
+        });
       }
-    ];
-  } else {
-    // Simplified circle with 4 points
-    const radius = 50;
-    return [
-      {
-        x: centerX,
-        y: centerY - radius,
-        handleIn: { x: centerX - radius/2, y: centerY - radius },
-        handleOut: { x: centerX + radius/2, y: centerY - radius },
-        id: generateId()
-      },
-      {
-        x: centerX + radius,
-        y: centerY,
-        handleIn: { x: centerX + radius, y: centerY - radius/2 },
-        handleOut: { x: centerX + radius, y: centerY + radius/2 },
-        id: generateId()
-      },
-      {
-        x: centerX,
-        y: centerY + radius,
-        handleIn: { x: centerX + radius/2, y: centerY + radius },
-        handleOut: { x: centerX - radius/2, y: centerY + radius },
-        id: generateId()
-      },
-      {
-        x: centerX - radius,
-        y: centerY,
-        handleIn: { x: centerX - radius, y: centerY + radius/2 },
-        handleOut: { x: centerX - radius, y: centerY - radius/2 },
-        id: generateId()
-      }
-    ];
+    }
+    
+    return points;
+  } catch (error) {
+    console.error('Error in simplifyPath:', error);
+    return createFallbackShape();
   }
 };
 
 /**
- * Scale points to fit the canvas
+ * Simplify points by removing some
  */
-const scalePointsToCanvas = (
-  points: ControlPoint[],
-  viewBox: { width: number, height: number },
-  canvasWidth: number,
-  canvasHeight: number
-): ControlPoint[] => {
-  // Find bounds of points
+const simplifyPoints = (points: ControlPoint[], targetCount: number): ControlPoint[] => {
+  if (points.length <= targetCount) return points;
+  
+  // Keep first and last points
+  const simplified: ControlPoint[] = [points[0]];
+  
+  // Calculate stride
+  const stride = Math.max(1, Math.floor((points.length - 2) / (targetCount - 2)));
+  
+  // Add interior points
+  for (let i = stride; i < points.length - 1; i += stride) {
+    if (simplified.length < targetCount - 1) {
+      simplified.push(points[i]);
+    }
+  }
+  
+  // Add the last point
+  simplified.push(points[points.length - 1]);
+  
+  // Recalculate handles
+  setupHandles(simplified);
+  
+  return simplified;
+};
+
+/**
+ * Create a fallback shape if parsing fails
+ */
+const createFallbackShape = (): ControlPoint[] => {
+  // Create a simple square
+  const centerX = 200;
+  const centerY = 150;
+  const size = 80;
+  
+  return [
+    {
+      x: centerX - size/2,
+      y: centerY - size/2,
+      handleIn: { x: centerX - size/2 - 20, y: centerY - size/2 },
+      handleOut: { x: centerX - size/2 + 20, y: centerY - size/2 },
+      id: generateId()
+    },
+    {
+      x: centerX + size/2,
+      y: centerY - size/2,
+      handleIn: { x: centerX + size/2 - 20, y: centerY - size/2 },
+      handleOut: { x: centerX + size/2 + 20, y: centerY - size/2 },
+      id: generateId()
+    },
+    {
+      x: centerX + size/2,
+      y: centerY + size/2,
+      handleIn: { x: centerX + size/2, y: centerY + size/2 - 20 },
+      handleOut: { x: centerX + size/2, y: centerY + size/2 + 20 },
+      id: generateId()
+    },
+    {
+      x: centerX - size/2,
+      y: centerY + size/2,
+      handleIn: { x: centerX - size/2 + 20, y: centerY + size/2 },
+      handleOut: { x: centerX - size/2 - 20, y: centerY + size/2 },
+      id: generateId()
+    }
+  ];
+};
+
+/**
+ * Setup reasonable handles for points
+ */
+const setupHandles = (points: ControlPoint[]): void => {
+  if (points.length < 2) return;
+  
+  for (let i = 0; i < points.length; i++) {
+    const curr = points[i];
+    const prev = i > 0 ? points[i - 1] : points[points.length - 1];
+    const next = i < points.length - 1 ? points[i + 1] : points[0];
+    
+    // Calculate directions
+    const toPrev = { x: prev.x - curr.x, y: prev.y - curr.y };
+    const toNext = { x: next.x - curr.x, y: next.y - curr.y };
+    
+    // Normalize and scale
+    const toPrevLength = Math.sqrt(toPrev.x * toPrev.x + toPrev.y * toPrev.y);
+    const toNextLength = Math.sqrt(toNext.x * toNext.x + toNext.y * toNext.y);
+    
+    const handleLength = Math.min(40, Math.min(toPrevLength, toNextLength) / 3);
+    
+    if (toPrevLength > 0) {
+      curr.handleIn = {
+        x: curr.x - (toPrev.x / toPrevLength) * handleLength,
+        y: curr.y - (toPrev.y / toPrevLength) * handleLength
+      };
+    }
+    
+    if (toNextLength > 0) {
+      curr.handleOut = {
+        x: curr.x + (toNext.x / toNextLength) * handleLength,
+        y: curr.y + (toNext.y / toNextLength) * handleLength
+      };
+    }
+  }
+};
+
+/**
+ * Center and scale objects to fit in canvas
+ */
+const centerAndScaleObjects = (objects: BezierObject[]): void => {
+  if (objects.length === 0) return;
+  
+  // Find bounding box
   let minX = Infinity, minY = Infinity;
   let maxX = -Infinity, maxY = -Infinity;
   
-  points.forEach(point => {
-    minX = Math.min(minX, point.x);
-    minY = Math.min(minY, point.y);
-    maxX = Math.max(maxX, point.x);
-    maxY = Math.max(maxY, point.y);
+  objects.forEach(obj => {
+    obj.points.forEach(point => {
+      minX = Math.min(minX, point.x);
+      minY = Math.min(minY, point.y);
+      maxX = Math.max(maxX, point.x);
+      maxY = Math.max(maxY, point.y);
+    });
   });
   
+  // Calculate dimensions and center
   const width = maxX - minX;
   const height = maxY - minY;
-  
-  // Calculate scale to fit canvas (80% of canvas size)
-  const scaleX = (canvasWidth * 0.8) / Math.max(width, 10);
-  const scaleY = (canvasHeight * 0.8) / Math.max(height, 10);
-  const scale = Math.min(scaleX, scaleY);
-  
-  // Calculate center points
   const centerX = minX + width / 2;
   const centerY = minY + height / 2;
-  const targetCenterX = canvasWidth / 2;
-  const targetCenterY = canvasHeight / 2;
   
-  // Scale and center all points
-  return points.map(point => {
-    // Scale and center main point
-    const scaledX = targetCenterX + (point.x - centerX) * scale;
-    const scaledY = targetCenterY + (point.y - centerY) * scale;
-    
-    // Scale handles relative to the main point
-    const handleInDX = point.handleIn.x - point.x;
-    const handleInDY = point.handleIn.y - point.y;
-    const handleOutDX = point.handleOut.x - point.x;
-    const handleOutDY = point.handleOut.y - point.y;
-    
-    return {
-      x: scaledX,
-      y: scaledY,
-      handleIn: {
-        x: scaledX + handleInDX * scale,
-        y: scaledY + handleInDY * scale
-      },
-      handleOut: {
-        x: scaledX + handleOutDX * scale,
-        y: scaledY + handleOutDY * scale
-      },
-      id: point.id
-    };
+  // Target canvas dimensions
+  const targetCenterX = 400;
+  const targetCenterY = 300;
+  
+  // Calculate translation
+  const translateX = targetCenterX - centerX;
+  const translateY = targetCenterY - centerY;
+  
+  // Calculate scale if needed
+  let scale = 1;
+  if (width > 700 || height > 500) {
+    scale = Math.min(700 / width, 500 / height) * 0.8;
+  }
+  
+  // Apply transformation
+  objects.forEach(obj => {
+    obj.points.forEach(point => {
+      // Transform point
+      point.x = (point.x + translateX) * scale;
+      point.y = (point.y + translateY) * scale;
+      
+      // Transform handles
+      point.handleIn.x = (point.handleIn.x + translateX) * scale;
+      point.handleIn.y = (point.handleIn.y + translateY) * scale;
+      point.handleOut.x = (point.handleOut.x + translateX) * scale;
+      point.handleOut.y = (point.handleOut.y + translateY) * scale;
+    });
   });
 };

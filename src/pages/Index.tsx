@@ -184,8 +184,8 @@ const Index = () => {
         return;
       }
       
-      // Fix: only pass objects as argument
-      const svg = createDesignSVG(objects);
+      // Use our improved SVG exporter
+      const svg = exportSVG(objects, canvasWidth, canvasHeight);
       downloadSVG(svg, 'qordatta-design.svg');
       
       toast({
@@ -202,53 +202,13 @@ const Index = () => {
     }
   };
   
-  // Optimized, safe template loading with progress tracking
+  // Optimized, async template loading with progress tracking
   const handleLoadTemplate = useCallback(async (templateData: string, shouldClearCanvas: boolean) => {
     try {
-      setIsLoading(true);
-      setLoadingProgress(0);
-      console.log('Loading template safely...');
-      
-      // Track progress to update the UI
-      const progressInterval = setInterval(() => {
-        setLoadingProgress(prev => {
-          if (prev < 90) {
-            return prev + Math.random() * 5;
-          }
-          return prev;
-        });
-      }, 200);
-      
-      // Safety timeout to prevent infinite loading - shorter timeout (15s instead of 30s)
-      const timeout = setTimeout(() => {
-        clearInterval(progressInterval);
-        setIsLoading(false);
-        setLoadingProgress(0);
-        toast({
-          title: "Loading Timeout",
-          description: "Template loading took too long and was aborted",
-          variant: "destructive"
-        });
-      }, 15000);
-      
-      // Call the loadObjectsFromTemplate function with progress tracking
+      // Use the hook's loading state and progress
       loadObjectsFromTemplate(templateData, shouldClearCanvas);
-      
-      // Clean up without waiting for completion
-      clearInterval(progressInterval);
-      clearTimeout(timeout);
-      
-      setLoadingProgress(100);
-      
-      // Final cleanup with a small delay
-      setTimeout(() => {
-        setIsLoading(false);
-        setLoadingProgress(0);
-      }, 500);
     } catch (error) {
       console.error('Error in handleLoadTemplate:', error);
-      setIsLoading(false);
-      setLoadingProgress(0);
       toast({
         title: "Template Load Error",
         description: "Failed to process template data",
@@ -257,45 +217,11 @@ const Index = () => {
     }
   }, [loadObjectsFromTemplate]);
   
-  // Import SVG content with improved error handling and simplification
+  // Import SVG content with improved error handling and async processing
   const handleImportSVG = async (svgContent: string) => {
     try {
-      setIsLoading(true);
-      
-      // Use our simplified SVG importer
-      const importedObjects = importSVG(svgContent);
-      
-      if (!importedObjects || importedObjects.length === 0) {
-        toast({
-          title: "Import Notice",
-          description: "No valid shapes could be extracted from the SVG",
-          variant: "destructive"
-        });
-        setIsLoading(false);
-        return;
-      }
-      
-      // Limit objects to prevent performance issues
-      const maxObjectsToAdd = 5;
-      const limitedObjects = importedObjects.slice(0, maxObjectsToAdd);
-      
-      if (importedObjects.length > maxObjectsToAdd) {
-        console.warn(`Limiting imported objects from ${importedObjects.length} to ${maxObjectsToAdd}`);
-        toast({
-          title: 'Import Notice',
-          description: `Limited to ${maxObjectsToAdd} objects to prevent performance issues`,
-          variant: 'default'
-        });
-      }
-      
-      // Add the imported objects to the canvas
-      setAllObjects([...objects, ...limitedObjects]);
-      saveCurrentState();
-      
-      toast({
-        title: "SVG Imported",
-        description: `${limitedObjects.length} shapes imported successfully`
-      });
+      // Use the hook's SVG import function which handles async processing
+      importSVGToObjects(svgContent);
     } catch (error) {
       console.error('Error importing SVG:', error);
       toast({
@@ -303,8 +229,6 @@ const Index = () => {
         description: "There was an error processing the SVG. Try a simpler file.",
         variant: "destructive"
       });
-    } finally {
-      setIsLoading(false);
     }
   };
   
