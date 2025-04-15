@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
   ControlPoint, 
@@ -256,6 +255,9 @@ const Index = () => {
         onLoadTemplate={handleLoadTemplate}
         isDrawingMode={isDrawingMode}
         onToggleDrawingMode={handleToggleDrawingMode}
+        objects={objects}
+        width={canvasWidth}
+        height={canvasHeight}
       />
       
       <main className="flex-1 flex overflow-hidden">
