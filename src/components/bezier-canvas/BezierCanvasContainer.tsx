@@ -1,68 +1,74 @@
-
-import React from 'react';
-import { 
-  BezierObject, 
-  ControlPoint
-} from '@/types/bezier';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import BezierCanvas from './BezierCanvas';
-import { toast } from '@/hooks/use-toast';
-import { createDesignSVG, downloadSVG } from '@/utils/svgExporter';
+import { useBezierObjects } from '@/hooks/useBezierObjects';
+import { CanvasStatusInfo } from './bezier-canvas/components/CanvasStatusInfo';
+import { BezierObject } from '@/types/bezier';
 
-interface BezierCanvasContainerProps {
-  width: number;
-  height: number;
-  objects: BezierObject[];
-  selectedObjectIds: string[];
-  onObjectSelect: (objectId: string, multiSelect: boolean) => void;
-  onObjectsChange: (objects: BezierObject[]) => void;
-  onCreateObject: (points: ControlPoint[]) => string;
-  onSaveState: () => void;
-  onUndo: () => void;
-  backgroundImage?: string;
-  backgroundOpacity: number;
-  isDrawingMode?: boolean;
-}
-
-const BezierCanvasContainer: React.FC<BezierCanvasContainerProps> = (props) => {
-  // Handle SVG export with improved error handling
-  const handleSVGExport = (fileName: string = "bezier-design.svg") => {
-    try {
-      if (props.objects.length === 0) {
-        toast({
-          title: "Export Error",
-          description: "No objects to export. Create some shapes first.",
-          variant: "destructive"
-        });
-        return;
-      }
-      
-      // Create SVG content from objects using our consolidated function
-      const svgContent = createDesignSVG(props.objects, props.width, props.height);
-      
-      // Download the SVG file
-      downloadSVG(svgContent, fileName);
-      
-      toast({
-        title: "SVG Exported",
-        description: `Successfully exported ${props.objects.length} shapes.`,
-        variant: "default"
-      });
-    } catch (error) {
-      console.error("Error exporting SVG:", error);
-      toast({
-        title: "Export Error",
-        description: "Failed to export SVG.",
-        variant: "destructive"
-      });
-    }
-  };
+const BezierCanvasContainer: React.FC = () => {
+  const [width, setWidth] = useState<number>(800);
+  const [height, setHeight] = useState<number>(600);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [isDrawingMode, setIsDrawingMode] = useState<boolean>(true);
+  const [backgroundImage, setBackgroundImage] = useState<string | undefined>(undefined);
+  const [backgroundOpacity, setBackgroundOpacity] = useState<number>(0.4);
   
-  // Pass through to the main BezierCanvas component
+  // Use the hook to manage bezier objects
+  const {
+    objects,
+    selectedObjectIds,
+    createObject,
+    setAllObjects,
+    updateObjects,
+    updateObjectCurveConfig,
+    updateObjectTransform,
+    deleteObject,
+    deleteSelectedObjects,
+    renameObject,
+    undo,
+    redo,
+    saveCurrentState,
+    selectObject
+  } = useBezierObjects();
+  
+  // Update canvas dimensions on resize
+  useEffect(() => {
+    const handleResize = () => {
+      if (containerRef.current) {
+        setWidth(containerRef.current.clientWidth);
+        setHeight(containerRef.current.clientHeight);
+      }
+    };
+    
+    // Set initial dimensions
+    handleResize();
+    
+    // Add event listener
+    window.addEventListener('resize', handleResize);
+    
+    // Clean up event listener on unmount
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, []);
+
   return (
-    <div className="relative w-full h-full">
-      <BezierCanvas {...props} />
+    <div className="relative w-full h-full overflow-hidden" ref={containerRef}>
+      <BezierCanvas
+        width={width}
+        height={height}
+        objects={objects}
+        selectedObjectIds={selectedObjectIds}
+        onObjectSelect={selectObject}
+        onObjectsChange={setAllObjects}
+        onCreateObject={createObject}
+        onSaveState={saveCurrentState}
+        onUndo={undo}
+        backgroundImage={backgroundImage}
+        backgroundOpacity={backgroundOpacity}
+        isDrawingMode={isDrawingMode}
+      />
     </div>
   );
 };
 
-export default React.memo(BezierCanvasContainer);
+export default BezierCanvasContainer;
