@@ -2,23 +2,15 @@
 import BezierCanvas from './BezierCanvas';
 import BezierCanvasContainer from './BezierCanvasContainer';
 
-// Import from our new SVG utilities
+// Import only SVG export utilities
 import { 
-  importSVG, 
-  readSVGFile, 
   exportSVG, 
-  downloadSVG,
-  fetchSvgFromSupabase, 
-  importSVGFromSupabase 
+  downloadSVG
 } from '@/utils/svg';
 
 export { 
   BezierCanvas, 
-  importSVG, 
   exportSVG, 
-  downloadSVG, 
-  readSVGFile,
-  fetchSvgFromSupabase,
-  importSVGFromSupabase
+  downloadSVG
 };
 export default BezierCanvasContainer;

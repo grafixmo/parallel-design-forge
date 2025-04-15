@@ -1,6 +1,7 @@
+
 import React, { useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { PenLine, Trash2, Upload, Save, Database, MousePointer, Image, FileUp, Download } from 'lucide-react';
+import { PenLine, Trash2, Upload, Save, Database, MousePointer, Image, Download } from 'lucide-react';
 import {
   Tooltip,
   TooltipContent,
@@ -23,25 +24,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
 import TemplateGallery from './TemplateGallery';
 import { getTemplateCategories } from '@/utils/thumbnailGenerator';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-// Import new SVG utilities
-import { 
-  readSVGFile, 
-  importSVG 
-} from '@/utils/svg';
-import { exportSVG, downloadSVG } from '@/utils/simpleSvgExporter';
+import { exportSVG, downloadSVG } from '@/utils/svgExporter';
 
 interface HeaderProps {
   onClearCanvas: () => void;
   onSaveDesign: (name: string, category: string, description?: string) => void;
   onLoadDesigns: () => void;
   onExportSVG: () => void;
-  onImportSVG?: (svgContent: string) => void;
   onLoadTemplate?: (templateData: string, shouldClearCanvas?: boolean) => void;
   isDrawingMode?: boolean;
   onToggleDrawingMode?: () => void;
@@ -52,7 +41,6 @@ const Header: React.FC<HeaderProps> = ({
   onSaveDesign,
   onLoadDesigns,
   onExportSVG,
-  onImportSVG,
   onLoadTemplate,
   isDrawingMode = true,
   onToggleDrawingMode
@@ -62,16 +50,7 @@ const Header: React.FC<HeaderProps> = ({
   const [designDescription, setDesignDescription] = useState('');
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [galleryOpen, setGalleryOpen] = useState(false);
-  const [isImporting, setIsImporting] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const categories = getTemplateCategories();
-  
-  // Add the missing handleImportClick function
-  const handleImportClick = () => {
-    if (fileInputRef.current) {
-      fileInputRef.current.click();
-    }
-  };
   
   const handleSaveClick = () => {
     setSaveDialogOpen(true);
@@ -88,59 +67,6 @@ const Header: React.FC<HeaderProps> = ({
   const handleSelectTemplate = (templateData: string, shouldClearCanvas: boolean) => {
     if (onLoadTemplate) {
       onLoadTemplate(templateData, shouldClearCanvas);
-    }
-  };
-  
-  // Updated SVG import flow with async Fabric.js
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    
-    // Check if it's an SVG file
-    if (!file.name.toLowerCase().endsWith('.svg')) {
-      toast({
-        title: "Invalid File Type",
-        description: "Please select an SVG file.",
-        variant: "destructive"
-      });
-      return;
-    }
-    
-    try {
-      // Show importing toast
-      setIsImporting(true);
-      toast({
-        title: "Importing SVG",
-        description: "Processing your file...",
-      });
-      
-      // Read file content
-      const svgContent = await readSVGFile(file);
-      
-      // Call the parent component's import handler with the SVG content
-      if (onImportSVG) {
-        onImportSVG(svgContent);
-      }
-      
-      toast({
-        title: "SVG Processing",
-        description: "Converting SVG to bezier curves...",
-        variant: "default"
-      });
-    } catch (error) {
-      console.error('Error importing SVG:', error);
-      toast({
-        title: "Import Failed",
-        description: "The SVG file couldn't be imported. Please try a simpler file.",
-        variant: "destructive"
-      });
-    } finally {
-      setIsImporting(false);
-      
-      // Reset the input to allow selecting the same file again
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
     }
   };
   
@@ -290,38 +216,15 @@ const Header: React.FC<HeaderProps> = ({
           </DialogContent>
         </Dialog>
         
-        {/* SVG Import/Export Dropdown - Now with improved error handling */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button 
-              variant="default" 
-              className="bg-indigo-600 hover:bg-indigo-700" 
-              disabled={isImporting}
-            >
-              <Database className="h-4 w-4 mr-2" />
-              {isImporting ? 'Importing...' : 'SVG Actions'}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent>
-            <DropdownMenuItem onClick={onExportSVG} className="cursor-pointer">
-              <Download className="h-4 w-4 mr-2" />
-              Export SVG
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={handleImportClick} className="cursor-pointer" disabled={isImporting}>
-              <FileUp className="h-4 w-4 mr-2" />
-              Import SVG
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-        
-        {/* Hidden file input for SVG import */}
-        <input
-          type="file"
-          ref={fileInputRef}
-          accept=".svg"
-          onChange={handleFileChange}
-          style={{ display: 'none' }}
-        />
+        {/* Export SVG Button - Simplified */}
+        <Button 
+          variant="default" 
+          className="bg-indigo-600 hover:bg-indigo-700" 
+          onClick={onExportSVG}
+        >
+          <Download className="h-4 w-4 mr-2" />
+          Export SVG
+        </Button>
       </div>
       
       {/* Gallery component */}

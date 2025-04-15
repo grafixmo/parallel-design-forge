@@ -7,7 +7,6 @@ import {
 } from '@/types/bezier';
 import { generateId } from '@/utils/bezierUtils';
 import { toast } from '@/hooks/use-toast';
-import { importSVG } from '@/utils/svg';
 import { loadTemplateAsync } from '@/utils/asyncTemplateLoader';
 
 // Maximum number of undos
@@ -31,7 +30,6 @@ interface UseBezierObjectsResult {
   redo: () => void;
   saveCurrentState: () => void;
   selectObject: (objectId: string, multiSelect?: boolean) => void;
-  importSVGToObjects: (svgContent: string) => void;
 }
 
 export const useBezierObjects = (): UseBezierObjectsResult => {
@@ -296,57 +294,6 @@ export const useBezierObjects = (): UseBezierObjectsResult => {
     );
   }, []);
   
-  // Import SVG to objects
-  const importSVGToObjects = useCallback(async (svgContent: string): Promise<void> => {
-    try {
-      setIsLoading(true);
-      setImportProgress(10);
-    
-      // Use the async importer with progress tracking
-      const importedObjects = await importSVG(svgContent, {
-        onProgress: (progress) => setImportProgress(progress)
-      });
-    
-      if (importedObjects.length === 0) {
-        toast({
-          title: "Import Warning",
-          description: "No valid shapes found in the SVG file.",
-          variant: "destructive"
-        });
-        setIsLoading(false);
-        setImportProgress(0);
-        return;
-      }
-    
-      setObjects(prevObjects => {
-        const newObjects = [...prevObjects, ...importedObjects];
-        saveCurrentState(newObjects);
-        return newObjects;
-      });
-    
-      toast({
-        title: "SVG Imported",
-        description: `Successfully imported ${importedObjects.length} shapes.`,
-        variant: "default"
-      });
-    
-      setImportProgress(100);
-      setTimeout(() => {
-        setIsLoading(false);
-        setImportProgress(0);
-      }, 500);
-    } catch (error) {
-      console.error("Error in importSVGToObjects:", error);
-      toast({
-        title: "Import Error",
-        description: "Failed to import SVG. The file may be too complex.",
-        variant: "destructive"
-      });
-      setIsLoading(false);
-      setImportProgress(0);
-    }
-  }, [saveCurrentState]);
-  
   return {
     objects,
     selectedObjectIds,
@@ -364,7 +311,6 @@ export const useBezierObjects = (): UseBezierObjectsResult => {
     undo,
     redo,
     saveCurrentState,
-    selectObject,
-    importSVGToObjects
+    selectObject
   };
 };

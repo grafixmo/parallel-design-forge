@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
   ControlPoint, 
@@ -10,14 +11,12 @@ import Header from '@/components/Header';
 import LibraryPanel from '@/components/LibraryPanel';
 import { generateId } from '@/utils/bezierUtils';
 import { exportAsSVG, createDesignSVG } from '@/utils/svgExporter';
-import { parseSVGContent } from '@/utils/svgImporter';
 import { saveDesign, saveTemplate, Template } from '@/services/supabaseClient';
 import { useToast } from '@/hooks/use-toast';
 import { useBezierObjects } from '@/hooks/useBezierObjects';
 import ObjectControlsPanel from '@/components/ObjectControlsPanel';
 import { generateThumbnailFromSVG } from '@/utils/thumbnailGenerator';
-import { convertShapesDataToObjects } from '@/utils/bezierUtils';
-import { importSVG, exportSVG, downloadSVG } from '@/utils/svg';
+import { exportSVG, downloadSVG } from '@/utils/svg';
 
 const Index = () => {
   const { toast } = useToast();
@@ -49,8 +48,7 @@ const Index = () => {
     undo,
     redo,
     saveCurrentState,
-    selectObject,
-    importSVGToObjects
+    selectObject
   } = useBezierObjects();
   
   // For library panel
@@ -133,7 +131,7 @@ const Index = () => {
         return;
       }
       
-      // Fix: only pass objects to createDesignSVG
+      // Create SVG content
       const svg = createDesignSVG(objects);
       const designData = JSON.stringify(objects);
       
@@ -201,7 +199,7 @@ const Index = () => {
     }
   };
   
-  // Optimized, async template loading with progress tracking
+  // Optimized template loading with progress tracking
   const handleLoadTemplate = useCallback(async (templateData: string, shouldClearCanvas: boolean) => {
     try {
       // Use the hook's loading state and progress
@@ -215,46 +213,6 @@ const Index = () => {
       });
     }
   }, [loadObjectsFromTemplate]);
-  
-  // Import SVG content with improved error handling and async processing
-  const handleImportSVG = async (svgContent: string) => {
-    try {
-      setIsLoading(true);
-      setLoadingProgress(10);
-      
-      // Use our new async importer with progress tracking
-      const importedObjects = await importSVG(svgContent, {
-        onProgress: (progress) => setLoadingProgress(progress)
-      });
-      
-      if (importedObjects.length > 0) {
-        // Add the imported objects to the canvas
-        setAllObjects([...objects, ...importedObjects]);
-        
-        toast({
-          title: "SVG Imported",
-          description: `Successfully imported ${importedObjects.length} shapes.`,
-          variant: "default"
-        });
-      } else {
-        toast({
-          title: "Import Notice",
-          description: "No valid shapes could be extracted from the SVG.",
-          variant: "destructive"
-        });
-      }
-    } catch (error) {
-      console.error('Error importing SVG:', error);
-      toast({
-        title: "Import Failed",
-        description: "There was an error processing the SVG. Try a simpler file.",
-        variant: "destructive"
-      });
-    } finally {
-      setIsLoading(false);
-      setLoadingProgress(0);
-    }
-  };
   
   // Open the library panel to load designs
   const handleLoadDesigns = () => {
@@ -295,7 +253,6 @@ const Index = () => {
         onSaveDesign={handleSaveDesign}
         onLoadDesigns={handleLoadDesigns}
         onExportSVG={handleExportSVG}
-        onImportSVG={handleImportSVG}
         onLoadTemplate={handleLoadTemplate}
         isDrawingMode={isDrawingMode}
         onToggleDrawingMode={handleToggleDrawingMode}
@@ -353,7 +310,6 @@ const Index = () => {
             onRenameObject={renameObject}
             onDeleteObject={deleteObject}
             onDeleteSelectedObjects={deleteSelectedObjects}
-            // Add the missing props
             backgroundImage={backgroundImage}
             backgroundOpacity={backgroundOpacity}
             onRemoveImage={handleRemoveBackgroundImage}
