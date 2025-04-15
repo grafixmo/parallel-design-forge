@@ -169,7 +169,7 @@ export class BezierObjectRenderer {
       // Only draw parallel curves if parallelCount is greater than 1
       if (curveConfig.parallelCount > 1) {
         // Draw parallel curves first (behind main curve)
-        for (let p = 1; p <= curveConfig.parallelCount; p++) {
+        for (let p = 1; p < curveConfig.parallelCount; p++) {
           const offset = p * curveConfig.spacing;
           const color = curveConfig.styles[p] ? curveConfig.styles[p].color : curveConfig.styles[0].color;
           const width = curveConfig.styles[p] ? curveConfig.styles[p].width : curveConfig.styles[0].width;

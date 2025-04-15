@@ -27,7 +27,7 @@ export const exportAsSVG = (
   // Only draw parallel curves if parallelCount is greater than 1
   if (curveConfig.parallelCount > 1) {
     // Draw parallel curves behind main curve
-    for (let i = 1; i <= curveConfig.parallelCount; i++) {
+    for (let i = 1; i < curveConfig.parallelCount; i++) {
       const offset = i * curveConfig.spacing;
       const style = curveConfig.styles[i] || curveConfig.styles[0];
       
