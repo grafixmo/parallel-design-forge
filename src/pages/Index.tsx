@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
   ControlPoint, 
@@ -9,7 +10,7 @@ import BezierCanvas from '@/components/bezier-canvas';
 import Header from '@/components/Header';
 import LibraryPanel from '@/components/LibraryPanel';
 import { generateId } from '@/utils/bezierUtils';
-import { exportAsSVG, downloadSVG, createDesignSVG } from '@/utils/svgExporter';
+import { exportAsSVG, createDesignSVG } from '@/utils/svgExporter';
 import { parseSVGContent } from '@/utils/svgImporter';
 import { saveDesign, saveTemplate, Template } from '@/services/supabaseClient';
 import { useToast } from '@/hooks/use-toast';
@@ -18,8 +19,8 @@ import ObjectControlsPanel from '@/components/ObjectControlsPanel';
 import { generateThumbnailFromSVG } from '@/utils/thumbnailGenerator';
 import { convertShapesDataToObjects } from '@/utils/bezierUtils';
 import { importSVG } from '@/utils/simpleSvgImporter';
-import { exportSVG, downloadSVG } from '@/utils/simpleSvgExporter';
-import { loadTemplateData } from '@/utils/simpleTemplateLoader';
+// Remove the duplicate import of downloadSVG
+import { exportSVG } from '@/utils/simpleSvgExporter';
 
 const Index = () => {
   const { toast } = useToast();
