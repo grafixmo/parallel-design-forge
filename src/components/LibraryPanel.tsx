@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -16,20 +17,11 @@ import { convertShapesDataToObjects } from '@/utils/bezierUtils';
 import { useToast } from '@/hooks/use-toast';
 
 interface LibraryPanelProps {
-  isOpen: boolean;
   onClose: () => void;
-  onLoadDesign: (design: DesignData) => void;
-  setBackgroundImage: React.Dispatch<React.SetStateAction<string | undefined>>;
-  setBackgroundOpacity: React.Dispatch<React.SetStateAction<number>>;
+  onSelectDesign: (design: SavedDesign) => void;
 }
 
-const LibraryPanel: React.FC<LibraryPanelProps> = ({ 
-  isOpen, 
-  onClose, 
-  onLoadDesign,
-  setBackgroundImage,
-  setBackgroundOpacity
-}) => {
+const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign }) => {
   const [designs, setDesigns] = useState<SavedDesign[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -147,11 +139,7 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({
       
       // If the format is valid, proceed with selecting the design
       if (validFormat) {
-        const designData: DesignData = {
-          objects: bezierObjects
-        };
-        
-        onLoadDesign(designData);
+        onSelectDesign(design);
         onClose();
         return;
       }
@@ -169,9 +157,6 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({
       });
     }
   };
-
-  // Only render if panel is open
-  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center">

@@ -113,6 +113,3 @@ export interface SVGExportOptions {
   includeBorder: boolean;
   embedFonts: boolean;
 }
-
-// SVG Import Result
-export type SVGImportResult = BezierObject[];

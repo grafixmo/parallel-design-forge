@@ -13,10 +13,13 @@ import { toast } from '@/hooks/use-toast';
 
 const DEFAULT_CURVE_CONFIG: CurveConfig = {
   styles: [
-    { color: '#000000', width: 2 }
+    { color: '#000000', width: 5 },
+    { color: '#ff0000', width: 5 },
+    { color: '#0000ff', width: 5 },
+    { color: '#00ff00', width: 5 }
   ],
-  parallelCount: 0,
-  spacing: 0
+  parallelCount: 2,
+  spacing: 8
 };
 
 const DEFAULT_TRANSFORM: TransformSettings = {
@@ -30,7 +33,6 @@ export function useBezierObjects() {
   const [selectedObjectIds, setSelectedObjectIds] = useState<string[]>([]);
   const [history, setHistory] = useState<HistoryState[]>([]);
   const [currentHistoryIndex, setCurrentHistoryIndex] = useState<number>(-1);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
   
   // Create a new bezier object
   const createObject = useCallback((points: ControlPoint[] = [], name: string = 'Untitled Object') => {
@@ -54,11 +56,10 @@ export function useBezierObjects() {
     // We'll add to history when the object is completed
     
     return newObject.id;
-  }, []);
+  }, [objects]);
   
   // Update all objects at once
   const setAllObjects = useCallback((newObjects: BezierObject[]) => {
-    console.log('Setting all objects:', newObjects.length);
     setObjects(newObjects);
     
     // Update selected object IDs based on object.isSelected property
@@ -68,46 +69,6 @@ export function useBezierObjects() {
         .map(obj => obj.id)
     );
   }, []);
-  
-  // Efficiently set objects from a template with proper error handling
-  const loadObjectsFromTemplate = useCallback((templateObjects: BezierObject[], clearExisting: boolean = false) => {
-    setIsLoading(true);
-    
-    try {
-      console.log('Loading template objects:', templateObjects.length, 'clearExisting:', clearExisting);
-      
-      const processedObjects = templateObjects.map(obj => ({
-        ...obj,
-        id: generateId(), // Ensure each object has a new ID
-        isSelected: false
-      }));
-      
-      if (clearExisting) {
-        // Replace all existing objects
-        setObjects(processedObjects);
-        setSelectedObjectIds([]);
-      } else {
-        // Add to existing objects
-        setObjects(prevObjects => [...prevObjects, ...processedObjects]);
-      }
-      
-      // Add to history after loading template
-      const updatedObjects = clearExisting 
-        ? processedObjects 
-        : [...objects, ...processedObjects];
-        
-      addToHistory(updatedObjects);
-    } catch (error) {
-      console.error('Error loading template objects:', error);
-      toast({
-        title: 'Error Loading Template',
-        description: 'There was a problem loading the template objects',
-        variant: 'destructive'
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  }, [objects]);
   
   // Select a specific object
   const selectObject = useCallback((objectId: string, multiSelect: boolean = false) => {
@@ -250,27 +211,23 @@ export function useBezierObjects() {
     addToHistory(updatedObjects);
   }, [objects]);
   
-  // Add current state to history with debouncing
+  // Add current state to history
   const addToHistory = useCallback((updatedObjects: BezierObject[]) => {
-    try {
-      const newHistoryState: HistoryState = {
-        objects: JSON.parse(JSON.stringify(updatedObjects)), // Deep clone
-        timestamp: Date.now()
-      };
-      
-      // If we're not at the end of history, truncate it
-      const newHistory = currentHistoryIndex === history.length - 1 || currentHistoryIndex === -1
-        ? [...history, newHistoryState]
-        : [...history.slice(0, currentHistoryIndex + 1), newHistoryState];
-      
-      // Limit history size to 50 entries
-      const limitedHistory = newHistory.slice(-50);
-      
-      setHistory(limitedHistory);
-      setCurrentHistoryIndex(limitedHistory.length - 1);
-    } catch (error) {
-      console.error('Error adding to history:', error);
-    }
+    const newHistoryState: HistoryState = {
+      objects: JSON.parse(JSON.stringify(updatedObjects)), // Deep clone
+      timestamp: Date.now()
+    };
+    
+    // If we're not at the end of history, truncate it
+    const newHistory = currentHistoryIndex === history.length - 1 || currentHistoryIndex === -1
+      ? [...history, newHistoryState]
+      : [...history.slice(0, currentHistoryIndex + 1), newHistoryState];
+    
+    // Limit history size to 50 entries
+    const limitedHistory = newHistory.slice(-50);
+    
+    setHistory(limitedHistory);
+    setCurrentHistoryIndex(limitedHistory.length - 1);
   }, [history, currentHistoryIndex]);
   
   // Undo the last action
@@ -278,23 +235,19 @@ export function useBezierObjects() {
     if (currentHistoryIndex > 0) {
       const prevState = history[currentHistoryIndex - 1];
       setCurrentHistoryIndex(currentHistoryIndex - 1);
+      setObjects(prevState.objects);
       
-      // Make sure we have objects to restore
-      if (prevState && prevState.objects) {
-        setObjects(prevState.objects);
-        
-        // Update selected object IDs based on object.isSelected property
-        setSelectedObjectIds(
-          prevState.objects
-            .filter(obj => obj.isSelected)
-            .map(obj => obj.id)
-        );
-        
-        toast({
-          title: 'Undo',
-          description: 'Previous action undone'
-        });
-      }
+      // Update selected object IDs based on object.isSelected property
+      setSelectedObjectIds(
+        prevState.objects
+          .filter(obj => obj.isSelected)
+          .map(obj => obj.id)
+      );
+      
+      toast({
+        title: 'Undo',
+        description: 'Previous action undone'
+      });
     } else {
       toast({
         title: 'Cannot Undo',
@@ -309,22 +262,19 @@ export function useBezierObjects() {
     if (currentHistoryIndex < history.length - 1) {
       const nextState = history[currentHistoryIndex + 1];
       setCurrentHistoryIndex(currentHistoryIndex + 1);
+      setObjects(nextState.objects);
       
-      if (nextState && nextState.objects) {
-        setObjects(nextState.objects);
-        
-        // Update selected object IDs based on object.isSelected property
-        setSelectedObjectIds(
-          nextState.objects
-            .filter(obj => obj.isSelected)
-            .map(obj => obj.id)
-        );
-        
-        toast({
-          title: 'Redo',
-          description: 'Action redone'
-        });
-      }
+      // Update selected object IDs based on object.isSelected property
+      setSelectedObjectIds(
+        nextState.objects
+          .filter(obj => obj.isSelected)
+          .map(obj => obj.id)
+      );
+      
+      toast({
+        title: 'Redo',
+        description: 'Action redone'
+      });
     } else {
       toast({
         title: 'Cannot Redo',
@@ -344,10 +294,8 @@ export function useBezierObjects() {
   return {
     objects,
     selectedObjectIds,
-    isLoading,
     createObject,
     setAllObjects,
-    loadObjectsFromTemplate,
     selectObject,
     deselectAllObjects,
     updateObjects,
@@ -361,3 +309,4 @@ export function useBezierObjects() {
     saveCurrentState
   };
 }
+

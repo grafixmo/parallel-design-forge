@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Slider } from '@/components/ui/slider';
 import { Input } from '@/components/ui/input';
@@ -16,8 +17,7 @@ import {
   Info,
   Image,
   X,
-  ChevronRight,
-  Bug
+  ChevronRight
 } from 'lucide-react';
 import {
   Accordion,
@@ -42,79 +42,64 @@ import { ColorPicker } from '@/components/ui/color-picker';
 import { cn } from '@/lib/utils';
 
 interface ObjectControlsPanelProps {
-  objects: BezierObject[];
+  selectedObjects: BezierObject[];
+  allObjects: BezierObject[];
   selectedObjectIds: string[];
+  onCreateObject: () => void;
+  onSelectObject: (objectId: string, multiSelect: boolean) => void;
+  onDeleteObject: (objectId: string) => void;
+  onRenameObject: (objectId: string, name: string) => void;
   onUpdateCurveConfig: (objectId: string, config: CurveConfig) => void;
   onUpdateTransform: (objectId: string, transform: TransformSettings) => void;
-  onRenameObject: (objectId: string, name: string) => void;
-  onDeleteObject: (objectId: string) => void;
-  onDeleteSelectedObjects: () => void;
   backgroundImage?: string;
   backgroundOpacity: number;
-  onRemoveImage: () => void;
-  onUploadImage: (event: React.ChangeEvent<HTMLInputElement>) => void;
   onBackgroundOpacityChange: (opacity: number) => void;
+  onUploadImage: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  onRemoveImage: () => void;
 }
 
 const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
-  objects,
+  selectedObjects,
+  allObjects,
   selectedObjectIds,
+  onCreateObject,
+  onSelectObject,
+  onDeleteObject,
+  onRenameObject,
   onUpdateCurveConfig,
   onUpdateTransform,
-  onRenameObject,
-  onDeleteObject,
-  onDeleteSelectedObjects,
-  // Add the new props to the destructuring
   backgroundImage,
   backgroundOpacity,
-  onRemoveImage,
+  onBackgroundOpacityChange,
   onUploadImage,
-  onBackgroundOpacityChange
+  onRemoveImage
 }) => {
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   
-  // Get the selected objects
-  const selectedObjects = objects.filter(obj => selectedObjectIds.includes(obj.id));
+  // If no objects are selected or multiple objects are selected, return a message
+  const showGenericControls = selectedObjects.length !== 1;
+  
+  // Get the currently selected object (if only one is selected)
+  const selectedObject = selectedObjects[0];
   
   const handleParallelCountChange = (objectId: string, value: string) => {
     const count = parseInt(value);
-    if (!isNaN(count)) {
-      console.log(`Changing parallel count for object ${objectId} to ${count}`);
-      const object = objects.find(obj => obj.id === objectId);
+    if (!isNaN(count) && count >= 1 && count <= 4) {
+      const object = selectedObjects.find(obj => obj.id === objectId);
       if (object) {
-        // Ensure we have enough styles for all curves
-        const currentStyles = [...object.curveConfig.styles];
-        const newStyles = [...currentStyles];
-        
-        // If we need more styles, duplicate the first style for each new curve
-        while (newStyles.length < count) {
-          const baseStyle = currentStyles[0] || { color: '#000000', width: 2 };
-          newStyles.push({ ...baseStyle });
-        }
-        
-        // Make sure we have a valid spacing value
-        const spacing = object.curveConfig.spacing || 10;
-        
-        // Update the curve config with new count and ensure styles
         onUpdateCurveConfig(objectId, {
           ...object.curveConfig,
-          parallelCount: count,
-          styles: newStyles,
-          spacing: spacing
+          parallelCount: count
         });
       }
     }
   };
   
   const handleCurveColorChange = (objectId: string, color: string) => {
-    const object = objects.find(obj => obj.id === objectId);
+    const object = selectedObjects.find(obj => obj.id === objectId);
     if (object) {
       const newStyles = [...object.curveConfig.styles];
-      if (newStyles.length === 0) {
-        newStyles.push({ color, width: 2 });
-      } else {
-        newStyles[0] = { ...newStyles[0], color };
-      }
+      newStyles[0] = { ...newStyles[0], color };
       
       onUpdateCurveConfig(objectId, {
         ...object.curveConfig,
@@ -124,14 +109,10 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
   };
   
   const handleCurveWidthChange = (objectId: string, width: number) => {
-    const object = objects.find(obj => obj.id === objectId);
+    const object = selectedObjects.find(obj => obj.id === objectId);
     if (object) {
       const newStyles = [...object.curveConfig.styles];
-      if (newStyles.length === 0) {
-        newStyles.push({ color: '#000000', width });
-      } else {
-        newStyles[0] = { ...newStyles[0], width };
-      }
+      newStyles[0] = { ...newStyles[0], width };
       
       onUpdateCurveConfig(objectId, {
         ...object.curveConfig,
@@ -141,7 +122,7 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
   };
   
   const handleParallelSpacingChange = (objectId: string, spacing: number) => {
-    const object = objects.find(obj => obj.id === objectId);
+    const object = selectedObjects.find(obj => obj.id === objectId);
     if (object) {
       onUpdateCurveConfig(objectId, {
         ...object.curveConfig,
@@ -151,15 +132,9 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
   };
   
   const handleParallelStyleChange = (objectId: string, index: number, style: CurveStyle) => {
-    const object = objects.find(obj => obj.id === objectId);
+    const object = selectedObjects.find(obj => obj.id === objectId);
     if (object) {
       const newStyles = [...object.curveConfig.styles];
-      
-      // Ensure we have enough styles
-      while (newStyles.length <= index) {
-        newStyles.push({ color: '#000000', width: 2 });
-      }
-      
       newStyles[index] = style;
       
       onUpdateCurveConfig(objectId, {
@@ -170,7 +145,7 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
   };
   
   const handleRotationChange = (objectId: string, rotation: number) => {
-    const object = objects.find(obj => obj.id === objectId);
+    const object = selectedObjects.find(obj => obj.id === objectId);
     if (object) {
       onUpdateTransform(objectId, {
         ...object.transform,
@@ -180,7 +155,7 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
   };
   
   const handleScaleXChange = (objectId: string, scaleX: number) => {
-    const object = objects.find(obj => obj.id === objectId);
+    const object = selectedObjects.find(obj => obj.id === objectId);
     if (object) {
       onUpdateTransform(objectId, {
         ...object.transform,
@@ -190,25 +165,13 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
   };
   
   const handleScaleYChange = (objectId: string, scaleY: number) => {
-    const object = objects.find(obj => obj.id === objectId);
+    const object = selectedObjects.find(obj => obj.id === objectId);
     if (object) {
       onUpdateTransform(objectId, {
         ...object.transform,
         scaleY
       });
     }
-  };
-  
-  // Function to print current object state for debugging
-  const debugObject = (object: BezierObject) => {
-    console.log('Debug object:', {
-      id: object.id,
-      name: object.name,
-      parallelCount: object.curveConfig.parallelCount,
-      spacing: object.curveConfig.spacing,
-      styles: object.curveConfig.styles,
-      transform: object.transform
-    });
   };
   
   const SectionHeader = ({ children, tooltip }: { children: React.ReactNode, tooltip?: string }) => (
@@ -229,37 +192,25 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
     </div>
   );
   
-  // If no objects are selected or multiple objects are selected, return a message
-  const showGenericControls = selectedObjects.length !== 1;
-  
-  // Get the currently selected object (if only one is selected)
-  const selectedObject = selectedObjects[0];
-  
   return (
     <Card className="p-4 overflow-y-auto max-h-[calc(100vh-100px)]">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-medium">Design Controls</h3>
-        {selectedObject && (
-          <button 
-            onClick={() => debugObject(selectedObject)}
-            className="text-xs px-2 py-1 rounded bg-gray-100 hover:bg-gray-200 flex items-center"
-          >
-            <Bug className="w-3 h-3 mr-1" />
-            Debug
-          </button>
-        )}
       </div>
 
       <div className="space-y-4">
         {/* Objects Panel */}
         <ObjectsPanel 
-          objects={objects}
+          objects={allObjects}
           selectedObjectIds={selectedObjectIds}
-          onCreateObject={() => {}}
-          onSelectObject={() => {}}
+          onCreateObject={onCreateObject}
+          onSelectObject={onSelectObject}
           onDeleteObject={onDeleteObject}
           onRenameObject={onRenameObject}
-          onDeleteSelectedObjects={onDeleteSelectedObjects}
+          onDeleteSelectedObjects={() => {
+            // Call onDeleteObject for each selected object
+            selectedObjectIds.forEach(id => onDeleteObject(id));
+          }}
         />
         
         {/* Controls for individual object or message */}
@@ -284,11 +235,11 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
                     </Label>
                     <div className="flex items-center space-x-2">
                       <ColorPicker 
-                        color={selectedObject.curveConfig.styles[0]?.color || '#000000'}
+                        color={selectedObject.curveConfig.styles[0].color}
                         onChange={(color) => handleCurveColorChange(selectedObject.id, color)}
                       />
                       <span className="text-xs text-gray-500">
-                        {selectedObject.curveConfig.styles[0]?.color || '#000000'}
+                        {selectedObject.curveConfig.styles[0].color}
                       </span>
                     </div>
                   </div>
@@ -298,7 +249,7 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
                     <div className="flex items-center space-x-2">
                       <Slider
                         id="curve-width"
-                        value={[selectedObject.curveConfig.styles[0]?.width || 2]}
+                        value={[selectedObject.curveConfig.styles[0].width]}
                         min={1}
                         max={20}
                         step={1}
@@ -307,7 +258,7 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
                       />
                       <Input
                         type="number"
-                        value={selectedObject.curveConfig.styles[0]?.width || 2}
+                        value={selectedObject.curveConfig.styles[0].width}
                         onChange={(e) => handleCurveWidthChange(selectedObject.id, Number(e.target.value))}
                         min={1}
                         max={20}
@@ -348,7 +299,7 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
                       </Label>
                       <Slider
                         id="curve-spacing"
-                        value={[selectedObject.curveConfig.spacing || 10]}
+                        value={[selectedObject.curveConfig.spacing]}
                         min={2}
                         max={50}
                         step={1}
@@ -361,7 +312,7 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
                     <div className="space-y-2 pt-2">
                       <p className="text-xs text-gray-500">Individual Curve Styles</p>
                       
-                      {Array.from({ length: selectedObject.curveConfig.parallelCount }).map((_, i) => (
+                      {Array.from({ length: Math.min(selectedObject.curveConfig.parallelCount, 4) }).map((_, i) => (
                         <div key={i} className={cn(
                           "p-2 border border-gray-100 rounded-md",
                           i === 0 ? "bg-gray-50" : ""
@@ -378,7 +329,7 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
                                 <ColorPicker 
                                   color={selectedObject.curveConfig.styles[i]?.color || '#000000'}
                                   onChange={(color) => handleParallelStyleChange(selectedObject.id, i, {
-                                    ...(selectedObject.curveConfig.styles[i] || { width: 2 }),
+                                    ...selectedObject.curveConfig.styles[i],
                                     color
                                   })}
                                   className="h-6 w-6"
@@ -390,9 +341,9 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
                               <Input
                                 id={`curve-${i}-width`}
                                 type="number"
-                                value={selectedObject.curveConfig.styles[i]?.width || 2}
+                                value={selectedObject.curveConfig.styles[i]?.width || 1}
                                 onChange={(e) => handleParallelStyleChange(selectedObject.id, i, {
-                                  ...(selectedObject.curveConfig.styles[i] || { color: '#000000' }),
+                                  ...selectedObject.curveConfig.styles[i],
                                   width: Number(e.target.value)
                                 })}
                                 min={1}

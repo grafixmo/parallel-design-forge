@@ -1,5 +1,5 @@
 
-import { ControlPoint, BezierObject, CurveConfig, TransformSettings, Point } from '../types/bezier';
+import { ControlPoint, BezierObject, CurveConfig, TransformSettings } from '../types/bezier';
 import { generateId } from './bezierUtils';
 
 interface SVGPathData {
@@ -11,7 +11,6 @@ interface SVGPathData {
   strokeDasharray?: string;
   strokeLinecap?: string;
   strokeLinejoin?: string;
-  transform?: string;
 }
 
 interface SVGImportResult {
@@ -26,7 +25,7 @@ interface SVGImportResult {
   };
 }
 
-// Parse SVG string into BezierObject objects with improved attribute preservation
+// Parse SVG string into BezierObject objects
 export const parseSVGContent = (svgContent: string): SVGImportResult => {
   try {
     // Create a DOM parser
@@ -84,18 +83,17 @@ export const parseSVGContent = (svgContent: string): SVGImportResult => {
           opacity: parseFloat(pathElement.getAttribute('opacity') || '1'),
           strokeDasharray: pathElement.getAttribute('stroke-dasharray') || undefined,
           strokeLinecap: pathElement.getAttribute('stroke-linecap') || undefined,
-          strokeLinejoin: pathElement.getAttribute('stroke-linejoin') || undefined,
-          transform: pathElement.getAttribute('transform') || undefined
+          strokeLinejoin: pathElement.getAttribute('stroke-linejoin') || undefined
         });
       }
     });
     
-    // Convert paths to BezierObjects with improved preservation of attributes
+    // Convert paths to BezierObjects with position adjustment
     const objects: BezierObject[] = pathsData.map((pathData, index) => {
-      const points = convertPathToPoints(pathData.path, pathData.transform);
+      const points = convertPathToPoints(pathData.path);
       
-      // Create curve config that preserves original styling
-      // Use exactly one curve with the original stroke properties
+      // Create curve config that respects original styling
+      // Important: Set parallelCount to 0 to avoid adding parallel curves
       const curveConfig: CurveConfig = {
         styles: [
           { 
@@ -103,14 +101,18 @@ export const parseSVGContent = (svgContent: string): SVGImportResult => {
             width: pathData.width 
           }
         ],
-        parallelCount: 0, // No parallel curves for imported SVGs
+        parallelCount: 0, // No parallel curves
         spacing: 0
       };
       
-      // Parse transform attribute
-      const transform: TransformSettings = parseTransform(pathData.transform);
+      // Create transform settings - default to no transformation
+      const transform: TransformSettings = {
+        rotation: 0,
+        scaleX: 1.0,
+        scaleY: 1.0
+      };
       
-      // Create BezierObject with proper name and preserved attributes
+      // Create BezierObject with proper name
       return {
         id: generateId(),
         points,
@@ -121,7 +123,7 @@ export const parseSVGContent = (svgContent: string): SVGImportResult => {
       };
     });
     
-    // Position imported objects to maintain original positions
+    // Position imported objects to make them visible in the canvas
     positionImportedObjects(objects, { width, height, viewBox });
     
     return {
@@ -136,41 +138,8 @@ export const parseSVGContent = (svgContent: string): SVGImportResult => {
   }
 };
 
-// Parse SVG transform attribute
-const parseTransform = (transformAttr?: string): TransformSettings => {
-  const defaultTransform: TransformSettings = {
-    rotation: 0,
-    scaleX: 1.0,
-    scaleY: 1.0
-  };
-  
-  if (!transformAttr) return defaultTransform;
-  
-  try {
-    // Extract rotation
-    const rotateMatch = transformAttr.match(/rotate\(\s*([^)]+)\)/);
-    if (rotateMatch && rotateMatch[1]) {
-      defaultTransform.rotation = parseFloat(rotateMatch[1]);
-    }
-    
-    // Extract scale
-    const scaleMatch = transformAttr.match(/scale\(\s*([^,)]+)(?:,\s*([^)]+))?\)/);
-    if (scaleMatch) {
-      if (scaleMatch[1]) {
-        defaultTransform.scaleX = parseFloat(scaleMatch[1]);
-        // If only one value is provided, use it for both scales
-        defaultTransform.scaleY = scaleMatch[2] ? parseFloat(scaleMatch[2]) : defaultTransform.scaleX;
-      }
-    }
-    
-    return defaultTransform;
-  } catch (e) {
-    console.error('Error parsing transform:', e);
-    return defaultTransform;
-  }
-};
-
-// Position imported objects to maintain original layout and proportions
+// Position imported objects to ensure they're visible in the canvas
+// Improved to better preserve original positioning
 const positionImportedObjects = (
   objects: BezierObject[], 
   svgInfo: { width: number, height: number, viewBox?: any }
@@ -190,120 +159,76 @@ const positionImportedObjects = (
     });
   });
   
-  // If no viewBox is specified in the SVG, we need to center the objects
-  if (!svgInfo.viewBox) {
-    // Calculate dimensions
-    const width = maxX - minX;
-    const height = maxY - minY;
+  // Calculate dimensions
+  const width = maxX - minX;
+  const height = maxY - minY;
+  
+  // Calculate offset to center the objects in canvas
+  const offsetX = 400 - (minX + width / 2);
+  const offsetY = 300 - (minY + height / 2);
+  
+  // Apply offset to all points
+  objects.forEach(obj => {
+    obj.points = obj.points.map(point => ({
+      ...point,
+      x: point.x + offsetX,
+      y: point.y + offsetY,
+      handleIn: {
+        x: point.handleIn.x + offsetX,
+        y: point.handleIn.y + offsetY
+      },
+      handleOut: {
+        x: point.handleOut.x + offsetX,
+        y: point.handleOut.y + offsetY
+      }
+    }));
+  });
+  
+  // Only scale if needed to fit in viewable area
+  if (width > 700 || height > 500) {
+    const scale = Math.min(700 / width, 500 / height) * 0.8; // 80% of max scale for padding
     
-    // Calculate target canvas center
-    const targetCenterX = 400; // Default canvas width / 2
-    const targetCenterY = 300; // Default canvas height / 2
+    // Find center point after offset
+    const centerX = minX + width/2 + offsetX;
+    const centerY = minY + height/2 + offsetY;
     
-    // Calculate source center
-    const sourceCenterX = minX + width / 2;
-    const sourceCenterY = minY + height / 2;
-    
-    // Calculate offset to center the objects in canvas
-    const offsetX = targetCenterX - sourceCenterX;
-    const offsetY = targetCenterY - sourceCenterY;
-    
-    // Apply offset to all points
+    // Scale all objects around center
     objects.forEach(obj => {
-      obj.points = obj.points.map(point => ({
-        ...point,
-        x: point.x + offsetX,
-        y: point.y + offsetY,
-        handleIn: {
-          x: point.handleIn.x + offsetX,
-          y: point.handleIn.y + offsetY
-        },
-        handleOut: {
-          x: point.handleOut.x + offsetX,
-          y: point.handleOut.y + offsetY
-        }
-      }));
-    });
-    
-    // Scale only if needed to fit in viewable area (preserving aspect ratio)
-    if (width > 700 || height > 500) {
-      const scale = Math.min(700 / width, 500 / height) * 0.9; // 90% of max scale for padding
-      
-      // Find center point after offset
-      const centerX = sourceCenterX + offsetX;
-      const centerY = sourceCenterY + offsetY;
-      
-      // Scale all objects around center
-      objects.forEach(obj => {
-        obj.points = obj.points.map(point => {
-          // Distance from center
-          const dx = point.x - centerX;
-          const dy = point.y - centerY;
-          
-          // Scale distance
-          const scaledX = centerX + dx * scale;
-          const scaledY = centerY + dy * scale;
-          
-          // Also scale handles proportionally
-          const handleInDx = point.handleIn.x - centerX;
-          const handleInDy = point.handleIn.y - centerY;
-          const handleOutDx = point.handleOut.x - centerX;
-          const handleOutDy = point.handleOut.y - centerY;
-          
-          return {
-            ...point,
-            x: scaledX,
-            y: scaledY,
-            handleIn: {
-              x: centerX + handleInDx * scale,
-              y: centerY + handleInDy * scale
-            },
-            handleOut: {
-              x: centerX + handleOutDx * scale,
-              y: centerY + handleOutDy * scale
-            }
-          };
-        });
+      obj.points = obj.points.map(point => {
+        // Distance from center
+        const dx = point.x - centerX;
+        const dy = point.y - centerY;
+        
+        // Scale distance
+        const scaledX = centerX + dx * scale;
+        const scaledY = centerY + dy * scale;
+        
+        // Also scale handles proportionally with the same scale
+        const handleInDx = point.handleIn.x - centerX;
+        const handleInDy = point.handleIn.y - centerY;
+        const handleOutDx = point.handleOut.x - centerX;
+        const handleOutDy = point.handleOut.y - centerY;
+        
+        return {
+          ...point,
+          x: scaledX,
+          y: scaledY,
+          handleIn: {
+            x: centerX + handleInDx * scale,
+            y: centerY + handleInDy * scale
+          },
+          handleOut: {
+            x: centerX + handleOutDx * scale,
+            y: centerY + handleOutDy * scale
+          }
+        };
       });
-    }
-  } else {
-    // If viewBox is provided, try to maintain original positions
-    const viewBoxWidth = svgInfo.viewBox.width;
-    const viewBoxHeight = svgInfo.viewBox.height;
-    
-    // Calculate scale factor from viewBox to canvas
-    const scaleX = 800 / viewBoxWidth;
-    const scaleY = 600 / viewBoxHeight;
-    const scale = Math.min(scaleX, scaleY) * 0.9; // Use 90% to create margin
-    
-    // Calculate translation to center the scaled viewBox
-    const scaledViewBoxWidth = viewBoxWidth * scale;
-    const scaledViewBoxHeight = viewBoxHeight * scale;
-    
-    const offsetX = (800 - scaledViewBoxWidth) / 2 - svgInfo.viewBox.minX * scale;
-    const offsetY = (600 - scaledViewBoxHeight) / 2 - svgInfo.viewBox.minY * scale;
-    
-    // Apply scale and offset to all points
-    objects.forEach(obj => {
-      obj.points = obj.points.map(point => ({
-        ...point,
-        x: point.x * scale + offsetX,
-        y: point.y * scale + offsetY,
-        handleIn: {
-          x: point.handleIn.x * scale + offsetX,
-          y: point.handleIn.y * scale + offsetY
-        },
-        handleOut: {
-          x: point.handleOut.x * scale + offsetX,
-          y: point.handleOut.y * scale + offsetY
-        }
-      }));
     });
   }
 };
 
-// Improved SVG path to control points converter with higher precision and better handle placement
-const convertPathToPoints = (path: string, transform?: string): ControlPoint[] => {
+// Completely rewritten to better respect SVG path commands and curve shapes
+const convertPathToPoints = (path: string): ControlPoint[] => {
   const points: ControlPoint[] = [];
   
   try {
@@ -718,7 +643,7 @@ const convertPathToPoints = (path: string, transform?: string): ControlPoint[] =
           
         case 'A': // Elliptical arc (absolute)
         case 'a': // Elliptical arc (relative)
-          // Better arc approximation
+          // Arc commands are complex - simplified approximation
           if (args.length >= 7) {
             const rx = Math.abs(args[0]);
             const ry = Math.abs(args[1]);
@@ -736,97 +661,50 @@ const convertPathToPoints = (path: string, transform?: string): ControlPoint[] =
             }
             
             if (points.length > 0) {
-              // Improved arc handling to better approximate elliptical arcs
+              // For arcs, we'll add a simple cubic approximation
+              // This is a very basic approximation - arcs are complex
               const prevPoint = points[points.length - 1];
-              const startX = prevPoint.x;
-              const startY = prevPoint.y;
               
-              // We'll use multiple cubic bezier segments to approximate the arc
-              const arcPoints = approximateArc(
-                startX, startY, 
-                endX, endY, 
-                rx, ry, 
-                xAxisRotation, 
-                largeArcFlag, 
-                sweepFlag
-              );
+              // Simple cubic approximation with handles at 1/3 distance
+              const dx = endX - prevPoint.x;
+              const dy = endY - prevPoint.y;
               
-              if (arcPoints.length >= 3) {
-                // Each arc segment needs 3 points: start, control1, control2, end
-                // We already have the start point (prevPoint)
+              // Apply a slight curve - this is very approximate
+              const midX = (prevPoint.x + endX) / 2;
+              const midY = (prevPoint.y + endY) / 2;
+              
+              // Push out the mid point slightly to create a curve
+              // The sign of this offset depends on the sweep flag
+              const offset = (sweepFlag === 1 ? 1 : -1) * Math.min(rx, ry) * 0.5;
+              
+              // Perpendicular direction
+              const perpX = -dy;
+              const perpY = dx;
+              const length = Math.sqrt(perpX*perpX + perpY*perpY);
+              if (length > 0) {
+                const offsetX = midX + perpX / length * offset;
+                const offsetY = midY + perpY / length * offset;
                 
-                for (let j = 0; j < arcPoints.length - 1; j += 3) {
-                  const cp1 = arcPoints[j];
-                  const cp2 = arcPoints[j + 1];
-                  const end = arcPoints[j + 2];
-                  
-                  if (j === 0) {
-                    // Update the previous point's handle out (first segment)
-                    prevPoint.handleOut = {
-                      x: cp1.x,
-                      y: cp1.y
-                    };
-                  }
-                  
-                  // Add the endpoint with its handles
-                  points.push({
-                    x: end.x,
-                    y: end.y,
-                    handleIn: {
-                      x: cp2.x,
-                      y: cp2.y
-                    },
-                    handleOut: {
-                      x: end.x + (end.x - cp2.x), // Mirror for now
-                      y: end.y + (end.y - cp2.y)
-                    },
-                    id: generateId()
-                  });
-                }
-              } else {
-                // Fallback to simpler approximation if arc calculation fails
-                // Simple cubic approximation with handles at 1/3 distance
-                const dx = endX - prevPoint.x;
-                const dy = endY - prevPoint.y;
+                // Set handles to create a curve through the offset point
+                prevPoint.handleOut = {
+                  x: prevPoint.x + (offsetX - prevPoint.x) * 0.5,
+                  y: prevPoint.y + (offsetY - prevPoint.y) * 0.5
+                };
                 
-                // Apply a slight curve - this is very approximate
-                const midX = (prevPoint.x + endX) / 2;
-                const midY = (prevPoint.y + endY) / 2;
-                
-                // Push out the mid point slightly to create a curve
-                // The sign of this offset depends on the sweep flag
-                const offset = (sweepFlag === 1 ? 1 : -1) * Math.min(rx, ry) * 0.5;
-                
-                // Perpendicular direction
-                const perpX = -dy;
-                const perpY = dx;
-                const length = Math.sqrt(perpX*perpX + perpY*perpY);
-                
-                if (length > 0) {
-                  const offsetX = midX + perpX / length * offset;
-                  const offsetY = midY + perpY / length * offset;
-                  
-                  // Set handles to create a curve through the offset point
-                  prevPoint.handleOut = {
-                    x: prevPoint.x + (offsetX - prevPoint.x) * 0.5,
-                    y: prevPoint.y + (offsetY - prevPoint.y) * 0.5
-                  };
-                  
-                  // Add the endpoint with a handle coming from the offset point
-                  points.push({
-                    x: endX,
-                    y: endY,
-                    handleIn: {
-                      x: endX - (endX - offsetX) * 0.5,
-                      y: endY - (endY - offsetY) * 0.5
-                    },
-                    handleOut: {
-                      x: endX + (endX - offsetX) * 0.2, // Smaller handle out
-                      y: endY + (endY - offsetY) * 0.2
-                    },
-                    id: generateId()
-                  });
-                }
+                // Add the endpoint with a handle coming from the offset point
+                points.push({
+                  x: endX,
+                  y: endY,
+                  handleIn: {
+                    x: endX - (endX - offsetX) * 0.5,
+                    y: endY - (endY - offsetY) * 0.5
+                  },
+                  handleOut: {
+                    x: endX + (endX - offsetX) * 0.2, // Smaller handle out
+                    y: endY + (endY - offsetY) * 0.2
+                  },
+                  id: generateId()
+                });
               }
             }
             
@@ -872,130 +750,6 @@ const convertPathToPoints = (path: string, transform?: string): ControlPoint[] =
     }
   } catch (error) {
     console.error('Error converting path to points:', error);
-  }
-  
-  return points;
-};
-
-// Helper function to approximate elliptical arc with cubic bezier curves
-const approximateArc = (
-  x1: number, y1: number, 
-  x2: number, y2: number, 
-  rx: number, ry: number, 
-  xAxisRotation: number, 
-  largeArcFlag: number, 
-  sweepFlag: number
-): Point[] => {
-  // If rx or ry is 0, it's just a straight line
-  if (rx === 0 || ry === 0) {
-    return [
-      { x: x1 + (x2 - x1) / 3, y: y1 + (y2 - y1) / 3 },
-      { x: x1 + 2 * (x2 - x1) / 3, y: y1 + 2 * (y2 - y1) / 3 },
-      { x: x2, y: y2 }
-    ];
-  }
-  
-  // Convert xAxisRotation to radians
-  const phi = (xAxisRotation * Math.PI) / 180;
-  
-  // Step 1: Compute (x1', y1') - the transformed start point
-  const cosPhi = Math.cos(phi);
-  const sinPhi = Math.sin(phi);
-  const x1p = cosPhi * (x1 - x2) / 2 + sinPhi * (y1 - y2) / 2;
-  const y1p = -sinPhi * (x1 - x2) / 2 + cosPhi * (y1 - y2) / 2;
-  
-  // Ensure radii are large enough
-  rx = Math.abs(rx);
-  ry = Math.abs(ry);
-  
-  // Correction of out-of-range radii
-  let lambda = (x1p * x1p) / (rx * rx) + (y1p * y1p) / (ry * ry);
-  if (lambda > 1) {
-    rx *= Math.sqrt(lambda);
-    ry *= Math.sqrt(lambda);
-  }
-  
-  // Step 2: Compute (cx', cy') - the center of the ellipse
-  let sign = (largeArcFlag !== sweepFlag) ? 1 : -1;
-  let sq = ((rx * rx * ry * ry) - (rx * rx * y1p * y1p) - (ry * ry * x1p * x1p)) / 
-           ((rx * rx * y1p * y1p) + (ry * ry * x1p * x1p));
-  sq = (sq < 0) ? 0 : sq;
-  const coefficient = sign * Math.sqrt(sq);
-  
-  const cxp = coefficient * ((rx * y1p) / ry);
-  const cyp = coefficient * (-(ry * x1p) / rx);
-  
-  // Step 3: Compute (cx, cy) - the center in the original coordinate system
-  const cx = cosPhi * cxp - sinPhi * cyp + (x1 + x2) / 2;
-  const cy = sinPhi * cxp + cosPhi * cyp + (y1 + y2) / 2;
-  
-  // Step 4: Compute the angles
-  // The vector from the center to the starting point
-  const startVectorX = (x1p - cxp) / rx;
-  const startVectorY = (y1p - cyp) / ry;
-  const startAngle = Math.atan2(startVectorY, startVectorX);
-  
-  // The vector from the center to the ending point
-  const endVectorX = (-x1p - cxp) / rx;
-  const endVectorY = (-y1p - cyp) / ry;
-  
-  let deltaAngle = Math.atan2(endVectorY, endVectorX) - startAngle;
-  
-  // Ensure deltaAngle has the correct sign
-  if (sweepFlag === 0 && deltaAngle > 0) {
-    deltaAngle -= 2 * Math.PI;
-  } else if (sweepFlag === 1 && deltaAngle < 0) {
-    deltaAngle += 2 * Math.PI;
-  }
-  
-  // We'll divide the arc into segments - more segments for larger arcs
-  const segmentCount = Math.max(1, Math.ceil(Math.abs(deltaAngle) / (Math.PI / 4)));
-  const angleStep = deltaAngle / segmentCount;
-  
-  // Generate points for each segment
-  const points: Point[] = [];
-  
-  for (let i = 0; i < segmentCount; i++) {
-    const angle1 = startAngle + i * angleStep;
-    const angle2 = startAngle + (i + 1) * angleStep;
-    
-    // Calculate Bezier control points for approximating an arc segment
-    const alpha = Math.sin(angleStep) * (Math.sqrt(4 + 3 * Math.tan(angleStep / 2) * Math.tan(angleStep / 2)) - 1) / 3;
-    
-    // Point on the arc at angle1
-    const cosAngle1 = Math.cos(angle1);
-    const sinAngle1 = Math.sin(angle1);
-    const pointX1 = cx + rx * (cosAngle1 * cosPhi - sinAngle1 * sinPhi);
-    const pointY1 = cy + ry * (cosAngle1 * sinPhi + sinAngle1 * cosPhi);
-    
-    // Tangent vector at angle1
-    const tangentX1 = -rx * sinAngle1 * cosPhi - ry * cosAngle1 * sinPhi;
-    const tangentY1 = -rx * sinAngle1 * sinPhi + ry * cosAngle1 * cosPhi;
-    
-    // Control point 1
-    const cp1x = pointX1 + alpha * tangentX1;
-    const cp1y = pointY1 + alpha * tangentY1;
-    
-    // Point on the arc at angle2
-    const cosAngle2 = Math.cos(angle2);
-    const sinAngle2 = Math.sin(angle2);
-    const pointX2 = cx + rx * (cosAngle2 * cosPhi - sinAngle2 * sinPhi);
-    const pointY2 = cy + ry * (cosAngle2 * sinPhi + sinAngle2 * cosPhi);
-    
-    // Tangent vector at angle2
-    const tangentX2 = -rx * sinAngle2 * cosPhi - ry * cosAngle2 * sinPhi;
-    const tangentY2 = -rx * sinAngle2 * sinPhi + ry * cosAngle2 * cosPhi;
-    
-    // Control point 2
-    const cp2x = pointX2 - alpha * tangentX2;
-    const cp2y = pointY2 - alpha * tangentY2;
-    
-    // Add the control points and end point
-    points.push(
-      { x: cp1x, y: cp1y },
-      { x: cp2x, y: cp2y },
-      { x: pointX2, y: pointY2 }
-    );
   }
   
   return points;

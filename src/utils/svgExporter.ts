@@ -1,3 +1,4 @@
+
 import { ControlPoint, CurveConfig, TransformSettings } from '../types/bezier';
 import { generatePathData } from './bezierUtils';
 
@@ -65,15 +66,12 @@ export const downloadSVG = (svgContent: string, fileName: string): void => {
   URL.revokeObjectURL(url);
 };
 
-// Updated helper function to create SVG string for a complete design
-// Fix: Updated function signature to expect only one argument (objects)
+// New helper function to create SVG string for a complete design
 export const createDesignSVG = (
-  objects: any[]
+  objects: any[],
+  canvasWidth: number,
+  canvasHeight: number
 ): string => {
-  // Set default canvas dimensions
-  const canvasWidth = 800;
-  const canvasHeight = 600;
-  
   // Create the SVG content combining all objects
   let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${canvasWidth}" height="${canvasHeight}" viewBox="0 0 ${canvasWidth} ${canvasHeight}">`;
   

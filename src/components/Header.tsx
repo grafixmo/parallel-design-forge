@@ -1,6 +1,7 @@
+
 import React, { useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { PenLine, Trash2, Upload, Save, Database, MousePointer, Image, FileUp, Download } from 'lucide-react';
+import { PenLine, Trash2, Upload, Save, Database, MousePointer, Image, Import, FileUp, Download } from 'lucide-react';
 import {
   Tooltip,
   TooltipContent,
@@ -36,7 +37,7 @@ interface HeaderProps {
   onLoadDesigns: () => void;
   onExportSVG: () => void;
   onImportSVG?: (svgContent: string) => void;
-  onLoadTemplate?: (templateData: string, shouldClearCanvas?: boolean) => void;
+  onLoadTemplate?: (templateData: string) => void;
   isDrawingMode?: boolean;
   onToggleDrawingMode?: () => void;
 }
@@ -56,7 +57,6 @@ const Header: React.FC<HeaderProps> = ({
   const [designDescription, setDesignDescription] = useState('');
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [galleryOpen, setGalleryOpen] = useState(false);
-  const [isImporting, setIsImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const categories = getTemplateCategories();
   
@@ -72,9 +72,9 @@ const Header: React.FC<HeaderProps> = ({
     setDesignDescription('');
   };
 
-  const handleSelectTemplate = (templateData: string, shouldClearCanvas: boolean) => {
+  const handleSelectTemplate = (templateData: string) => {
     if (onLoadTemplate) {
-      onLoadTemplate(templateData, shouldClearCanvas);
+      onLoadTemplate(templateData);
     }
   };
   
@@ -97,47 +97,14 @@ const Header: React.FC<HeaderProps> = ({
     }
     
     try {
-      // Show importing toast
-      setIsImporting(true);
-      toast({
-        title: "Importing SVG",
-        description: "Please wait while we process your SVG file...",
-      });
-      
       // Read file content
       const reader = new FileReader();
       reader.onload = (event) => {
         const content = event.target?.result as string;
         if (content && onImportSVG) {
-          try {
-            onImportSVG(content);
-            toast({
-              title: "SVG Imported Successfully",
-              description: "Your SVG file has been imported and rendered on the canvas.",
-              variant: "default"
-            });
-          } catch (error) {
-            console.error("Error during SVG import:", error);
-            toast({
-              title: "Import Error",
-              description: "There was an error processing the SVG. Please try a simpler file.",
-              variant: "destructive"
-            });
-          } finally {
-            setIsImporting(false);
-          }
+          onImportSVG(content);
         }
       };
-      
-      reader.onerror = () => {
-        toast({
-          title: "Import Failed",
-          description: "Failed to read the SVG file. Please try again.",
-          variant: "destructive"
-        });
-        setIsImporting(false);
-      };
-      
       reader.readAsText(file);
       
       // Reset the input to allow selecting the same file again
@@ -149,7 +116,6 @@ const Header: React.FC<HeaderProps> = ({
         description: "Failed to import the SVG file. Please try again.",
         variant: "destructive"
       });
-      setIsImporting(false);
     }
   };
   
@@ -302,9 +268,9 @@ const Header: React.FC<HeaderProps> = ({
         {/* SVG Import/Export Dropdown */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="default" className="bg-indigo-600 hover:bg-indigo-700" disabled={isImporting}>
+            <Button variant="default" className="bg-indigo-600 hover:bg-indigo-700">
               <Database className="h-4 w-4 mr-2" />
-              {isImporting ? 'Importing...' : 'SVG Actions'}
+              SVG Actions
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent>
@@ -312,7 +278,7 @@ const Header: React.FC<HeaderProps> = ({
               <Download className="h-4 w-4 mr-2" />
               Export SVG
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={handleImportClick} className="cursor-pointer" disabled={isImporting}>
+            <DropdownMenuItem onClick={handleImportClick} className="cursor-pointer">
               <FileUp className="h-4 w-4 mr-2" />
               Import SVG
             </DropdownMenuItem>
