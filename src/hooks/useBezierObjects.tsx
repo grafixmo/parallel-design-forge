@@ -1,4 +1,5 @@
-import { useState, useCallback } from 'react';
+
+import { useState, useCallback, useRef } from 'react';
 import { 
   BezierObject, 
   ControlPoint, 
@@ -10,7 +11,7 @@ import { generateId } from '@/utils/bezierUtils';
 import { toast } from '@/hooks/use-toast';
 import { importSVG } from '@/utils/simpleSvgImporter';
 import { createDesignSVG, downloadSVG } from '@/utils/svgExporter';
-import { loadTemplateData } from '@/utils/simpleTemplateLoader';
+import { loadTemplateAsync } from '@/utils/optimizedTemplateLoader';
 
 const DEFAULT_CURVE_CONFIG: CurveConfig = {
   styles: [
@@ -33,6 +34,9 @@ export function useBezierObjects() {
   const [currentHistoryIndex, setCurrentHistoryIndex] = useState<number>(-1);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [importProgress, setImportProgress] = useState<number>(0);
+  
+  // Use ref for tracking active loader cancellation
+  const activeLoaderCancelRef = useRef<(() => void) | null>(null);
   
   // Define addToHistory function first so it can be used by other functions
   const addToHistory = useCallback((updatedObjects: BezierObject[]) => {
@@ -169,16 +173,22 @@ export function useBezierObjects() {
     }
   }, [objects]);
   
-  // Simplified, safer template loading
+  // Optimized template loading with improved async handling
   const loadObjectsFromTemplate = useCallback((templateData: BezierObject[] | string, clearExisting: boolean = false) => {
+    // Cancel any active loader first to prevent competing operations
+    if (activeLoaderCancelRef.current) {
+      activeLoaderCancelRef.current();
+      activeLoaderCancelRef.current = null;
+    }
+    
     setIsLoading(true);
     setImportProgress(0);
     
     try {
-      console.log('Loading template objects using simplified loader, clearExisting:', clearExisting);
+      console.log('Loading template objects using optimized loader, clearExisting:', clearExisting);
       
-      // Use our simplified template loader with progress updates
-      loadTemplateData(templateData, {
+      // Use our new optimized template loader with cancellation
+      const cancelLoader = loadTemplateAsync(templateData, {
         onProgress: (progress) => {
           setImportProgress(progress);
         },
@@ -188,8 +198,8 @@ export function useBezierObjects() {
             setObjects(processedObjects);
             setSelectedObjectIds([]);
           } else {
-            // Limit the number of objects to prevent performance issues
-            const maxObjectsToAdd = 5;
+            // More reasonable object limit
+            const maxObjectsToAdd = 10;
             const limitedObjects = processedObjects.slice(0, maxObjectsToAdd);
             
             if (processedObjects.length > maxObjectsToAdd) {
@@ -207,16 +217,17 @@ export function useBezierObjects() {
           // Add to history
           const updatedObjects = clearExisting 
             ? processedObjects 
-            : [...objects, ...processedObjects.slice(0, 5)];
+            : [...objects, ...processedObjects.slice(0, 10)];
             
           addToHistory(updatedObjects);
           
           toast({
             title: 'Template Loaded',
-            description: `Loaded objects successfully`,
+            description: `Loaded ${processedObjects.length} objects successfully`,
             variant: 'default'
           });
           
+          activeLoaderCancelRef.current = null;
           setIsLoading(false);
         },
         onError: (error) => {
@@ -226,17 +237,16 @@ export function useBezierObjects() {
             description: error.message || 'Failed to load template',
             variant: 'destructive'
           });
+          activeLoaderCancelRef.current = null;
           setIsLoading(false);
-        }
-      }).catch(error => {
-        console.error('Unhandled error in template loader:', error);
-        toast({
-          title: 'Error Loading Template',
-          description: 'Unexpected error occurred',
-          variant: 'destructive'
-        });
-        setIsLoading(false);
+        },
+        batchSize: 3,  // Process 3 objects at a time for smoother UI
+        maxObjects: 20 // More reasonable limit that won't freeze UI
       });
+      
+      // Store the cancellation function
+      activeLoaderCancelRef.current = cancelLoader;
+      
     } catch (error) {
       console.error('Error in loadObjectsFromTemplate:', error);
       toast({

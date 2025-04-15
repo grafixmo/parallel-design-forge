@@ -24,7 +24,7 @@ interface BezierCanvasContainerProps {
 }
 
 const BezierCanvasContainer: React.FC<BezierCanvasContainerProps> = (props) => {
-  // Handle SVG export
+  // Handle SVG export with improved error handling
   const handleSVGExport = (fileName: string = "bezier-design.svg") => {
     try {
       if (props.objects.length === 0) {
@@ -65,4 +65,4 @@ const BezierCanvasContainer: React.FC<BezierCanvasContainerProps> = (props) => {
   );
 };
 
-export default BezierCanvasContainer;
+export default React.memo(BezierCanvasContainer);
