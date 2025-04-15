@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
   ControlPoint, 
@@ -19,8 +18,7 @@ import ObjectControlsPanel from '@/components/ObjectControlsPanel';
 import { generateThumbnailFromSVG } from '@/utils/thumbnailGenerator';
 import { convertShapesDataToObjects } from '@/utils/bezierUtils';
 import { importSVG } from '@/utils/simpleSvgImporter';
-// Remove the duplicate import of downloadSVG
-import { exportSVG } from '@/utils/simpleSvgExporter';
+import { exportSVG, downloadSVG } from '@/utils/simpleSvgExporter';
 
 const Index = () => {
   const { toast } = useToast();
