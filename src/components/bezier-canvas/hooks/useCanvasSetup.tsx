@@ -236,26 +236,19 @@ export const useCanvasSetup = ({
       ctx.stroke();
     }
     
-    // Draw coordinate axes for debugging
-    ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
-    ctx.lineWidth = 2 / zoom;
-    ctx.beginPath();
-    ctx.moveTo(0, -1000);
-    ctx.lineTo(0, 1000);
-    ctx.stroke();
-    
-    ctx.strokeStyle = 'rgba(0, 0, 255, 0.5)';
+    // Coordinate axes with minimal styling
+    ctx.strokeStyle = 'rgba(0, 0, 255, 0.2)'; // Very light blue for X axis
+    ctx.lineWidth = 1 / zoom;
     ctx.beginPath();
     ctx.moveTo(-1000, 0);
     ctx.lineTo(1000, 0);
     ctx.stroke();
     
-    // Add axes labels for debugging
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-    ctx.font = `${12 / zoom}px Arial`;
-    ctx.fillText('X', 50 / zoom, 10 / zoom);
-    ctx.fillText('Y', 10 / zoom, 50 / zoom);
-    ctx.fillText('0', 5 / zoom, 15 / zoom);
+    ctx.strokeStyle = 'rgba(255, 0, 0, 0.2)'; // Very light red for Y axis
+    ctx.beginPath();
+    ctx.moveTo(0, -1000);
+    ctx.lineTo(0, 1000);
+    ctx.stroke();
     
     // Restore context
     ctx.restore();
