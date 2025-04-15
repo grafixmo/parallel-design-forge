@@ -9,13 +9,12 @@ import BezierCanvas from '@/components/bezier-canvas';
 import Header from '@/components/Header';
 import LibraryPanel from '@/components/LibraryPanel';
 import { generateId } from '@/utils/bezierUtils';
-import { exportAsSVG, createDesignSVG } from '@/utils/svgExporter';
+import { createDesignSVG, downloadSVG } from '@/utils/svgExporter';
 import { saveDesign, saveTemplate, Template } from '@/services/supabaseClient';
 import { useToast } from '@/hooks/use-toast';
 import { useBezierObjects } from '@/hooks/useBezierObjects';
 import ObjectControlsPanel from '@/components/ObjectControlsPanel';
 import { generateThumbnailFromSVG } from '@/utils/thumbnailGenerator';
-import { exportSVG, downloadSVG } from '@/utils/svg';
 
 const Index = () => {
   const { toast } = useToast();
@@ -118,6 +117,36 @@ const Index = () => {
     });
   };
   
+  // Export the current design as SVG
+  const handleExportSVG = () => {
+    try {
+      if (objects.length === 0) {
+        toast({
+          title: "Cannot Export Empty Canvas",
+          description: "Please create at least one object",
+          variant: "destructive"
+        });
+        return;
+      }
+      
+      // Use our consolidated SVG export function
+      const svg = createDesignSVG(objects, canvasWidth, canvasHeight);
+      downloadSVG(svg, 'qordatta-design.svg');
+      
+      toast({
+        title: "SVG Exported",
+        description: "Your design has been exported as an SVG file"
+      });
+    } catch (error) {
+      console.error('Error exporting SVG:', error);
+      toast({
+        title: "Export Failed",
+        description: "There was an error exporting your design",
+        variant: "destructive"
+      });
+    }
+  };
+  
   // Save current design to Supabase
   const handleSaveDesign = async (name: string, category: string, description?: string) => {
     try {
@@ -131,7 +160,7 @@ const Index = () => {
       }
       
       // Create SVG content
-      const svg = createDesignSVG(objects);
+      const svg = createDesignSVG(objects, canvasWidth, canvasHeight);
       const designData = JSON.stringify(objects);
       
       // Generate a thumbnail
@@ -163,36 +192,6 @@ const Index = () => {
       toast({
         title: "Save Failed",
         description: "There was an error saving your design",
-        variant: "destructive"
-      });
-    }
-  };
-  
-  // Export the current design as SVG
-  const handleExportSVG = () => {
-    try {
-      if (objects.length === 0) {
-        toast({
-          title: "Cannot Export Empty Canvas",
-          description: "Please create at least one object",
-          variant: "destructive"
-        });
-        return;
-      }
-      
-      // Use our improved SVG exporter
-      const svg = exportSVG(objects, canvasWidth, canvasHeight);
-      downloadSVG(svg, 'qordatta-design.svg');
-      
-      toast({
-        title: "SVG Exported",
-        description: "Your design has been exported as an SVG file"
-      });
-    } catch (error) {
-      console.error('Error exporting SVG:', error);
-      toast({
-        title: "Export Failed",
-        description: "There was an error exporting your design",
         variant: "destructive"
       });
     }

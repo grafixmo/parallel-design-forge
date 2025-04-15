@@ -6,7 +6,7 @@ import {
 } from '@/types/bezier';
 import BezierCanvas from './BezierCanvas';
 import { toast } from '@/hooks/use-toast';
-import { exportSVG, downloadSVG } from '@/utils/svg';
+import { createDesignSVG, downloadSVG } from '@/utils/svgExporter';
 
 interface BezierCanvasContainerProps {
   width: number;
@@ -36,8 +36,8 @@ const BezierCanvasContainer: React.FC<BezierCanvasContainerProps> = (props) => {
         return;
       }
       
-      // Create SVG content from objects
-      const svgContent = exportSVG(props.objects, props.width, props.height);
+      // Create SVG content from objects using our consolidated function
+      const svgContent = createDesignSVG(props.objects, props.width, props.height);
       
       // Download the SVG file
       downloadSVG(svgContent, fileName);

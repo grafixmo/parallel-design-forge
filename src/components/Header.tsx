@@ -23,7 +23,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
 import TemplateGallery from './TemplateGallery';
 import { getTemplateCategories } from '@/utils/thumbnailGenerator';
-import { exportAsSVG, downloadSVG } from '@/utils/svgExporter';
+import { createDesignSVG, downloadSVG } from '@/utils/svgExporter';
 
 interface HeaderProps {
   onClearCanvas: () => void;
@@ -86,15 +86,8 @@ const Header: React.FC<HeaderProps> = ({
         return;
       }
       
-      // Use exportAsSVG instead of exportSVG
-      const svgContent = exportAsSVG(
-        objects[0].points, 
-        objects[0].curveConfig, 
-        objects[0].transform, 
-        width, 
-        height
-      );
-      
+      // Use our consolidated SVG export function
+      const svgContent = createDesignSVG(objects, width, height);
       downloadSVG(svgContent, 'qordatta-design.svg');
       
       toast({

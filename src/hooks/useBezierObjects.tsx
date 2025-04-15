@@ -9,7 +9,7 @@ import {
 import { generateId } from '@/utils/bezierUtils';
 import { toast } from '@/hooks/use-toast';
 import { importSVG } from '@/utils/simpleSvgImporter';
-import { exportSVG, downloadSVG } from '@/utils/simpleSvgExporter';
+import { createDesignSVG, downloadSVG } from '@/utils/svgExporter';
 import { loadTemplateData } from '@/utils/simpleTemplateLoader';
 
 const DEFAULT_CURVE_CONFIG: CurveConfig = {
@@ -148,8 +148,8 @@ export function useBezierObjects() {
         return;
       }
       
-      // Create SVG content
-      const svgContent = exportSVG(objects);
+      // Create SVG content using our consolidated function
+      const svgContent = createDesignSVG(objects);
       
       // Download SVG file
       downloadSVG(svgContent, fileName);

@@ -1,93 +1,40 @@
-import { ControlPoint, CurveConfig, TransformSettings } from '../types/bezier';
+
+import { ControlPoint, CurveConfig, TransformSettings, BezierObject } from '../types/bezier';
 import { generatePathData } from './bezierUtils';
 
-export const exportAsSVG = (
-  points: ControlPoint[],
-  curveConfig: CurveConfig,
-  transform: TransformSettings,
-  canvasWidth: number,
-  canvasHeight: number
-): string => {
-  // Create SVG content
-  let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${canvasWidth}" height="${canvasHeight}" viewBox="0 0 ${canvasWidth} ${canvasHeight}">`;
-  
-  // Add background with white fill
-  svg += `<rect width="${canvasWidth}" height="${canvasHeight}" fill="white"/>`;
-  
-  // Calculate the center of all points for transformation
-  const sumX = points.reduce((sum, point) => sum + point.x, 0);
-  const sumY = points.reduce((sum, point) => sum + point.y, 0);
-  const centerX = points.length > 0 ? sumX / points.length : canvasWidth / 2;
-  const centerY = points.length > 0 ? sumY / points.length : canvasHeight / 2;
-  
-  // Apply transform to the entire group
-  svg += `<g transform="rotate(${transform.rotation} ${centerX} ${centerY}) scale(${transform.scaleX} ${transform.scaleY})">`;
-  
-  // Draw parallel curves behind main curve
-  for (let i = 1; i <= curveConfig.parallelCount; i++) {
-    const offset = i * curveConfig.spacing;
-    const style = curveConfig.styles[i] || curveConfig.styles[0];
-    
-    // Draw a path for each parallel curve
-    const pathData = generatePathData(points, offset);
-    if (pathData) {
-      svg += `<path d="${pathData}" fill="none" stroke="${style.color}" stroke-width="${style.width}" stroke-linecap="round" stroke-linejoin="round"/>`;
-    }
-  }
-  
-  // Draw main curve on top
-  const mainPathData = generatePathData(points);
-  if (mainPathData) {
-    const mainStyle = curveConfig.styles[0];
-    svg += `<path d="${mainPathData}" fill="none" stroke="${mainStyle.color}" stroke-width="${mainStyle.width}" stroke-linecap="round" stroke-linejoin="round"/>`;
-  }
-  
-  // Close the transform group
-  svg += '</g>';
-  
-  // Add a border for better visibility in thumbnails
-  svg += `<rect width="${canvasWidth}" height="${canvasHeight}" fill="none" stroke="#e2e8f0" stroke-width="1"/>`;
-  
-  svg += '</svg>';
-  
-  return svg;
-};
-
-export const downloadSVG = (svgContent: string, fileName: string): void => {
-  const blob = new Blob([svgContent], { type: 'image/svg+xml' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = fileName || 'bezier-design.svg';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-};
-
-// Updated helper function to create SVG string for a complete design
-// Fix: Updated function signature to expect only one argument (objects)
+/**
+ * Creates an SVG string for a complete design with all objects
+ * @param objects Array of bezier objects
+ * @param width Canvas width
+ * @param height Canvas height
+ * @returns SVG content as string
+ */
 export const createDesignSVG = (
-  objects: any[]
+  objects: BezierObject[],
+  width: number = 800,
+  height: number = 600
 ): string => {
-  // Set default canvas dimensions
-  const canvasWidth = 800;
-  const canvasHeight = 600;
+  if (!objects || objects.length === 0) {
+    return createEmptySVG(width, height);
+  }
   
   // Create the SVG content combining all objects
-  let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${canvasWidth}" height="${canvasHeight}" viewBox="0 0 ${canvasWidth} ${canvasHeight}">`;
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`;
   
   // Add background with white fill
-  svg += `<rect width="${canvasWidth}" height="${canvasHeight}" fill="white"/>`;
+  svg += `<rect width="${width}" height="${height}" fill="white"/>`;
   
   // Process each object
   objects.forEach(obj => {
+    // Skip objects with insufficient points
+    if (!obj.points || obj.points.length < 2) return;
+    
     // Calculate the center of points for this object's transformation
     const points = obj.points;
     const sumX = points.reduce((sum: number, point: ControlPoint) => sum + point.x, 0);
     const sumY = points.reduce((sum: number, point: ControlPoint) => sum + point.y, 0);
-    const centerX = points.length > 0 ? sumX / points.length : canvasWidth / 2;
-    const centerY = points.length > 0 ? sumY / points.length : canvasHeight / 2;
+    const centerX = points.length > 0 ? sumX / points.length : width / 2;
+    const centerY = points.length > 0 ? sumY / points.length : height / 2;
     
     // Apply object's transform
     svg += `<g transform="rotate(${obj.transform.rotation} ${centerX} ${centerY}) scale(${obj.transform.scaleX} ${obj.transform.scaleY})">`;
@@ -115,9 +62,53 @@ export const createDesignSVG = (
   });
   
   // Add a border
-  svg += `<rect width="${canvasWidth}" height="${canvasHeight}" fill="none" stroke="#e2e8f0" stroke-width="1"/>`;
+  svg += `<rect width="${width}" height="${height}" fill="none" stroke="#e2e8f0" stroke-width="1"/>`;
   
   svg += '</svg>';
   
   return svg;
+};
+
+/**
+ * Creates an empty SVG with default dimensions
+ */
+const createEmptySVG = (width: number = 800, height: number = 600): string => {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+  <rect width="${width}" height="${height}" fill="white"/>
+  <text x="${width/2}" y="${height/2}" font-family="Arial" font-size="24" fill="#666" text-anchor="middle">No objects to display</text>
+</svg>`;
+};
+
+/**
+ * Download SVG content as a file
+ * @param svgContent The SVG content to download
+ * @param fileName The name of the downloaded file
+ */
+export const downloadSVG = (svgContent: string, fileName: string = 'design.svg'): void => {
+  try {
+    if (!svgContent) {
+      throw new Error('No SVG content to download');
+    }
+    
+    // Create a blob from the SVG content
+    const blob = new Blob([svgContent], { type: 'image/svg+xml' });
+    const url = URL.createObjectURL(blob);
+    
+    // Create a temporary link and trigger download
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    link.style.display = 'none';
+    
+    document.body.appendChild(link);
+    link.click();
+    
+    // Clean up
+    setTimeout(() => {
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    }, 100);
+  } catch (error) {
+    console.error('Error downloading SVG:', error);
+  }
 };
