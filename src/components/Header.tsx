@@ -30,7 +30,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 // Import new SVG utilities
-import { readSVGFile, importSVG } from '@/utils/fabricSvgImporter';
+import { 
+  readSVGFile, 
+  importSVG 
+} from '@/utils/svg';
 import { exportSVG, downloadSVG } from '@/utils/simpleSvgExporter';
 
 interface HeaderProps {
@@ -81,11 +84,7 @@ const Header: React.FC<HeaderProps> = ({
     }
   };
   
-  // Updated SVG import flow with Fabric.js
-  const handleImportClick = () => {
-    fileInputRef.current?.click();
-  };
-  
+  // Updated SVG import flow with async Fabric.js
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;

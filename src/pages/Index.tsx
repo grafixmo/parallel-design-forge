@@ -17,8 +17,7 @@ import { useBezierObjects } from '@/hooks/useBezierObjects';
 import ObjectControlsPanel from '@/components/ObjectControlsPanel';
 import { generateThumbnailFromSVG } from '@/utils/thumbnailGenerator';
 import { convertShapesDataToObjects } from '@/utils/bezierUtils';
-import { importSVG } from '@/utils/simpleSvgImporter';
-import { exportSVG, downloadSVG } from '@/utils/simpleSvgExporter';
+import { importSVG, exportSVG, downloadSVG } from '@/utils/svg';
 
 const Index = () => {
   const { toast } = useToast();
@@ -220,8 +219,30 @@ const Index = () => {
   // Import SVG content with improved error handling and async processing
   const handleImportSVG = async (svgContent: string) => {
     try {
-      // Use the hook's SVG import function which handles async processing
-      importSVGToObjects(svgContent);
+      setIsLoading(true);
+      setLoadingProgress(10);
+      
+      // Use our new async importer with progress tracking
+      const importedObjects = await importSVG(svgContent, {
+        onProgress: (progress) => setLoadingProgress(progress)
+      });
+      
+      if (importedObjects.length > 0) {
+        // Add the imported objects to the canvas
+        setAllObjects([...objects, ...importedObjects]);
+        
+        toast({
+          title: "SVG Imported",
+          description: `Successfully imported ${importedObjects.length} shapes.`,
+          variant: "default"
+        });
+      } else {
+        toast({
+          title: "Import Notice",
+          description: "No valid shapes could be extracted from the SVG.",
+          variant: "destructive"
+        });
+      }
     } catch (error) {
       console.error('Error importing SVG:', error);
       toast({
@@ -229,6 +250,9 @@ const Index = () => {
         description: "There was an error processing the SVG. Try a simpler file.",
         variant: "destructive"
       });
+    } finally {
+      setIsLoading(false);
+      setLoadingProgress(0);
     }
   };
   

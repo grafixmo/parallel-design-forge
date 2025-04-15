@@ -6,9 +6,9 @@ import {
   TransformSettings 
 } from '@/types/bezier';
 import { generateId } from '@/utils/bezierUtils';
-import { importSVG } from '@/utils/simpleSvgImporter';
-import { loadTemplateAsync } from '@/utils/asyncTemplateLoader';
 import { toast } from '@/hooks/use-toast';
+import { importSVG } from '@/utils/svg';
+import { loadTemplateAsync } from '@/utils/asyncTemplateLoader';
 
 // Maximum number of undos
 const MAX_HISTORY = 30;
@@ -297,68 +297,55 @@ export const useBezierObjects = (): UseBezierObjectsResult => {
   }, []);
   
   // Import SVG to objects
-  const importSVGToObjects = useCallback((svgContent: string): void => {
+  const importSVGToObjects = useCallback(async (svgContent: string): Promise<void> => {
     try {
       setIsLoading(true);
       setImportProgress(10);
-      
-      // Use our simplified SVG importer with better error handling
+    
+      // Use the async importer with progress tracking
+      const importedObjects = await importSVG(svgContent, {
+        onProgress: (progress) => setImportProgress(progress)
+      });
+    
+      if (importedObjects.length === 0) {
+        toast({
+          title: "Import Warning",
+          description: "No valid shapes found in the SVG file.",
+          variant: "destructive"
+        });
+        setIsLoading(false);
+        setImportProgress(0);
+        return;
+      }
+    
+      setObjects(prevObjects => {
+        const newObjects = [...prevObjects, ...importedObjects];
+        saveCurrentState(newObjects);
+        return newObjects;
+      });
+    
+      toast({
+        title: "SVG Imported",
+        description: `Successfully imported ${importedObjects.length} shapes.`,
+        variant: "default"
+      });
+    
+      setImportProgress(100);
       setTimeout(() => {
-        try {
-          setImportProgress(50);
-          const importedObjects = importSVG(svgContent);
-          setImportProgress(90);
-          
-          if (importedObjects.length === 0) {
-            toast({
-              title: "Import Warning",
-              description: "No valid shapes found in the SVG file.",
-              variant: "destructive"
-            });
-            setIsLoading(false);
-            setImportProgress(0);
-            return;
-          }
-          
-          setObjects(prevObjects => {
-            const newObjects = [...prevObjects, ...importedObjects];
-            saveCurrentState(newObjects);
-            return newObjects;
-          });
-          
-          toast({
-            title: "SVG Imported",
-            description: `Successfully imported ${importedObjects.length} shapes.`,
-            variant: "default"
-          });
-          
-          setImportProgress(100);
-          setTimeout(() => {
-            setIsLoading(false);
-            setImportProgress(0);
-          }, 500);
-        } catch (error) {
-          console.error("Error in importSVGToObjects:", error);
-          toast({
-            title: "Import Error",
-            description: "Failed to import SVG. The file may be too complex.",
-            variant: "destructive"
-          });
-          setIsLoading(false);
-          setImportProgress(0);
-        }
-      }, 50);
+        setIsLoading(false);
+        setImportProgress(0);
+      }, 500);
     } catch (error) {
-      console.error("Error starting SVG import:", error);
-      setIsLoading(false);
-      setImportProgress(0);
+      console.error("Error in importSVGToObjects:", error);
       toast({
         title: "Import Error",
-        description: "Failed to start SVG import process.",
+        description: "Failed to import SVG. The file may be too complex.",
         variant: "destructive"
       });
+      setIsLoading(false);
+      setImportProgress(0);
     }
-  }, []);
+  }, [saveCurrentState]);
   
   return {
     objects,

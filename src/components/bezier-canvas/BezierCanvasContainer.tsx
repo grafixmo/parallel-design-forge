@@ -6,8 +6,8 @@ import {
 } from '@/types/bezier';
 import BezierCanvas from './BezierCanvas';
 import { toast } from '@/hooks/use-toast';
-import { importSVG } from '@/utils/fabricSvgImporter';
-import { exportSVG, downloadSVG } from '@/utils/simpleSvgExporter';
+import { importSVG, readSVGFile } from '@/utils/svg';
+import { exportSVG, downloadSVG } from '@/utils/svg';
 
 interface BezierCanvasContainerProps {
   width: number;
@@ -26,15 +26,19 @@ interface BezierCanvasContainerProps {
 
 const BezierCanvasContainer: React.FC<BezierCanvasContainerProps> = (props) => {
   const [isImporting, setIsImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState(0);
 
-  // Handle SVG import with Fabric.js importer
+  // Handle SVG import with improved async handling
   const handleSVGImport = async (svgContent: string) => {
     try {
-      console.log('Starting SVG import process with Fabric.js importer...');
+      console.log('Starting SVG import process with async Fabric.js importer...');
       setIsImporting(true);
+      setImportProgress(0);
       
-      // Use the Fabric.js-based importer for better SVG handling
-      const importedObjects = await importSVG(svgContent);
+      // Use the improved async importer with progress tracking
+      const importedObjects = await importSVG(svgContent, {
+        onProgress: setImportProgress
+      });
       
       if (importedObjects.length === 0) {
         toast({
@@ -65,6 +69,7 @@ const BezierCanvasContainer: React.FC<BezierCanvasContainerProps> = (props) => {
       return [];
     } finally {
       setIsImporting(false);
+      setImportProgress(0);
     }
   };
   
@@ -108,7 +113,15 @@ const BezierCanvasContainer: React.FC<BezierCanvasContainerProps> = (props) => {
         <div className="absolute inset-0 bg-white/70 flex items-center justify-center z-50">
           <div className="flex flex-col items-center">
             <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full mb-2"></div>
-            <p className="text-primary font-medium">Importing SVG...</p>
+            <p className="text-primary font-medium">Importing SVG... {importProgress}%</p>
+            
+            {/* Add progress bar */}
+            <div className="w-64 bg-gray-200 rounded-full h-2.5 mt-2">
+              <div 
+                className="bg-primary h-2.5 rounded-full transition-all duration-300" 
+                style={{ width: `${importProgress}%` }}
+              ></div>
+            </div>
           </div>
         </div>
       )}
