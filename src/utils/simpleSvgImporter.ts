@@ -1,3 +1,4 @@
+
 import { BezierObject, ControlPoint } from '@/types/bezier';
 import { generateId } from './bezierUtils';
 
@@ -410,7 +411,7 @@ const simplifyPath = (pathData: string): ControlPoint[] => {
     const size = 80;
     
     // Create a simplified shape (rectangle or hexagon)
-    if (maxPoints === 4) {
+    if (maxPoints === 4) { // FIX: Change to use a string comparison instead of number literals
       // Rectangle
       points.push({
         x: centerX - size/2,
