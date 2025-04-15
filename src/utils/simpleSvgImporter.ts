@@ -23,7 +23,8 @@ export const importSVG = (svgContent: string): BezierObject[] => {
     // Get all path elements
     const pathElements = svgDoc.querySelectorAll('path');
     if (pathElements.length === 0) {
-      throw new Error('No path elements found in SVG');
+      console.warn('No path elements found in SVG');
+      return [];
     }
     
     // Convert path elements to BezierObject objects
@@ -36,8 +37,8 @@ export const importSVG = (svgContent: string): BezierObject[] => {
       const stroke = pathElement.getAttribute('stroke') || '#000000';
       const strokeWidth = parseFloat(pathElement.getAttribute('stroke-width') || '2');
       
-      // Convert path data to control points
-      const points = convertPathToControlPoints(pathData);
+      // Convert path data to simplified control points
+      const points = simplifyPathToControlPoints(pathData);
       if (points.length < 2) return;
       
       // Create BezierObject
@@ -59,6 +60,7 @@ export const importSVG = (svgContent: string): BezierObject[] => {
       });
     });
     
+    console.log(`Imported ${objects.length} paths with a total of ${objects.reduce((sum, obj) => sum + obj.points.length, 0)} points`);
     return objects;
   } catch (error) {
     console.error('Error importing SVG:', error);
@@ -66,20 +68,31 @@ export const importSVG = (svgContent: string): BezierObject[] => {
   }
 };
 
-// Convert SVG path data to control points
-const convertPathToControlPoints = (pathData: string): ControlPoint[] => {
+// Simplified path conversion that creates fewer control points
+const simplifyPathToControlPoints = (pathData: string): ControlPoint[] => {
   const points: ControlPoint[] = [];
   
   try {
-    // Parse SVG path commands
+    // Parse SVG path commands - only focus on most common commands
     const commands = pathData.match(/[a-zA-Z][^a-zA-Z]*/g) || [];
+    
+    // Skip if too complex (prevents freezing on complex SVGs)
+    if (commands.length > 100) {
+      console.warn('Path too complex, simplifying');
+      // Only process a subset of commands to prevent overwhelming the UI
+      commands.length = Math.min(commands.length, 100);
+    }
     
     let currentX = 0;
     let currentY = 0;
     let firstX = 0;
     let firstY = 0;
     
-    for (let i = 0; i < commands.length; i++) {
+    // Track command count to prevent too many points
+    let commandCount = 0;
+    const maxCommands = 50; // Limit the number of commands we process
+    
+    for (let i = 0; i < commands.length && commandCount < maxCommands; i++) {
       const command = commands[i];
       const type = command.charAt(0);
       const args = command.substring(1)
@@ -88,7 +101,14 @@ const convertPathToControlPoints = (pathData: string): ControlPoint[] => {
         .map(parseFloat)
         .filter(n => !isNaN(n));
       
-      // Process each command type
+      // Skip unsupported commands to avoid creating too many points
+      if (!['M', 'm', 'L', 'l', 'C', 'c', 'Z', 'z'].includes(type)) {
+        continue;
+      }
+      
+      commandCount++;
+      
+      // Process main path commands
       switch (type) {
         case 'M': // Move to (absolute)
         case 'm': // Move to (relative)
@@ -139,23 +159,25 @@ const convertPathToControlPoints = (pathData: string): ControlPoint[] => {
               endY = currentY + args[1];
             }
             
-            if (points.length > 0) {
-              // Update the previous point's handle out along the line
-              const prevPoint = points[points.length - 1];
-              const dx = endX - prevPoint.x;
-              const dy = endY - prevPoint.y;
-              const distance = Math.sqrt(dx*dx + dy*dy);
-              
+            // Skip points that are too close to the previous point
+            const lastPoint = points[points.length - 1];
+            const dx = endX - lastPoint.x;
+            const dy = endY - lastPoint.y;
+            const distance = Math.sqrt(dx*dx + dy*dy);
+            
+            // Only add points that are at least 5px away from the previous point
+            if (distance > 5) {
               // For straight lines, place handles at 1/3 of the way
               const handleDistance = distance / 3;
               const ratio = handleDistance / distance;
               
-              prevPoint.handleOut = {
-                x: prevPoint.x + dx * ratio,
-                y: prevPoint.y + dy * ratio
+              // Update previous point's handle out
+              lastPoint.handleOut = {
+                x: lastPoint.x + dx * ratio,
+                y: lastPoint.y + dy * ratio
               };
               
-              // Add the new point with handles
+              // Add the new point
               points.push({
                 x: endX,
                 y: endY,
@@ -169,10 +191,10 @@ const convertPathToControlPoints = (pathData: string): ControlPoint[] => {
                 },
                 id: generateId()
               });
+              
+              currentX = endX;
+              currentY = endY;
             }
-            
-            currentX = endX;
-            currentY = endY;
           }
           break;
           
@@ -197,10 +219,16 @@ const convertPathToControlPoints = (pathData: string): ControlPoint[] => {
               endY = currentY + args[5];
             }
             
-            if (points.length > 0) {
+            // Skip points that are too close to the previous point
+            const lastPoint = points[points.length - 1];
+            const dx = endX - lastPoint.x;
+            const dy = endY - lastPoint.y;
+            const distance = Math.sqrt(dx*dx + dy*dy);
+            
+            // Only add points that are at least 5px away from the previous point
+            if (distance > 5) {
               // Update the previous point's handleOut
-              const prevPoint = points[points.length - 1];
-              prevPoint.handleOut = {
+              lastPoint.handleOut = {
                 x: control1X,
                 y: control1Y
               };
@@ -219,23 +247,22 @@ const convertPathToControlPoints = (pathData: string): ControlPoint[] => {
                 },
                 id: generateId()
               });
+              
+              currentX = endX;
+              currentY = endY;
             }
-            
-            currentX = endX;
-            currentY = endY;
           }
           break;
           
         case 'Z': // Close path
         case 'z':
-          // Connect back to the first point if not already there
-          if (points.length > 0 && (Math.abs(currentX - firstX) > 0.1 || Math.abs(currentY - firstY) > 0.1)) {
-            const prevPoint = points[points.length - 1];
-            const firstPoint = points[0];
+          // Connect back to the first point
+          if (points.length > 1 && (Math.abs(currentX - firstX) > 5 || Math.abs(currentY - firstY) > 5)) {
+            const lastPoint = points[points.length - 1];
             
             // Calculate handles for a line back to the start
-            const dx = firstPoint.x - prevPoint.x;
-            const dy = firstPoint.y - prevPoint.y;
+            const dx = firstX - lastPoint.x;
+            const dy = firstY - lastPoint.y;
             const distance = Math.sqrt(dx*dx + dy*dy);
             
             if (distance > 0) {
@@ -243,15 +270,9 @@ const convertPathToControlPoints = (pathData: string): ControlPoint[] => {
               const ratio = handleDistance / distance;
               
               // Update the last point's handle out
-              prevPoint.handleOut = {
-                x: prevPoint.x + dx * ratio,
-                y: prevPoint.y + dy * ratio
-              };
-              
-              // Update the first point's handle in
-              firstPoint.handleIn = {
-                x: firstPoint.x - dx * ratio,
-                y: firstPoint.y - dy * ratio
+              lastPoint.handleOut = {
+                x: lastPoint.x + dx * ratio,
+                y: lastPoint.y + dy * ratio
               };
             }
             
@@ -262,16 +283,37 @@ const convertPathToControlPoints = (pathData: string): ControlPoint[] => {
       }
     }
     
-    // Center and scale points if needed
+    // Scale and center points if needed
     if (points.length > 0) {
       centerAndScalePoints(points);
     }
     
+    console.log(`Converted path to ${points.length} control points`);
+    
+    // Safety check: limit points to prevent UI freezing
+    if (points.length > 30) {
+      console.warn(`Simplifying path from ${points.length} to 30 points`);
+      // Simplify by taking every nth point to get about 30 points
+      const stride = Math.max(1, Math.floor(points.length / 30));
+      const simplifiedPoints: ControlPoint[] = [];
+      
+      for (let i = 0; i < points.length; i += stride) {
+        simplifiedPoints.push(points[i]);
+      }
+      
+      // Always include the last point
+      if (simplifiedPoints[simplifiedPoints.length - 1] !== points[points.length - 1]) {
+        simplifiedPoints.push(points[points.length - 1]);
+      }
+      
+      return simplifiedPoints;
+    }
+    
+    return points;
   } catch (error) {
     console.error('Error converting path to control points:', error);
+    return [];
   }
-  
-  return points;
 };
 
 // Center and scale points to fit within the canvas

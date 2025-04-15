@@ -100,13 +100,32 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
     if (!templateToLoad) return;
     
     try {
-      onSelectTemplate(templateToLoad.design_data, shouldClearCanvas);
-      onClose();
+      // Set loading state first
+      setIsLoading(true);
       
-      toast({
-        title: 'Template Loaded',
-        description: `"${templateToLoad.name}" has been loaded to the canvas`
-      });
+      // Add a small delay to allow UI to update
+      setTimeout(() => {
+        try {
+          onSelectTemplate(templateToLoad.design_data, shouldClearCanvas);
+          onClose();
+          
+          toast({
+            title: 'Template Loaded',
+            description: `"${templateToLoad.name}" has been loaded to the canvas`
+          });
+        } catch (error) {
+          console.error('Error loading template:', error);
+          toast({
+            title: 'Error Loading Template',
+            description: 'There was a problem processing the template data',
+            variant: 'destructive'
+          });
+        } finally {
+          setLoadDialogOpen(false);
+          setTemplateToLoad(null);
+          setIsLoading(false);
+        }
+      }, 100);
     } catch (error) {
       console.error('Error loading template:', error);
       toast({
@@ -114,9 +133,9 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
         description: 'There was a problem processing the template data',
         variant: 'destructive'
       });
-    } finally {
       setLoadDialogOpen(false);
       setTemplateToLoad(null);
+      setIsLoading(false);
     }
   };
   
@@ -374,7 +393,14 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
           </Tabs>
           
           <DialogFooter className="mt-4">
-            <Button variant="outline" onClick={onClose}>Close</Button>
+            <Button variant="outline" onClick={onClose} disabled={isLoading}>
+              {isLoading ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Loading...
+                </>
+              ) : 'Close'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -397,7 +423,7 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
         </AlertDialogContent>
       </AlertDialog>
       
-      {/* Load confirmation dialog */}
+      {/* Load confirmation dialog - update with loading state */}
       <AlertDialog open={loadDialogOpen} onOpenChange={setLoadDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -407,20 +433,37 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="flex-col space-y-2 sm:space-y-0 sm:flex-row">
-            <AlertDialogCancel onClick={() => {
-              setLoadDialogOpen(false);
-              setTemplateToLoad(null);
-            }}>
+            <AlertDialogCancel 
+              onClick={() => {
+                setLoadDialogOpen(false);
+                setTemplateToLoad(null);
+              }}
+              disabled={isLoading}
+            >
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction 
               onClick={() => confirmLoadTemplate(true)} 
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={isLoading}
             >
-              Replace Canvas
+              {isLoading ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Loading...
+                </>
+              ) : 'Replace Canvas'}
             </AlertDialogAction>
-            <AlertDialogAction onClick={() => confirmLoadTemplate(false)}>
-              Add to Canvas
+            <AlertDialogAction 
+              onClick={() => confirmLoadTemplate(false)}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Loading...
+                </>
+              ) : 'Add to Canvas'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

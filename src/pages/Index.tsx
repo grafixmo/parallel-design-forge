@@ -199,36 +199,69 @@ const Index = () => {
   };
   
   // Optimized Template Loading with error handling
-  const handleLoadTemplate = useCallback(async (templateData: string) => {
+  const handleLoadTemplate = useCallback(async (templateData: string, shouldClearCanvas: boolean) => {
     try {
       setIsLoading(true);
       console.log('Loading template');
       
-      // Parse the template data to match the expected type in loadObjectsFromTemplate
-      const parsedData = JSON.parse(templateData);
-      
-      if (!Array.isArray(parsedData)) {
+      // Process template data based on type
+      if (typeof templateData !== 'string') {
         throw new Error('Invalid template data format');
       }
       
-      // Process and load the objects - now passing objects array directly, not as string
-      loadObjectsFromTemplate(parsedData);
-      
-      toast({
-        title: "Template Loaded",
-        description: `${parsedData.length} objects loaded from template`
-      });
+      try {
+        // Try parsing as JSON first
+        const parsedData = JSON.parse(templateData);
+        
+        // Safely pass to loadObjectsFromTemplate
+        loadObjectsFromTemplate(parsedData, shouldClearCanvas);
+        
+        toast({
+          title: "Template Loaded",
+          description: "Template successfully loaded",
+          variant: "default"
+        });
+      } catch (jsonError) {
+        // If JSON parsing fails, try as SVG
+        console.log('Trying as SVG');
+        try {
+          // Safety check - don't try to import huge SVGs
+          if (templateData.length > 100000) {
+            throw new Error('SVG file too large');
+          }
+          
+          // Import as SVG
+          const importedObjects = importSVGToObjects(templateData);
+          
+          if (shouldClearCanvas) {
+            setAllObjects(importedObjects);
+          }
+          
+          toast({
+            title: "SVG Template Loaded",
+            description: `Loaded ${importedObjects.length} shapes from SVG`,
+            variant: "default"
+          });
+        } catch (svgError) {
+          console.error('Error loading SVG template:', svgError);
+          toast({
+            title: "Template Load Error",
+            description: "Could not load as JSON or SVG",
+            variant: "destructive"
+          });
+        }
+      }
     } catch (error) {
       console.error('Error loading template:', error);
       toast({
-        title: "Template Load Failed",
-        description: "There was an error loading the template",
+        title: "Template Load Error",
+        description: "Failed to load template",
         variant: "destructive"
       });
     } finally {
       setIsLoading(false);
     }
-  }, [loadObjectsFromTemplate, toast]);
+  }, [loadObjectsFromTemplate, importSVGToObjects, setAllObjects]);
   
   // Import SVG content
   const handleImportSVG = async (svgContent: string) => {

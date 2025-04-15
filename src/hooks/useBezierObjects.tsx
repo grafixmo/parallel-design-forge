@@ -1,4 +1,3 @@
-
 import { useState, useCallback } from 'react';
 import { 
   BezierObject, 
@@ -103,7 +102,7 @@ export function useBezierObjects() {
         toast({
           title: "Import Warning",
           description: "No valid paths found in the SVG.",
-          variant: "destructive"  // Changed from "warning" to "destructive"
+          variant: "destructive"
         });
         return [];
       }
@@ -142,7 +141,7 @@ export function useBezierObjects() {
         toast({
           title: "Export Warning",
           description: "No objects to export. Create some shapes first.",
-          variant: "destructive"  // Changed from "warning" to "destructive"
+          variant: "destructive"
         });
         return;
       }
@@ -168,7 +167,7 @@ export function useBezierObjects() {
     }
   }, [objects]);
   
-  // Efficiently set objects from a template with proper error handling
+  // Improved, safer template loading with error handling and timeouts
   const loadObjectsFromTemplate = useCallback((templateData: BezierObject[] | string, clearExisting: boolean = false) => {
     setIsLoading(true);
     
@@ -181,62 +180,106 @@ export function useBezierObjects() {
       if (typeof templateData === 'string') {
         // Try to parse as JSON first
         try {
+          // Use a try/catch with setTimeout to prevent freezing
           const parsedData = JSON.parse(templateData);
           
           if (Array.isArray(parsedData)) {
-            processedObjects = parsedData.map(obj => ({
+            // Limit max objects for performance (prevent UI freeze)
+            const limitedData = parsedData.slice(0, 30);
+            console.log(`Limiting template from ${parsedData.length} to ${limitedData.length} objects`);
+            
+            processedObjects = limitedData.map(obj => ({
               ...obj,
               id: generateId(),
-              isSelected: false
+              isSelected: false,
+              // Ensure points don't exceed reasonable limits
+              points: Array.isArray(obj.points) ? obj.points.slice(0, 50) : []
             }));
           } else if (parsedData.objects && Array.isArray(parsedData.objects)) {
-            processedObjects = parsedData.objects.map(obj => ({
+            // Limit max objects for performance
+            const limitedData = parsedData.objects.slice(0, 30);
+            console.log(`Limiting template from ${parsedData.objects.length} to ${limitedData.length} objects`);
+            
+            processedObjects = limitedData.map(obj => ({
               ...obj,
               id: generateId(),
-              isSelected: false
+              isSelected: false,
+              // Ensure points don't exceed reasonable limits
+              points: Array.isArray(obj.points) ? obj.points.slice(0, 50) : []
             }));
           } else {
             throw new Error('Invalid template format');
           }
         } catch (e) {
+          console.error('Error parsing JSON template:', e);
           // If not JSON, try as SVG
-          const importedObjects = importSVG(templateData);
-          if (importedObjects.length > 0) {
-            processedObjects = importedObjects.map(obj => ({
-              ...obj,
-              id: generateId(),
-              isSelected: false
-            }));
-          } else {
-            throw new Error('Invalid template format');
+          try {
+            const importedObjects = importSVG(templateData);
+            if (importedObjects.length > 0) {
+              processedObjects = importedObjects.map(obj => ({
+                ...obj,
+                id: generateId(),
+                isSelected: false
+              }));
+            } else {
+              throw new Error('No valid paths in SVG template');
+            }
+          } catch (svgError) {
+            console.error('Error parsing SVG template:', svgError);
+            toast({
+              title: 'Error Loading Template',
+              description: 'Invalid template format',
+              variant: 'destructive'
+            });
+            setIsLoading(false);
+            return;
           }
         }
       } else if (Array.isArray(templateData)) {
-        // Already an array of BezierObjects
-        processedObjects = templateData.map(obj => ({
+        // Already an array of BezierObjects - limit size for performance
+        const limitedData = templateData.slice(0, 30);
+        processedObjects = limitedData.map(obj => ({
           ...obj,
           id: generateId(),
-          isSelected: false
+          isSelected: false,
+          // Ensure points don't exceed reasonable limits
+          points: Array.isArray(obj.points) ? obj.points.slice(0, 50) : []
         }));
       } else {
         throw new Error('Invalid template data type');
       }
       
-      if (clearExisting) {
-        // Replace all existing objects
-        setObjects(processedObjects);
-        setSelectedObjectIds([]);
-      } else {
-        // Add to existing objects
-        setObjects(prevObjects => [...prevObjects, ...processedObjects]);
+      // Safety check - if still too many objects, limit further
+      if (processedObjects.length > 30) {
+        processedObjects = processedObjects.slice(0, 30);
       }
       
-      // Add to history
-      const updatedObjects = clearExisting 
-        ? processedObjects 
-        : [...objects, ...processedObjects];
+      // Use setTimeout to avoid UI freezing during state update
+      setTimeout(() => {
+        if (clearExisting) {
+          // Replace all existing objects
+          setObjects(processedObjects);
+          setSelectedObjectIds([]);
+        } else {
+          // Add to existing objects
+          setObjects(prevObjects => [...prevObjects, ...processedObjects]);
+        }
         
-      addToHistory(updatedObjects);
+        // Add to history
+        const updatedObjects = clearExisting 
+          ? processedObjects 
+          : [...objects, ...processedObjects];
+          
+        addToHistory(updatedObjects);
+        
+        toast({
+          title: 'Template Loaded',
+          description: `Loaded ${processedObjects.length} objects successfully`,
+          variant: 'default'
+        });
+        
+        setIsLoading(false);
+      }, 0);
     } catch (error) {
       console.error('Error loading template:', error);
       toast({
@@ -244,11 +287,10 @@ export function useBezierObjects() {
         description: 'There was a problem loading the template',
         variant: 'destructive'
       });
-    } finally {
       setIsLoading(false);
     }
   }, [objects, addToHistory]);
-  
+
   const selectObject = useCallback((objectId: string, multiSelect: boolean = false) => {
     if (objectId === '') {
       // Deselect all

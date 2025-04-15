@@ -25,10 +25,12 @@ interface BezierCanvasContainerProps {
 }
 
 const BezierCanvasContainer: React.FC<BezierCanvasContainerProps> = (props) => {
-  // Handle SVG import (for reference, handled at Header component level)
+  // Handle SVG import with simplified approach
   const handleSVGImport = (svgContent: string) => {
     try {
-      // Import SVG and convert to BezierObjects
+      console.log('Starting SVG import process...');
+      
+      // Import SVG with our simplified approach
       const importedObjects = importSVG(svgContent);
       
       if (importedObjects.length === 0) {
@@ -37,11 +39,12 @@ const BezierCanvasContainer: React.FC<BezierCanvasContainerProps> = (props) => {
           description: "No valid paths found in the SVG file.",
           variant: "destructive"
         });
-        return;
+        return [];
       }
       
-      // Add imported objects to the canvas
-      // This would be called by the parent component that uses this container
+      console.log(`Successfully imported ${importedObjects.length} shapes with ${importedObjects.reduce((sum, obj) => sum + obj.points.length, 0)} total points`);
+      
+      // Return imported objects
       toast({
         title: "SVG Imported",
         description: `Successfully imported ${importedObjects.length} shapes.`,
