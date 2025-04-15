@@ -1,4 +1,3 @@
-
 import React, { useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { PenLine, Trash2, Upload, Save, Database, MousePointer, Image, FileUp, Download } from 'lucide-react';
@@ -31,8 +30,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 // Import new SVG utilities
-import { readSVGFile } from '@/utils/simpleSvgImporter';
-import { importSVG } from '@/utils/simpleSvgImporter';
+import { readSVGFile, importSVG } from '@/utils/simpleSvgImporter';
 import { exportSVG, downloadSVG } from '@/utils/simpleSvgExporter';
 
 interface HeaderProps {
@@ -113,15 +111,26 @@ const Header: React.FC<HeaderProps> = ({
       // Read file content
       const svgContent = await readSVGFile(file);
       
-      // Try to validate the SVG by importing it to objects first
-      // This will throw if the SVG is invalid without affecting the UI
-      const importedObjects = importSVG(svgContent);
-      
-      if (importedObjects.length === 0) {
+      // Validate the SVG is parseable (but don't actually use these objects)
+      // This is just a quick validation step
+      try {
+        const testObjects = importSVG(svgContent);
+        
+        if (testObjects.length === 0) {
+          toast({
+            title: "Import Warning",
+            description: "No shapes found in the SVG. The file may be too simple or complex.",
+            variant: "destructive"
+          });
+          setIsImporting(false);
+          return;
+        }
+      } catch (validationError) {
+        console.error('SVG validation error:', validationError);
         toast({
-          title: "Import Warning",
-          description: "No path elements found in the SVG. Make sure the file contains SVG paths.",
-          variant: "destructive" // Changed from "warning" to "destructive"
+          title: "Invalid SVG",
+          description: "The file could not be parsed as an SVG.",
+          variant: "destructive"
         });
         setIsImporting(false);
         return;
@@ -133,8 +142,8 @@ const Header: React.FC<HeaderProps> = ({
       }
       
       toast({
-        title: "SVG Imported",
-        description: `Successfully imported ${importedObjects.length} shapes.`,
+        title: "SVG Processing",
+        description: "Converting SVG to bezier curves...",
         variant: "default"
       });
     } catch (error) {

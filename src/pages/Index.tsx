@@ -17,7 +17,9 @@ import { useBezierObjects } from '@/hooks/useBezierObjects';
 import ObjectControlsPanel from '@/components/ObjectControlsPanel';
 import { generateThumbnailFromSVG } from '@/utils/thumbnailGenerator';
 import { convertShapesDataToObjects } from '@/utils/bezierUtils';
-import { importSVGtoCurves } from '@/utils/curveImporter';
+import { importSVG } from '@/utils/simpleSvgImporter';
+import { exportSVG, downloadSVG } from '@/utils/simpleSvgExporter';
+import { loadTemplateData } from '@/utils/simpleTemplateLoader';
 
 const Index = () => {
   const { toast } = useToast();
@@ -218,7 +220,7 @@ const Index = () => {
         });
       }, 200);
       
-      // Safety timeout to prevent infinite loading
+      // Safety timeout to prevent infinite loading - shorter timeout (15s instead of 30s)
       const timeout = setTimeout(() => {
         clearInterval(progressInterval);
         setIsLoading(false);
@@ -228,18 +230,18 @@ const Index = () => {
           description: "Template loading took too long and was aborted",
           variant: "destructive"
         });
-      }, 30000);
+      }, 15000);
       
       // Call the loadObjectsFromTemplate function with progress tracking
       loadObjectsFromTemplate(templateData, shouldClearCanvas);
       
-      // The actual load happens asynchronously via the hook, so we'll clean up here
+      // Clean up without waiting for completion
       clearInterval(progressInterval);
       clearTimeout(timeout);
       
       setLoadingProgress(100);
       
-      // Final cleanup with a small delay to allow UI to reflect completion
+      // Final cleanup with a small delay
       setTimeout(() => {
         setIsLoading(false);
         setLoadingProgress(0);
@@ -256,31 +258,44 @@ const Index = () => {
     }
   }, [loadObjectsFromTemplate]);
   
-  // Import SVG content with improved error handling
+  // Import SVG content with improved error handling and simplification
   const handleImportSVG = async (svgContent: string) => {
     try {
       setIsLoading(true);
       
-      // Use our improved curve-focused SVG importer
-      const importedObjects = importSVGtoCurves(svgContent);
+      // Use our simplified SVG importer
+      const importedObjects = importSVG(svgContent);
       
       if (!importedObjects || importedObjects.length === 0) {
         toast({
           title: "Import Notice",
-          description: "No valid curves could be extracted from the SVG",
+          description: "No valid shapes could be extracted from the SVG",
           variant: "destructive"
         });
         setIsLoading(false);
         return;
       }
       
+      // Limit objects to prevent performance issues
+      const maxObjectsToAdd = 5;
+      const limitedObjects = importedObjects.slice(0, maxObjectsToAdd);
+      
+      if (importedObjects.length > maxObjectsToAdd) {
+        console.warn(`Limiting imported objects from ${importedObjects.length} to ${maxObjectsToAdd}`);
+        toast({
+          title: 'Import Notice',
+          description: `Limited to ${maxObjectsToAdd} objects to prevent performance issues`,
+          variant: 'default'
+        });
+      }
+      
       // Add the imported objects to the canvas
-      setAllObjects([...objects, ...importedObjects]);
+      setAllObjects([...objects, ...limitedObjects]);
       saveCurrentState();
       
       toast({
         title: "SVG Imported",
-        description: `${importedObjects.length} curves imported successfully`
+        description: `${limitedObjects.length} shapes imported successfully`
       });
     } catch (error) {
       console.error('Error importing SVG:', error);

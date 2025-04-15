@@ -6,7 +6,7 @@ import {
 } from '@/types/bezier';
 import BezierCanvas from './BezierCanvas';
 import { toast } from '@/hooks/use-toast';
-import { importSVGtoCurves } from '@/utils/curveImporter';
+import { importSVG } from '@/utils/simpleSvgImporter';
 import { exportSVG, downloadSVG } from '@/utils/simpleSvgExporter';
 
 interface BezierCanvasContainerProps {
@@ -27,30 +27,30 @@ interface BezierCanvasContainerProps {
 const BezierCanvasContainer: React.FC<BezierCanvasContainerProps> = (props) => {
   const [isImporting, setIsImporting] = useState(false);
 
-  // Handle SVG import with our improved curve-focused approach
+  // Handle SVG import with our simplified approach
   const handleSVGImport = (svgContent: string) => {
     try {
-      console.log('Starting SVG import process with curve-focused importer...');
+      console.log('Starting SVG import process with simplified importer...');
       setIsImporting(true);
       
-      // Use the improved importer with fewer, better quality control points
-      const importedObjects = importSVGtoCurves(svgContent);
+      // Use the simplified importer with fewer, better quality control points
+      const importedObjects = importSVG(svgContent);
       
       if (importedObjects.length === 0) {
         toast({
           title: "Import Notice",
-          description: "No valid curves could be extracted from the SVG file.",
+          description: "No valid shapes could be extracted from the SVG file.",
           variant: "destructive"
         });
         return [];
       }
       
-      console.log(`Successfully imported ${importedObjects.length} curves with ${importedObjects.reduce((sum, obj) => sum + obj.points.length, 0)} total points`);
+      console.log(`Successfully imported ${importedObjects.length} shapes with ${importedObjects.reduce((sum, obj) => sum + obj.points.length, 0)} total points`);
       
       // Return imported objects
       toast({
         title: "SVG Imported",
-        description: `Successfully imported ${importedObjects.length} curves.`,
+        description: `Successfully imported ${importedObjects.length} shapes.`,
         variant: "default"
       });
       
@@ -68,7 +68,7 @@ const BezierCanvasContainer: React.FC<BezierCanvasContainerProps> = (props) => {
     }
   };
   
-  // Handle SVG export (for reference, handled at Header component level)
+  // Handle SVG export
   const handleSVGExport = (fileName: string = "bezier-design.svg") => {
     try {
       if (props.objects.length === 0) {
@@ -116,9 +116,5 @@ const BezierCanvasContainer: React.FC<BezierCanvasContainerProps> = (props) => {
     </div>
   );
 };
-
-// Expose functions for external use
-export { importSVGtoCurves } from '@/utils/curveImporter';
-export { exportSVG, downloadSVG } from '@/utils/simpleSvgExporter';
 
 export default BezierCanvasContainer;

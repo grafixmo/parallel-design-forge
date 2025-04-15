@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { 
   Dialog, 
@@ -119,13 +120,14 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
       // Start a safety timeout to prevent infinite loading
       const timeout = setTimeout(() => {
         setIsLoadingTemplate(false);
+        setLoadDialogOpen(false);
         onClose();
         toast({
           title: 'Template Loading Timeout',
           description: 'Loading took too long. Try a simpler template.',
           variant: 'destructive'
         });
-      }, 30000); // 30 second safety timeout
+      }, 15000); // 15 second safety timeout (reduced from 30s)
       
       setLoadTimeout(timeout);
       
@@ -140,7 +142,7 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
       // Add a small delay to allow UI to update before starting the potentially heavy operation
       setTimeout(() => {
         try {
-          // Validate the template data
+          // Validate the template data - just check if it exists
           if (!templateToLoad.design_data) {
             throw new Error('Template contains no design data');
           }
@@ -148,12 +150,17 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
           // Close the loading dialog and hand off to the parent component
           setLoadDialogOpen(false);
           
-          // Sanitize design_data
+          // Sanitize design_data - ensure it's a string
           const sanitizedData = typeof templateToLoad.design_data === 'string' 
             ? templateToLoad.design_data
             : JSON.stringify(templateToLoad.design_data);
+            
+          // Simple validation to prevent obviously bad data
+          if (sanitizedData.length > 1000000) {
+            throw new Error('Template data is too large');
+          }
           
-          // Call the parent's onSelectTemplate with validated data
+          // Call the parent's onSelectTemplate with the validated data
           onSelectTemplate(sanitizedData, shouldClearCanvas);
           
           // Clean up timeouts

@@ -3,15 +3,14 @@ import {
   BezierObject, 
   ControlPoint, 
   HistoryState,
-  CurveStyle,
   CurveConfig,
   TransformSettings
 } from '@/types/bezier';
 import { generateId } from '@/utils/bezierUtils';
 import { toast } from '@/hooks/use-toast';
-import { importSVGtoCurves } from '@/utils/curveImporter';
+import { importSVG } from '@/utils/simpleSvgImporter';
 import { exportSVG, downloadSVG } from '@/utils/simpleSvgExporter';
-import { loadTemplateData } from '@/utils/safeTemplateLoader';
+import { loadTemplateData } from '@/utils/simpleTemplateLoader';
 
 const DEFAULT_CURVE_CONFIG: CurveConfig = {
   styles: [
@@ -91,19 +90,19 @@ export function useBezierObjects() {
     );
   }, []);
   
-  // Import SVG and convert to objects using our curve-focused approach
+  // Import SVG and convert to objects using our simplified approach
   const importSVGToObjects = useCallback((svgContent: string) => {
     try {
       setIsLoading(true);
-      console.log('Importing SVG content using curve-focused approach');
+      console.log('Importing SVG content using simplified approach');
       
-      // Import SVG using our improved importer
-      const importedObjects = importSVGtoCurves(svgContent);
+      // Import SVG using our simplified importer
+      const importedObjects = importSVG(svgContent);
       
       if (importedObjects.length === 0) {
         toast({
-          title: "Import Warning",
-          description: "No valid curves could be extracted from the SVG.",
+          title: "Import Notice",
+          description: "No valid shapes could be extracted from the SVG.",
           variant: "destructive"
         });
         setIsLoading(false);
@@ -119,7 +118,7 @@ export function useBezierObjects() {
       
       toast({
         title: "SVG Imported",
-        description: `Successfully imported ${importedObjects.length} curves.`,
+        description: `Successfully imported ${importedObjects.length} shapes.`,
         variant: "default"
       });
       
@@ -129,7 +128,7 @@ export function useBezierObjects() {
       console.error('Error importing SVG:', error);
       toast({
         title: "Import Failed",
-        description: "The SVG file couldn't be imported. Please try a simpler file.",
+        description: "The SVG file couldn't be imported. Try a simpler file.",
         variant: "destructive"
       });
       setIsLoading(false);
@@ -170,15 +169,15 @@ export function useBezierObjects() {
     }
   }, [objects]);
   
-  // Improved, safer template loading with our new safe loader
+  // Simplified, safer template loading
   const loadObjectsFromTemplate = useCallback((templateData: BezierObject[] | string, clearExisting: boolean = false) => {
     setIsLoading(true);
     setImportProgress(0);
     
     try {
-      console.log('Loading template objects using safe loader, clearExisting:', clearExisting);
+      console.log('Loading template objects using simplified loader, clearExisting:', clearExisting);
       
-      // Use our new safe template loader with progress updates
+      // Use our simplified template loader with progress updates
       loadTemplateData(templateData, {
         onProgress: (progress) => {
           setImportProgress(progress);
@@ -189,19 +188,32 @@ export function useBezierObjects() {
             setObjects(processedObjects);
             setSelectedObjectIds([]);
           } else {
-            setObjects(prevObjects => [...prevObjects, ...processedObjects]);
+            // Limit the number of objects to prevent performance issues
+            const maxObjectsToAdd = 5;
+            const limitedObjects = processedObjects.slice(0, maxObjectsToAdd);
+            
+            if (processedObjects.length > maxObjectsToAdd) {
+              console.warn(`Limiting imported objects from ${processedObjects.length} to ${maxObjectsToAdd}`);
+              toast({
+                title: 'Import Notice',
+                description: `Limited to ${maxObjectsToAdd} objects to prevent performance issues`,
+                variant: 'default'
+              });
+            }
+            
+            setObjects(prevObjects => [...prevObjects, ...limitedObjects]);
           }
           
           // Add to history
           const updatedObjects = clearExisting 
             ? processedObjects 
-            : [...objects, ...processedObjects];
+            : [...objects, ...processedObjects.slice(0, 5)];
             
           addToHistory(updatedObjects);
           
           toast({
             title: 'Template Loaded',
-            description: `Loaded ${processedObjects.length} objects successfully`,
+            description: `Loaded objects successfully`,
             variant: 'default'
           });
           
