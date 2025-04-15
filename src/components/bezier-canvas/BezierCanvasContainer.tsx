@@ -6,7 +6,7 @@ import {
 } from '@/types/bezier';
 import BezierCanvas from './BezierCanvas';
 import { toast } from '@/hooks/use-toast';
-import { importSVG } from '@/utils/simpleSvgImporter';
+import { importSVG } from '@/utils/fabricSvgImporter';
 import { exportSVG, downloadSVG } from '@/utils/simpleSvgExporter';
 
 interface BezierCanvasContainerProps {
@@ -27,14 +27,14 @@ interface BezierCanvasContainerProps {
 const BezierCanvasContainer: React.FC<BezierCanvasContainerProps> = (props) => {
   const [isImporting, setIsImporting] = useState(false);
 
-  // Handle SVG import with our simplified approach
-  const handleSVGImport = (svgContent: string) => {
+  // Handle SVG import with Fabric.js importer
+  const handleSVGImport = async (svgContent: string) => {
     try {
-      console.log('Starting SVG import process with simplified importer...');
+      console.log('Starting SVG import process with Fabric.js importer...');
       setIsImporting(true);
       
-      // Use the simplified importer with fewer, better quality control points
-      const importedObjects = importSVG(svgContent);
+      // Use the Fabric.js-based importer for better SVG handling
+      const importedObjects = await importSVG(svgContent);
       
       if (importedObjects.length === 0) {
         toast({
@@ -47,7 +47,7 @@ const BezierCanvasContainer: React.FC<BezierCanvasContainerProps> = (props) => {
       
       console.log(`Successfully imported ${importedObjects.length} shapes with ${importedObjects.reduce((sum, obj) => sum + obj.points.length, 0)} total points`);
       
-      // Return imported objects
+      // Show success message
       toast({
         title: "SVG Imported",
         description: `Successfully imported ${importedObjects.length} shapes.`,

@@ -30,7 +30,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 // Import new SVG utilities
-import { readSVGFile, importSVG } from '@/utils/simpleSvgImporter';
+import { readSVGFile, importSVG } from '@/utils/fabricSvgImporter';
 import { exportSVG, downloadSVG } from '@/utils/simpleSvgExporter';
 
 interface HeaderProps {
@@ -81,7 +81,7 @@ const Header: React.FC<HeaderProps> = ({
     }
   };
   
-  // Updated SVG import flow with more robust error handling
+  // Updated SVG import flow with Fabric.js
   const handleImportClick = () => {
     fileInputRef.current?.click();
   };
@@ -110,31 +110,6 @@ const Header: React.FC<HeaderProps> = ({
       
       // Read file content
       const svgContent = await readSVGFile(file);
-      
-      // Validate the SVG is parseable (but don't actually use these objects)
-      // This is just a quick validation step
-      try {
-        const testObjects = importSVG(svgContent);
-        
-        if (testObjects.length === 0) {
-          toast({
-            title: "Import Warning",
-            description: "No shapes found in the SVG. The file may be too simple or complex.",
-            variant: "destructive"
-          });
-          setIsImporting(false);
-          return;
-        }
-      } catch (validationError) {
-        console.error('SVG validation error:', validationError);
-        toast({
-          title: "Invalid SVG",
-          description: "The file could not be parsed as an SVG.",
-          variant: "destructive"
-        });
-        setIsImporting(false);
-        return;
-      }
       
       // Call the parent component's import handler with the SVG content
       if (onImportSVG) {
