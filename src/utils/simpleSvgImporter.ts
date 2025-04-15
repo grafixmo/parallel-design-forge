@@ -411,7 +411,7 @@ const simplifyPath = (pathData: string): ControlPoint[] => {
     const size = 80;
     
     // Create a simplified shape (rectangle or hexagon)
-    if (maxPoints === 4) { // FIX: Change to use a string comparison instead of number literals
+    if (maxPoints === 4) { // Create a rectangle with 4 points
       // Rectangle
       points.push({
         x: centerX - size/2,
