@@ -7,7 +7,6 @@ interface CanvasStatusInfoProps {
   zoom: number;
   isDrawingMode: boolean;
   objectsCount: number;
-  visible?: boolean; // Add a new prop to control visibility
 }
 
 export const CanvasStatusInfo: React.FC<CanvasStatusInfoProps> = ({
@@ -15,11 +14,8 @@ export const CanvasStatusInfo: React.FC<CanvasStatusInfoProps> = ({
   height,
   zoom,
   isDrawingMode,
-  objectsCount,
-  visible = false // Default to hidden
+  objectsCount
 }) => {
-  if (!visible) return null; // Don't render if not visible
-  
   return (
     <div className="absolute bottom-4 left-4 bg-white/80 backdrop-blur-sm px-3 py-2 rounded-lg shadow text-xs space-y-1">
       <div>

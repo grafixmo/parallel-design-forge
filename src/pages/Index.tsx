@@ -5,16 +5,18 @@ import {
   SavedDesign,
   BezierObject
 } from '@/types/bezier';
-import BezierCanvas from '@/components/bezier-canvas';  // This imports the default export from the index.ts file
+import BezierCanvas from '@/components/bezier-canvas';
 import Header from '@/components/Header';
 import LibraryPanel from '@/components/LibraryPanel';
 import { generateId } from '@/utils/bezierUtils';
-import { createDesignSVG, downloadSVG } from '@/utils/svgExporter';
+import { exportAsSVG, downloadSVG, createDesignSVG } from '@/utils/svgExporter';
+import { parseSVGContent } from '@/utils/svgImporter';
 import { saveDesign, saveTemplate, Template } from '@/services/supabaseClient';
 import { useToast } from '@/hooks/use-toast';
 import { useBezierObjects } from '@/hooks/useBezierObjects';
 import ObjectControlsPanel from '@/components/ObjectControlsPanel';
 import { generateThumbnailFromSVG } from '@/utils/thumbnailGenerator';
+import { convertShapesDataToObjects } from '@/utils/bezierUtils';
 
 const Index = () => {
   const { toast } = useToast();
@@ -25,18 +27,17 @@ const Index = () => {
   const [backgroundOpacity, setBackgroundOpacity] = useState(0.3);
   const [backgroundImage, setBackgroundImage] = useState<string | undefined>();
   const [isDrawingMode, setIsDrawingMode] = useState<boolean>(true);
-  const [isLoading, setIsLoading] = useState<boolean>(false); 
-  const [loadingProgress, setLoadingProgress] = useState<number>(0);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   
   // Use our hooks for Bezier objects
   const {
     objects,
     selectedObjectIds,
     isLoading: objectsLoading,
-    importProgress,
     createObject,
     setAllObjects,
     loadObjectsFromTemplate,
+    selectObject,
     updateObjects,
     updateObjectCurveConfig,
     updateObjectTransform,
@@ -45,8 +46,7 @@ const Index = () => {
     renameObject,
     undo,
     redo,
-    saveCurrentState,
-    selectObject
+    saveCurrentState
   } = useBezierObjects();
   
   // For library panel
@@ -117,36 +117,6 @@ const Index = () => {
     });
   };
   
-  // Export the current design as SVG
-  const handleExportSVG = () => {
-    try {
-      if (objects.length === 0) {
-        toast({
-          title: "Cannot Export Empty Canvas",
-          description: "Please create at least one object",
-          variant: "destructive"
-        });
-        return;
-      }
-      
-      // Use our consolidated SVG export function
-      const svg = createDesignSVG(objects, canvasWidth, canvasHeight);
-      downloadSVG(svg, 'qordatta-design.svg');
-      
-      toast({
-        title: "SVG Exported",
-        description: "Your design has been exported as an SVG file"
-      });
-    } catch (error) {
-      console.error('Error exporting SVG:', error);
-      toast({
-        title: "Export Failed",
-        description: "There was an error exporting your design",
-        variant: "destructive"
-      });
-    }
-  };
-  
   // Save current design to Supabase
   const handleSaveDesign = async (name: string, category: string, description?: string) => {
     try {
@@ -159,8 +129,11 @@ const Index = () => {
         return;
       }
       
-      // Create SVG content
-      const svg = createDesignSVG(objects, canvasWidth, canvasHeight);
+      // Set loading state to indicate operation in progress
+      setIsLoading(true);
+      
+      // Fix: only pass objects to createDesignSVG
+      const svg = createDesignSVG(objects);
       const designData = JSON.stringify(objects);
       
       // Generate a thumbnail
@@ -194,23 +167,87 @@ const Index = () => {
         description: "There was an error saving your design",
         variant: "destructive"
       });
+    } finally {
+      setIsLoading(false);
     }
   };
   
-  // Optimized template loading with progress tracking
-  const handleLoadTemplate = useCallback(async (templateData: string, shouldClearCanvas: boolean) => {
+  // Export the current design as SVG
+  const handleExportSVG = () => {
     try {
-      // Use the hook's loading state and progress
-      loadObjectsFromTemplate(templateData, shouldClearCanvas);
-    } catch (error) {
-      console.error('Error in handleLoadTemplate:', error);
+      if (objects.length === 0) {
+        toast({
+          title: "Cannot Export Empty Canvas",
+          description: "Please create at least one object",
+          variant: "destructive"
+        });
+        return;
+      }
+      
+      // Fix: only pass objects as argument
+      const svg = createDesignSVG(objects);
+      downloadSVG(svg, 'qordatta-design.svg');
+      
       toast({
-        title: "Template Load Error",
-        description: "Failed to process template data",
+        title: "SVG Exported",
+        description: "Your design has been exported as an SVG file"
+      });
+    } catch (error) {
+      console.error('Error exporting SVG:', error);
+      toast({
+        title: "Export Failed",
+        description: "There was an error exporting your design",
         variant: "destructive"
       });
     }
-  }, [loadObjectsFromTemplate]);
+  };
+  
+  // Import SVG content with progress tracking
+  const handleImportSVG = async (svgContent: string, onProgress?: (progress: number) => void): Promise<void> => {
+    try {
+      setIsLoading(true);
+      
+      // Parse SVG with progress tracking
+      const importedObjectsResult = await parseSVGContent(svgContent, onProgress);
+      
+      // Check for valid result - should contain object array
+      if (!importedObjectsResult || !importedObjectsResult.objects || !Array.isArray(importedObjectsResult.objects)) {
+        toast({
+          title: "Import Failed",
+          description: "No valid paths found in the SVG",
+          variant: "destructive"
+        });
+        return;
+      }
+      
+      // Ensure we have objects
+      if (importedObjectsResult.objects.length === 0) {
+        toast({
+          title: "Import Warning",
+          description: "SVG contained no valid paths. Created a default object."
+        });
+      }
+      
+      // Add the imported objects to the canvas
+      setAllObjects([...objects, ...importedObjectsResult.objects]);
+      saveCurrentState();
+      
+      toast({
+        title: "SVG Imported",
+        description: `${importedObjectsResult.objects.length} paths imported successfully`
+      });
+    } catch (error) {
+      console.error('Error importing SVG:', error);
+      toast({
+        title: "Import Failed",
+        description: error instanceof Error ? error.message : "There was an error processing the SVG",
+        variant: "destructive"
+      });
+      throw error; // Re-throw to allow proper error handling in the caller
+    } finally {
+      setIsLoading(false);
+    }
+  };
   
   // Open the library panel to load designs
   const handleLoadDesigns = () => {
@@ -231,17 +268,82 @@ const Index = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedObjectIds, isDrawingMode, deleteSelectedObjects]);
   
+  // Optimized Template Loading with error handling and memory cleanup
+  const handleLoadTemplate = useCallback(async (templateData: string, shouldClearCanvas: boolean = true) => {
+    try {
+      setIsLoading(true);
+      console.log('Loading template');
+      
+      // Validate input
+      if (!templateData || typeof templateData !== 'string') {
+        throw new Error('Invalid template data: Empty or not a string');
+      }
+      
+      // Parse the template data with minimal memory usage
+      let parsedData;
+      try {
+        parsedData = JSON.parse(templateData);
+      } catch (error) {
+        throw new Error('Failed to parse template JSON data');
+      }
+      
+      if (!Array.isArray(parsedData)) {
+        throw new Error('Invalid template data format: Expected an array');
+      }
+      
+      // Load in chunks if large template
+      if (parsedData.length > 50) {
+        console.log('Large template detected:', parsedData.length, 'objects');
+        toast({
+          title: "Large Template",
+          description: `Loading ${parsedData.length} objects, please wait...`
+        });
+      }
+      
+      // Process in micro-batches for large templates
+      const processTemplate = () => {
+        return new Promise<void>((resolve) => {
+          // Use setTimeout to yield to the main thread
+          setTimeout(() => {
+            loadObjectsFromTemplate(parsedData, shouldClearCanvas);
+            resolve();
+          }, 0);
+        });
+      };
+      
+      await processTemplate();
+      
+      // Clean up memory
+      parsedData = null;
+      
+      toast({
+        title: "Template Loaded",
+        description: `Objects loaded from template successfully`
+      });
+    } catch (error) {
+      console.error('Error loading template:', error);
+      toast({
+        title: "Template Load Failed",
+        description: error instanceof Error ? error.message : "There was an error loading the template",
+        variant: "destructive"
+      });
+    } finally {
+      // Clear loading state
+      setIsLoading(false);
+    }
+  }, [loadObjectsFromTemplate, toast]);
+  
   // Calculate disabled state for certain actions
   const isDeleteDisabled = selectedObjectIds.length === 0 || isDrawingMode;
   
   // Handle loading a design from the library
   const handleLoadDesign = (design: DesignData) => {
+    setLoadedDesign(design);
     if (design.objects && Array.isArray(design.objects)) {
-      // Directly pass the objects array, not as a string
+      // Fix: Pass only one argument to loadObjectsFromTemplate
       loadObjectsFromTemplate(design.objects);
-      setLoadedDesign(design);
-      setIsPanelOpen(false);
     }
+    setIsPanelOpen(false);
   };
   
   return (
@@ -251,43 +353,37 @@ const Index = () => {
         onSaveDesign={handleSaveDesign}
         onLoadDesigns={handleLoadDesigns}
         onExportSVG={handleExportSVG}
+        onImportSVG={handleImportSVG}
         onLoadTemplate={handleLoadTemplate}
         isDrawingMode={isDrawingMode}
         onToggleDrawingMode={handleToggleDrawingMode}
-        objects={objects}
-        width={canvasWidth}
-        height={canvasHeight}
       />
       
       <main className="flex-1 flex overflow-hidden">
         <div className="flex-1 p-4 overflow-hidden relative">
-          {(isLoading || objectsLoading) && (
+          {isLoading && (
             <div className="absolute inset-0 bg-white/70 flex items-center justify-center z-50">
-              <div className="flex flex-col items-center max-w-md w-full px-4">
+              <div className="flex flex-col items-center">
                 <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full mb-2"></div>
-                <p className="text-primary font-medium text-center mb-2">
-                  {loadingProgress > 0 ? 'Processing template data...' : 'Loading...'}
-                </p>
-                
-                {(loadingProgress > 0 || importProgress > 0) && (
-                  <>
-                    <div className="w-full bg-gray-200 rounded-full h-2.5 mb-1">
-                      <div 
-                        className="bg-primary h-2.5 rounded-full transition-all duration-300 ease-out"
-                        style={{ width: `${Math.max(loadingProgress, importProgress)}%` }}
-                      ></div>
-                    </div>
-                    <p className="text-xs text-muted-foreground text-center">
-                      {Math.round(Math.max(loadingProgress, importProgress))}% complete
-                    </p>
-                  </>
-                )}
+                <p className="text-primary font-medium">Processing, please wait...</p>
               </div>
             </div>
           )}
           
-          {/* Using BezierCanvas component which is correctly re-exported from index.ts */}
-          <BezierCanvas />
+          <BezierCanvas
+            width={canvasWidth}
+            height={canvasHeight}
+            objects={objects}
+            selectedObjectIds={selectedObjectIds}
+            onObjectSelect={selectObject}
+            onObjectsChange={updateObjects}
+            onCreateObject={handleCreateObject}
+            onSaveState={saveCurrentState}
+            onUndo={undo}
+            backgroundImage={backgroundImage}
+            backgroundOpacity={backgroundOpacity}
+            isDrawingMode={isDrawingMode}
+          />
         </div>
         
         {selectedObjectIds.length > 0 && !isDrawingMode && (

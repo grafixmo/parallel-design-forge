@@ -1,3 +1,4 @@
+
 import { useState, useEffect, RefObject, useCallback } from 'react';
 import { 
   Point, 
@@ -236,22 +237,38 @@ export const useCanvasSetup = ({
       ctx.stroke();
     }
     
-    // Coordinate axes with minimal styling
-    ctx.strokeStyle = 'rgba(0, 0, 255, 0.2)'; // Very light blue for X axis
-    ctx.lineWidth = 1 / zoom;
-    ctx.beginPath();
-    ctx.moveTo(-1000, 0);
-    ctx.lineTo(1000, 0);
-    ctx.stroke();
-    
-    ctx.strokeStyle = 'rgba(255, 0, 0, 0.2)'; // Very light red for Y axis
+    // Draw coordinate axes for debugging
+    ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
+    ctx.lineWidth = 2 / zoom;
     ctx.beginPath();
     ctx.moveTo(0, -1000);
     ctx.lineTo(0, 1000);
     ctx.stroke();
     
+    ctx.strokeStyle = 'rgba(0, 0, 255, 0.5)';
+    ctx.beginPath();
+    ctx.moveTo(-1000, 0);
+    ctx.lineTo(1000, 0);
+    ctx.stroke();
+    
+    // Add axes labels for debugging
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    ctx.font = `${12 / zoom}px Arial`;
+    ctx.fillText('X', 50 / zoom, 10 / zoom);
+    ctx.fillText('Y', 10 / zoom, 50 / zoom);
+    ctx.fillText('0', 5 / zoom, 15 / zoom);
+    
     // Restore context
     ctx.restore();
+    
+    // Draw debug info
+    // Draw zoom level indicator
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.font = '12px Arial';
+    ctx.fillText(`Zoom: ${Math.round(zoom * 100)}%`, 10, 20);
+    ctx.fillText(`Mouse: ${Math.round(mousePos.x)},${Math.round(mousePos.y)}`, 10, 40);
+    ctx.fillText(`Canvas: ${canvas.width / dpr}x${canvas.height / dpr}`, 10, 60);
+    ctx.fillText(`Mode: ${isDrawingMode ? 'Drawing' : 'Selection'}`, 10, 80);
     
   }, [
     canvasRef,

@@ -1,16 +1,15 @@
-import { useState, useCallback, useRef } from 'react';
+
+import { useState, useCallback } from 'react';
 import { 
   BezierObject, 
   ControlPoint, 
   HistoryState,
+  CurveStyle,
   CurveConfig,
   TransformSettings
 } from '@/types/bezier';
 import { generateId } from '@/utils/bezierUtils';
 import { toast } from '@/hooks/use-toast';
-import { importSVG } from '@/utils/simpleSvgImporter';
-import { createDesignSVG, downloadSVG } from '@/utils/svgExporter';
-import { loadTemplateAsync } from '@/utils/optimizedTemplateLoader';
 
 const DEFAULT_CURVE_CONFIG: CurveConfig = {
   styles: [
@@ -32,34 +31,8 @@ export function useBezierObjects() {
   const [history, setHistory] = useState<HistoryState[]>([]);
   const [currentHistoryIndex, setCurrentHistoryIndex] = useState<number>(-1);
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [importProgress, setImportProgress] = useState<number>(0);
   
-  // Use ref for tracking active loader cancellation
-  const activeLoaderCancelRef = useRef<(() => void) | null>(null);
-  
-  // Define addToHistory function first so it can be used by other functions
-  const addToHistory = useCallback((updatedObjects: BezierObject[]) => {
-    try {
-      const newHistoryState: HistoryState = {
-        objects: JSON.parse(JSON.stringify(updatedObjects)),
-        timestamp: Date.now()
-      };
-      
-      // If we're not at the end of history, truncate it
-      const newHistory = currentHistoryIndex === history.length - 1 || currentHistoryIndex === -1
-        ? [...history, newHistoryState]
-        : [...history.slice(0, currentHistoryIndex + 1), newHistoryState];
-      
-      // Limit history size to 50 entries
-      const limitedHistory = newHistory.slice(-50);
-      
-      setHistory(limitedHistory);
-      setCurrentHistoryIndex(limitedHistory.length - 1);
-    } catch (error) {
-      console.error('Error adding to history:', error);
-    }
-  }, [history, currentHistoryIndex]);
-  
+  // Create a new bezier object
   const createObject = useCallback((points: ControlPoint[] = [], name: string = 'Untitled Object') => {
     const newObject: BezierObject = {
       id: generateId(),
@@ -77,6 +50,9 @@ export function useBezierObjects() {
     
     setSelectedObjectIds([newObject.id]);
     
+    // Don't add to history yet since this is just starting a drawing
+    // We'll add to history when the object is completed
+    
     return newObject.id;
   }, []);
   
@@ -93,189 +69,47 @@ export function useBezierObjects() {
     );
   }, []);
   
-  // Import SVG and convert to objects using our simplified approach
-  const importSVGToObjects = useCallback((svgContent: string) => {
+  // Efficiently set objects from a template with proper error handling
+  const loadObjectsFromTemplate = useCallback((templateObjects: BezierObject[], clearExisting: boolean = false) => {
+    setIsLoading(true);
+    
     try {
-      setIsLoading(true);
-      console.log('Importing SVG content using simplified approach');
+      console.log('Loading template objects:', templateObjects.length, 'clearExisting:', clearExisting);
       
-      // Import SVG using our simplified importer
-      const importedObjects = importSVG(svgContent);
+      const processedObjects = templateObjects.map(obj => ({
+        ...obj,
+        id: generateId(), // Ensure each object has a new ID
+        isSelected: false
+      }));
       
-      if (importedObjects.length === 0) {
-        toast({
-          title: "Import Notice",
-          description: "No valid shapes could be extracted from the SVG.",
-          variant: "destructive"
-        });
-        setIsLoading(false);
-        return [];
+      if (clearExisting) {
+        // Replace all existing objects
+        setObjects(processedObjects);
+        setSelectedObjectIds([]);
+      } else {
+        // Add to existing objects
+        setObjects(prevObjects => [...prevObjects, ...processedObjects]);
       }
       
-      // Add objects to canvas
-      setObjects(prevObjects => [...prevObjects, ...importedObjects]);
-      
-      // Add to history
-      const updatedObjects = [...objects, ...importedObjects];
+      // Add to history after loading template
+      const updatedObjects = clearExisting 
+        ? processedObjects 
+        : [...objects, ...processedObjects];
+        
       addToHistory(updatedObjects);
-      
-      toast({
-        title: "SVG Imported",
-        description: `Successfully imported ${importedObjects.length} shapes.`,
-        variant: "default"
-      });
-      
-      setIsLoading(false);
-      return importedObjects;
     } catch (error) {
-      console.error('Error importing SVG:', error);
+      console.error('Error loading template objects:', error);
       toast({
-        title: "Import Failed",
-        description: "The SVG file couldn't be imported. Try a simpler file.",
-        variant: "destructive"
+        title: 'Error Loading Template',
+        description: 'There was a problem loading the template objects',
+        variant: 'destructive'
       });
+    } finally {
       setIsLoading(false);
-      return [];
-    }
-  }, [objects, addToHistory]);
-  
-  // Export objects to SVG
-  const exportObjectsToSVG = useCallback((fileName: string = "bezier-design.svg") => {
-    try {
-      if (objects.length === 0) {
-        toast({
-          title: "Export Warning",
-          description: "No objects to export. Create some shapes first.",
-          variant: "destructive"
-        });
-        return;
-      }
-      
-      // Create SVG content using our consolidated function
-      const svgContent = createDesignSVG(objects);
-      
-      // Download SVG file
-      downloadSVG(svgContent, fileName);
-      
-      toast({
-        title: "SVG Exported",
-        description: `Successfully exported ${objects.length} shapes.`,
-        variant: "default"
-      });
-    } catch (error) {
-      console.error('Error exporting SVG:', error);
-      toast({
-        title: "Export Failed",
-        description: "Failed to export SVG.",
-        variant: "destructive"
-      });
     }
   }, [objects]);
   
-  // Improved template loading with proper cancellation and memory management
-  const loadObjectsFromTemplate = useCallback((templateData: BezierObject[] | string, clearExisting: boolean = false) => {
-    // Cancel any active loader first to prevent competing operations
-    if (activeLoaderCancelRef.current) {
-      activeLoaderCancelRef.current();
-      activeLoaderCancelRef.current = null;
-    }
-    
-    setIsLoading(true);
-    setImportProgress(0);
-    
-    try {
-      console.log('Loading template with improved memory management, clearExisting:', clearExisting);
-      
-      // Use our optimized template loader with proper cancellation
-      const cancelLoader = loadTemplateAsync(templateData, {
-        onProgress: (progress) => {
-          setImportProgress(progress);
-        },
-        onComplete: (processedObjects) => {
-          // Update state based on clearExisting flag
-          if (clearExisting) {
-            setObjects(processedObjects);
-            setSelectedObjectIds([]);
-          } else {
-            // Reasonable object limit
-            const maxObjectsToAdd = 10;
-            const limitedObjects = processedObjects.slice(0, maxObjectsToAdd);
-            
-            if (processedObjects.length > maxObjectsToAdd) {
-              console.warn(`Limiting imported objects from ${processedObjects.length} to ${maxObjectsToAdd}`);
-              toast({
-                title: 'Import Notice',
-                description: `Limited to ${maxObjectsToAdd} objects to prevent performance issues`,
-                variant: 'default'
-              });
-            }
-            
-            setObjects(prevObjects => [...prevObjects, ...limitedObjects]);
-          }
-          
-          // Add to history
-          const updatedObjects = clearExisting 
-            ? processedObjects 
-            : [...objects, ...processedObjects.slice(0, 10)];
-            
-          addToHistory(updatedObjects);
-          
-          toast({
-            title: 'Template Loaded',
-            description: `Loaded ${processedObjects.length} objects successfully`,
-            variant: 'default'
-          });
-          
-          activeLoaderCancelRef.current = null;
-          setIsLoading(false);
-          setImportProgress(0);
-        },
-        onError: (error) => {
-          console.error('Error loading template:', error);
-          toast({
-            title: 'Error Loading Template',
-            description: error.message || 'Failed to load template',
-            variant: 'destructive'
-          });
-          activeLoaderCancelRef.current = null;
-          setIsLoading(false);
-          setImportProgress(0);
-        },
-        batchSize: 3,  // Process 3 objects at a time for smoother UI
-        maxObjects: 20 // Reasonable limit that won't freeze UI
-      });
-      
-      // Store the cancellation function
-      activeLoaderCancelRef.current = cancelLoader;
-      
-      // Set a safety timeout to cancel if it takes too long
-      setTimeout(() => {
-        if (activeLoaderCancelRef.current === cancelLoader) {
-          console.warn('Template loading timeout - cancelling operation');
-          cancelLoader();
-          activeLoaderCancelRef.current = null;
-          setIsLoading(false);
-          setImportProgress(0);
-          toast({
-            title: 'Loading Timeout',
-            description: 'Template loading took too long and was cancelled',
-            variant: 'destructive'
-          });
-        }
-      }, 15000); // 15-second safety timeout
-      
-    } catch (error) {
-      console.error('Error in loadObjectsFromTemplate:', error);
-      toast({
-        title: 'Error Loading Template',
-        description: 'There was a problem loading the template',
-        variant: 'destructive'
-      });
-      setIsLoading(false);
-      setImportProgress(0);
-    }
-  }, [objects, addToHistory]);
-
+  // Select a specific object
   const selectObject = useCallback((objectId: string, multiSelect: boolean = false) => {
     if (objectId === '') {
       // Deselect all
@@ -309,44 +143,67 @@ export function useBezierObjects() {
     });
   }, []);
   
+  // Deselect all objects
   const deselectAllObjects = useCallback(() => {
-    setObjects(prevObjects => prevObjects.map(obj => ({ ...obj, isSelected: false })));
+    setObjects(prevObjects => 
+      prevObjects.map(obj => ({
+        ...obj,
+        isSelected: false
+      }))
+    );
     setSelectedObjectIds([]);
   }, []);
   
+  // Update objects with new data (primarily for point movement)
   const updateObjects = useCallback((updatedObjects: BezierObject[]) => {
     setObjects(updatedObjects);
   }, []);
   
+  // Update curve config for a specific object
   const updateObjectCurveConfig = useCallback((objectId: string, curveConfig: CurveConfig) => {
     setObjects(prevObjects => 
-      prevObjects.map(obj => obj.id === objectId ? { ...obj, curveConfig } : obj)
+      prevObjects.map(obj => 
+        obj.id === objectId 
+          ? { ...obj, curveConfig }
+          : obj
+      )
     );
     
-    // Add to history
+    // Add to history after curve config change
     const updatedObjects = objects.map(obj => 
       obj.id === objectId ? { ...obj, curveConfig } : obj
     );
     addToHistory(updatedObjects);
-  }, [objects, addToHistory]);
+  }, [objects]);
   
+  // Update transform settings for a specific object
   const updateObjectTransform = useCallback((objectId: string, transform: TransformSettings) => {
     setObjects(prevObjects => 
-      prevObjects.map(obj => obj.id === objectId ? { ...obj, transform } : obj)
+      prevObjects.map(obj => 
+        obj.id === objectId 
+          ? { ...obj, transform }
+          : obj
+      )
     );
     
-    // Add to history
+    // Add to history after transform change
     const updatedObjects = objects.map(obj => 
       obj.id === objectId ? { ...obj, transform } : obj
     );
     addToHistory(updatedObjects);
-  }, [objects, addToHistory]);
+  }, [objects]);
   
+  // Delete an object
   const deleteObject = useCallback((objectId: string) => {
-    setObjects(prevObjects => prevObjects.filter(obj => obj.id !== objectId));
-    setSelectedObjectIds(prevIds => prevIds.filter(id => id !== objectId));
+    setObjects(prevObjects => 
+      prevObjects.filter(obj => obj.id !== objectId)
+    );
     
-    // Add to history
+    setSelectedObjectIds(prevIds => 
+      prevIds.filter(id => id !== objectId)
+    );
+    
+    // Add to history after deletion
     const updatedObjects = objects.filter(obj => obj.id !== objectId);
     addToHistory(updatedObjects);
     
@@ -354,14 +211,17 @@ export function useBezierObjects() {
       title: "Object Deleted",
       description: "The selected object has been removed"
     });
-  }, [objects, addToHistory]);
+  }, [objects]);
   
+  // Delete all selected objects
   const deleteSelectedObjects = useCallback(() => {
     if (selectedObjectIds.length === 0) return;
     
-    setObjects(prevObjects => prevObjects.filter(obj => !selectedObjectIds.includes(obj.id)));
+    setObjects(prevObjects => 
+      prevObjects.filter(obj => !selectedObjectIds.includes(obj.id))
+    );
     
-    // Add to history
+    // Add to history after deletion
     const updatedObjects = objects.filter(obj => !selectedObjectIds.includes(obj.id));
     addToHistory(updatedObjects);
     
@@ -371,31 +231,65 @@ export function useBezierObjects() {
     });
     
     setSelectedObjectIds([]);
-  }, [selectedObjectIds, objects, addToHistory]);
+  }, [selectedObjectIds, objects]);
   
+  // Rename an object
   const renameObject = useCallback((objectId: string, name: string) => {
     setObjects(prevObjects => 
-      prevObjects.map(obj => obj.id === objectId ? { ...obj, name } : obj)
+      prevObjects.map(obj => 
+        obj.id === objectId 
+          ? { ...obj, name }
+          : obj
+      )
     );
     
-    // Add to history
+    // Add to history after renaming
     const updatedObjects = objects.map(obj => 
       obj.id === objectId ? { ...obj, name } : obj
     );
     addToHistory(updatedObjects);
-  }, [objects, addToHistory]);
+  }, [objects]);
   
+  // Add current state to history with debouncing
+  const addToHistory = useCallback((updatedObjects: BezierObject[]) => {
+    try {
+      const newHistoryState: HistoryState = {
+        objects: JSON.parse(JSON.stringify(updatedObjects)), // Deep clone
+        timestamp: Date.now()
+      };
+      
+      // If we're not at the end of history, truncate it
+      const newHistory = currentHistoryIndex === history.length - 1 || currentHistoryIndex === -1
+        ? [...history, newHistoryState]
+        : [...history.slice(0, currentHistoryIndex + 1), newHistoryState];
+      
+      // Limit history size to 50 entries
+      const limitedHistory = newHistory.slice(-50);
+      
+      setHistory(limitedHistory);
+      setCurrentHistoryIndex(limitedHistory.length - 1);
+    } catch (error) {
+      console.error('Error adding to history:', error);
+    }
+  }, [history, currentHistoryIndex]);
+  
+  // Undo the last action
   const undo = useCallback(() => {
     if (currentHistoryIndex > 0) {
       const prevState = history[currentHistoryIndex - 1];
       setCurrentHistoryIndex(currentHistoryIndex - 1);
-        
+      
+      // Make sure we have objects to restore
       if (prevState && prevState.objects) {
         setObjects(prevState.objects);
+        
+        // Update selected object IDs based on object.isSelected property
         setSelectedObjectIds(
-          prevState.objects.filter(obj => obj.isSelected).map(obj => obj.id)
+          prevState.objects
+            .filter(obj => obj.isSelected)
+            .map(obj => obj.id)
         );
-          
+        
         toast({
           title: 'Undo',
           description: 'Previous action undone'
@@ -410,17 +304,22 @@ export function useBezierObjects() {
     }
   }, [currentHistoryIndex, history]);
   
+  // Redo the last undone action
   const redo = useCallback(() => {
     if (currentHistoryIndex < history.length - 1) {
       const nextState = history[currentHistoryIndex + 1];
       setCurrentHistoryIndex(currentHistoryIndex + 1);
-        
+      
       if (nextState && nextState.objects) {
         setObjects(nextState.objects);
+        
+        // Update selected object IDs based on object.isSelected property
         setSelectedObjectIds(
-          nextState.objects.filter(obj => obj.isSelected).map(obj => obj.id)
+          nextState.objects
+            .filter(obj => obj.isSelected)
+            .map(obj => obj.id)
         );
-          
+        
         toast({
           title: 'Redo',
           description: 'Action redone'
@@ -435,6 +334,7 @@ export function useBezierObjects() {
     }
   }, [currentHistoryIndex, history]);
   
+  // Save the current state after actions like dragging points
   const saveCurrentState = useCallback(() => {
     if (objects.length > 0) {
       addToHistory(objects);
@@ -445,12 +345,9 @@ export function useBezierObjects() {
     objects,
     selectedObjectIds,
     isLoading,
-    importProgress,
     createObject,
     setAllObjects,
     loadObjectsFromTemplate,
-    importSVGToObjects,
-    exportObjectsToSVG,
     selectObject,
     deselectAllObjects,
     updateObjects,
