@@ -34,7 +34,7 @@ interface HeaderProps {
   onSaveDesign: (name: string, category: string) => void;
   onLoadDesigns: () => void;
   onExportSVG: () => void;
-  onImportSVG?: (data: string) => void; // New prop for importing SVG
+  onImportSVG?: (data: string) => void; // Prop for importing SVG
   onLoadTemplate?: (templateData: string) => void;
   isDrawingMode?: boolean;
   onToggleDrawingMode?: () => void;

@@ -13,7 +13,7 @@ import BezierCanvas from '@/components/BezierCanvas';
 import Header from '@/components/Header';
 import LibraryPanel from '@/components/LibraryPanel';
 import { generateId } from '@/utils/bezierUtils';
-import { exportAsSVG, downloadSVG, importSVGFromString } from '@/utils/svgExporter';
+import { exportAsSVG, downloadSVG, importSVGFromString, parseTemplateData } from '@/utils/svgExporter';
 import { saveDesign, saveTemplate, Template } from '@/services/supabaseClient';
 import { useToast } from '@/hooks/use-toast';
 import { useBezierObjects } from '@/hooks/useBezierObjects';
@@ -68,6 +68,7 @@ const Index = () => {
     
     handleResize();
     window.addEventListener('resize', handleResize);
+    console.info(`Canvas dimensions set to ${canvasWidth}x${canvasHeight}`);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
   
@@ -263,7 +264,28 @@ const Index = () => {
         throw new Error('Design data is empty');
       }
       
-      const parsedData: DesignData = JSON.parse(design.shapes_data);
+      console.log('Loading design data:', design.shapes_data);
+      
+      let parsedData: DesignData | null = null;
+      
+      try {
+        // Try parsing as JSON
+        parsedData = JSON.parse(design.shapes_data);
+      } catch (parseError) {
+        console.error('Error parsing JSON:', parseError);
+        
+        // If it's not valid JSON, try using it as SVG
+        const importedObjects = importSVGFromString(design.shapes_data);
+        if (importedObjects && importedObjects.length > 0) {
+          parsedData = { objects: importedObjects };
+        } else {
+          throw new Error('Design data is neither valid JSON nor SVG');
+        }
+      }
+      
+      if (!parsedData) {
+        throw new Error('Failed to parse design data');
+      }
       
       // Clear current objects
       objects.forEach(obj => deleteObject(obj.id));
@@ -272,7 +294,21 @@ const Index = () => {
       if (parsedData.objects && parsedData.objects.length > 0) {
         // New format with objects
         parsedData.objects.forEach(obj => {
-          createObject(obj.points, obj.name);
+          // Make sure each object has the required properties
+          const validObject = {
+            ...obj,
+            curveConfig: obj.curveConfig || {
+              styles: [{ color: '#000000', width: 2 }],
+              parallelCount: 1,
+              spacing: 5
+            },
+            transform: obj.transform || {
+              rotation: 0,
+              scaleX: 1,
+              scaleY: 1
+            }
+          };
+          createObject(validObject.points, validObject.name);
         });
       } else if (parsedData.points && parsedData.points.length > 0) {
         // Old format with just points, create a single object
@@ -314,38 +350,82 @@ const Index = () => {
   // Load a template from the gallery
   const handleLoadTemplate = (templateData: string) => {
     try {
-      const parsedData: DesignData = JSON.parse(templateData);
+      console.log('Loading template data:', templateData);
+      
+      // Try to parse data, could be a stringified DesignData or DesignData.objects array
+      let parsedData: DesignData | null = null;
+      
+      try {
+        // Attempt to parse as regular JSON
+        const parsed = JSON.parse(templateData);
+        
+        // Check what kind of data we got
+        if (parsed.objects) {
+          // It's a DesignData object with objects array
+          parsedData = parsed as DesignData;
+        } else if (Array.isArray(parsed)) {
+          // It's just an array of objects
+          parsedData = { objects: parsed };
+        } else {
+          // Unknown format
+          throw new Error('Template data is in an unknown format');
+        }
+      } catch (parseError) {
+        console.error('Error parsing template JSON:', parseError);
+        
+        // If it's not valid JSON, try using it as SVG
+        const importedObjects = importSVGFromString(templateData);
+        if (importedObjects && importedObjects.length > 0) {
+          parsedData = { objects: importedObjects };
+        } else {
+          throw new Error('Template data is neither valid JSON nor SVG');
+        }
+      }
+      
+      if (!parsedData) {
+        throw new Error('Failed to parse template data');
+      }
       
       // Clear current objects
       objects.forEach(obj => deleteObject(obj.id));
       
-      // Check if data has objects array (new format) or just points (old format)
+      // Add objects from template
       if (parsedData.objects && parsedData.objects.length > 0) {
-        // New format with objects
+        // Format with objects array
         parsedData.objects.forEach(obj => {
-          createObject(obj.points, obj.name);
+          // Make sure each object has the required properties
+          const validObject = {
+            ...obj,
+            curveConfig: obj.curveConfig || {
+              styles: [{ color: '#000000', width: 2 }],
+              parallelCount: 1,
+              spacing: 5
+            },
+            transform: obj.transform || {
+              rotation: 0,
+              scaleX: 1,
+              scaleY: 1
+            }
+          };
+          createObject(validObject.points, validObject.name);
         });
-      } else if (parsedData.points && parsedData.points.length > 0) {
-        // Old format with just points, create a single object
-        const pointsWithIds = parsedData.points.map(point => ({
-          ...point,
-          id: point.id || generateId()
-        }));
         
-        createObject(pointsWithIds, 'Imported Template');
+        // Set background image if present
+        if (parsedData.backgroundImage) {
+          setBackgroundImage(parsedData.backgroundImage.url);
+          setBackgroundOpacity(parsedData.backgroundImage.opacity);
+        }
+        
+        toast({
+          title: 'Template Loaded',
+          description: 'Template has been loaded successfully.'
+        });
       } else {
         toast({
           title: 'Invalid Template Data',
-          description: 'The selected template does not contain valid control points.',
+          description: 'The selected template does not contain valid objects.',
           variant: 'destructive'
         });
-        return;
-      }
-      
-      // Set background image if present
-      if (parsedData.backgroundImage) {
-        setBackgroundImage(parsedData.backgroundImage.url);
-        setBackgroundOpacity(parsedData.backgroundImage.opacity);
       }
     } catch (err) {
       console.error('Error loading template:', err);

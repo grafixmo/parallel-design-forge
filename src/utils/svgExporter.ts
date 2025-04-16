@@ -27,8 +27,10 @@ export const exportAsSVG = (
     let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${canvasWidth}" height="${canvasHeight}" 
       viewBox="0 0 ${canvasWidth} ${canvasHeight}" xmlns:xlink="http://www.w3.org/1999/xlink">`;
     
-    // Add metadata
-    svg += `<metadata>Created with Bezier Curve Designer</metadata>`;
+    // Add metadata with custom data attributes for proper reimport
+    svg += `<metadata>
+      <qordatta:design xmlns:qordatta="http://qordatta.com/ns" version="1.0"/>
+    </metadata>`;
     
     // Add background if requested
     if (includeBackground) {
@@ -51,48 +53,38 @@ export const exportAsSVG = (
       // Create a group for this object with ID and metadata
       svg += `<g id="${object.id || `bezier-object-${index}`}" 
         data-name="${object.name || `Object ${index + 1}`}"
+        data-curve-config='${JSON.stringify(curveConfig)}'
+        data-transform='${JSON.stringify(transform)}'
         transform="translate(${object.position?.x || 0}, ${object.position?.y || 0}) 
         rotate(${transform.rotation || 0} ${centerX} ${centerY}) 
         scale(${transform.scaleX || 1} ${transform.scaleY || 1})">`;
       
-      // Only draw parallel curves if parallelCount is greater than 1
-      if (curveConfig.parallelCount > 1) {
-        // Draw parallel curves behind main curve
-        for (let i = 1; i < curveConfig.parallelCount; i++) {
-          const offset = i * (curveConfig.spacing || 5);
-          const style = curveConfig.styles?.[i] || curveConfig.styles?.[0] || defaultCurveStyle();
-          
-          // Draw a path for each parallel curve
-          const pathData = generatePathData(points, offset);
-          if (pathData) {
-            svg += generateSVGPath(pathData, style);
-          }
-        }
-      }
-      
-      // Draw main curve on top
+      // Draw all curves based on configuration
       const mainPathData = generatePathData(points);
       if (mainPathData) {
+        // First draw parallel curves if configured
+        if (curveConfig.parallelCount > 1) {
+          for (let i = 1; i < curveConfig.parallelCount; i++) {
+            const offset = i * (curveConfig.spacing || 5);
+            const style = curveConfig.styles?.[i] || curveConfig.styles?.[0] || defaultCurveStyle();
+            
+            // Draw a path for each parallel curve
+            const pathData = generatePathData(points, offset);
+            if (pathData) {
+              svg += generateSVGPath(pathData, style);
+            }
+          }
+        }
+        
+        // Then draw main curve
         const mainStyle = curveConfig.styles?.[0] || defaultCurveStyle();
         svg += generateSVGPath(mainPathData, mainStyle);
       }
       
-      // Add control points as markers if needed (useful for debugging)
-      if (object.showControlPoints) {
-        points.forEach((point, i) => {
-          // Main point
-          svg += `<circle cx="${point.x}" cy="${point.y}" r="4" fill="red"/>`;
-          // Handle in
-          svg += `<circle cx="${point.handleIn.x}" cy="${point.handleIn.y}" r="3" fill="blue"/>`;
-          // Handle out
-          svg += `<circle cx="${point.handleOut.x}" cy="${point.handleOut.y}" r="3" fill="green"/>`;
-          // Connecting lines
-          svg += `<line x1="${point.x}" y1="${point.y}" x2="${point.handleIn.x}" y2="${point.handleIn.y}" 
-            stroke="rgba(0,0,255,0.5)" stroke-width="1"/>`;
-          svg += `<line x1="${point.x}" y1="${point.y}" x2="${point.handleOut.x}" y2="${point.handleOut.y}" 
-            stroke="rgba(0,255,0,0.5)" stroke-width="1"/>`;
-        });
-      }
+      // Add control points as data attributes for perfect reimport
+      svg += `<metadata>
+        <qordatta:points xmlns:qordatta="http://qordatta.com/ns">${JSON.stringify(points)}</qordatta:points>
+      </metadata>`;
       
       // Close the group
       svg += '</g>';
@@ -242,6 +234,9 @@ export const importSVGFromString = (svgString: string): BezierObject[] => {
     
     const importedObjects: BezierObject[] = [];
     
+    // Check if this is a Qordatta-generated SVG with our custom metadata
+    const isQordattaFormat = svgDoc.querySelector('metadata qordatta\\:design') !== null;
+    
     // Process all path groups (g elements)
     const groups = svgDoc.querySelectorAll('g');
     
@@ -258,33 +253,72 @@ export const importSVGFromString = (svgString: string): BezierObject[] => {
     } else {
       // Process each group as a separate object
       groups.forEach((group, index) => {
-        // Get transform attributes (if any)
-        const transformAttr = group.getAttribute('transform') || '';
+        // Get object ID and name
         const objectId = group.getAttribute('id') || `imported_obj_${generateId()}`;
         const objectName = group.getAttribute('data-name') || `Imported Object ${index + 1}`;
         
-        // Get all paths in this group
-        const paths = group.querySelectorAll('path');
-        if (paths.length === 0) return;
+        // Check for our custom data attributes with curve config and transform
+        let curveConfig: CurveConfig | undefined;
+        let transform: TransformSettings | undefined;
         
-        // Process the paths to create a BezierObject
-        const object = processSVGPaths(Array.from(paths));
-        if (!object) return;
-        
-        // Set object properties
-        object.id = objectId;
-        object.name = objectName;
-        
-        // Parse transforms (basic implementation)
-        const transformInfo = parseTransform(transformAttr);
-        if (transformInfo) {
-          object.transform = {
-            ...object.transform,
-            ...transformInfo
-          };
+        try {
+          const curveConfigData = group.getAttribute('data-curve-config');
+          if (curveConfigData) {
+            curveConfig = JSON.parse(curveConfigData);
+          }
+          
+          const transformData = group.getAttribute('data-transform');
+          if (transformData) {
+            transform = JSON.parse(transformData);
+          }
+        } catch (e) {
+          console.warn('Error parsing Qordatta metadata:', e);
         }
         
-        importedObjects.push(object);
+        // Check for our custom points metadata (most accurate)
+        let points: ControlPoint[] | undefined;
+        const pointsMetadata = group.querySelector('metadata qordatta\\:points');
+        if (pointsMetadata && pointsMetadata.textContent) {
+          try {
+            points = JSON.parse(pointsMetadata.textContent);
+          } catch (e) {
+            console.warn('Error parsing Qordatta points metadata:', e);
+          }
+        }
+        
+        // If we couldn't get points from metadata, extract them from paths
+        if (!points || points.length < 2) {
+          // Get all paths in this group
+          const paths = group.querySelectorAll('path');
+          if (paths.length === 0) return;
+          
+          // Process the paths to create a BezierObject
+          const object = processSVGPaths(Array.from(paths), curveConfig);
+          if (!object) return;
+          
+          // Set object properties
+          object.id = objectId;
+          object.name = objectName;
+          
+          // Apply any transform we parsed
+          if (transform) {
+            object.transform = transform;
+          }
+          
+          importedObjects.push(object);
+        } else {
+          // Create object directly from our metadata points
+          const object: BezierObject = {
+            id: objectId,
+            name: objectName,
+            points: points,
+            curveConfig: curveConfig || defaultCurveConfig(),
+            transform: transform || defaultTransform(),
+            isSelected: false
+          };
+          
+          importedObjects.push(object);
+        }
       });
     }
     
@@ -317,7 +351,7 @@ export const importSVGFromString = (svgString: string): BezierObject[] => {
  * @param paths Array of SVG path elements
  * @returns BezierObject or null if processing failed
  */
-const processSVGPaths = (paths: SVGPathElement[]): BezierObject | null => {
+const processSVGPaths = (paths: SVGPathElement[], existingCurveConfig?: CurveConfig): BezierObject | null => {
   if (paths.length === 0) return null;
   
   // Extract path data
@@ -337,7 +371,6 @@ const processSVGPaths = (paths: SVGPathElement[]): BezierObject | null => {
   if (pathElements.length === 0) return null;
   
   // Create control points from the first path
-  // This is a simplified approach - proper SVG path parsing would be more complex
   const mainPath = pathElements[0];
   const points = approximateControlPointsFromPath(mainPath.d);
   
@@ -354,19 +387,21 @@ const processSVGPaths = (paths: SVGPathElement[]): BezierObject | null => {
     dashArray: p.dashArray
   }));
   
+  // Use existing curve config if provided, otherwise create one from styles
+  const curveConfig: CurveConfig = existingCurveConfig || {
+    styles,
+    parallelCount: styles.length,
+    spacing: 5
+  };
+  
   // Create the BezierObject
   return {
     id: generateId(),
     name: 'Imported Path',
     points,
-    curveConfig: {
-      styles,
-      parallelCount: styles.length,
-      spacing: 5
-    },
+    curveConfig,
     transform: defaultTransform(),
-    isSelected: false,
-    position: { x: 0, y: 0 }
+    isSelected: false
   };
 };
 
