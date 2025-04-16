@@ -852,19 +852,19 @@ const approximateControlPointsFromPath = (pathData: string): ControlPoint[] => {
               x1 = currentX + (currentX - prevPoint.handleOut.x);
               y1 = currentY + (currentY - prevPoint.handleOut.y);
             }
-            // Update previous point's handle out to this reflected point
+           // Update previous point's handle out to this reflected point
             prevPoint.handleOut = { x: x1, y: y1 };
           }
 
           // Add new point
           points.push({
             x: absX,
-            y: absY,
-            handleIn: { x: absX2, y: absY2 },
+            y: absY, // Añadir coordenada y
+            handleIn: { x: absX2, y: absY2 }, // Añadir handleIn
              // Approximate handle out by reflecting the handleIn (absX2, absY2)
             handleOut: { x: absX + (absX - absX2), y: absY + (absY - absY2) },
-            id: generateId()
-          });
+            id: generateId() // Añadir id
+          }); // Cerrar el objeto del punto
 
           console.log(`Added S point at ${absX},${absY}`);
 
