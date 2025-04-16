@@ -1,3 +1,4 @@
+
 import { 
   ControlPoint, 
   CurveConfig, 
@@ -856,4 +857,125 @@ const adjustHandlesForSmoothCurves = (points: ControlPoint[]): void => {
     const toNext = { x: next.x - curr.x, y: next.y - curr.y };
     
     // Normalize vectors
-    const toPrevLength =
+    const toPrevLength = Math.sqrt(toPrev.x * toPrev.x + toPrev.y * toPrev.y);
+    const toNextLength = Math.sqrt(toNext.x * toNext.x + toNext.y * toNext.y);
+    
+    if (toPrevLength === 0 || toNextLength === 0) continue;
+    
+    const toPrevNorm = { 
+      x: toPrev.x / toPrevLength, 
+      y: toPrev.y / toPrevLength 
+    };
+    
+    const toNextNorm = { 
+      x: toNext.x / toNextLength, 
+      y: toNext.y / toNextLength 
+    };
+    
+    // Calculate handle scale based on distance to adjacent points
+    // Use 1/3 of the distance as a rule of thumb for bezier handles
+    const handleInLength = toPrevLength / 3;
+    const handleOutLength = toNextLength / 3;
+    
+    // Set the handles to point in opposite directions of the adjacent points
+    curr.handleIn = {
+      x: curr.x + toPrevNorm.x * handleInLength,
+      y: curr.y + toPrevNorm.y * handleInLength
+    };
+    
+    curr.handleOut = {
+      x: curr.x + toNextNorm.x * handleOutLength,
+      y: curr.y + toNextNorm.y * handleOutLength
+    };
+  }
+  
+  // Adjust first and last point handles if there are enough points
+  if (points.length >= 2) {
+    const first = points[0];
+    const second = points[1];
+    
+    // For the first point, set handle out based on direction to second point
+    const toSecond = { 
+      x: second.x - first.x, 
+      y: second.y - first.y 
+    };
+    
+    const toSecondLength = Math.sqrt(toSecond.x * toSecond.x + toSecond.y * toSecond.y);
+    
+    if (toSecondLength > 0) {
+      const handleOutLength = toSecondLength / 3;
+      first.handleOut = {
+        x: first.x + (toSecond.x / toSecondLength) * handleOutLength,
+        y: first.y + (toSecond.y / toSecondLength) * handleOutLength
+      };
+    }
+    
+    // For the last point, set handle in based on direction from second-to-last point
+    const last = points[points.length - 1];
+    const secondLast = points[points.length - 2];
+    
+    const toSecondLast = { 
+      x: secondLast.x - last.x, 
+      y: secondLast.y - last.y 
+    };
+    
+    const toSecondLastLength = Math.sqrt(toSecondLast.x * toSecondLast.x + toSecondLast.y * toSecondLast.y);
+    
+    if (toSecondLastLength > 0) {
+      const handleInLength = toSecondLastLength / 3;
+      last.handleIn = {
+        x: last.x + (toSecondLast.x / toSecondLastLength) * handleInLength,
+        y: last.y + (toSecondLast.y / toSecondLastLength) * handleInLength
+      };
+    }
+  }
+};
+
+/**
+ * Creates a new control point
+ */
+const createControlPoint = (
+  x: number, 
+  y: number, 
+  previousPoint?: Point
+): ControlPoint => {
+  if (!previousPoint) {
+    // First point - use default horizontal handles
+    return {
+      x,
+      y,
+      handleIn: { x: x - 50, y },
+      handleOut: { x: x + 50, y },
+      id: generateId()
+    };
+  }
+  
+  // Calculate direction vector from previous point to this point
+  const dx = x - previousPoint.x;
+  const dy = y - previousPoint.y;
+  
+  // Calculate distance between points
+  const distance = Math.sqrt(dx * dx + dy * dy);
+  
+  // Normalize direction vector
+  const norm = distance > 0 ? distance : 1;
+  const ndx = dx / norm;
+  const ndy = dy / norm;
+  
+  // Set handle lengths proportional to the distance, but with a minimum
+  const handleLength = Math.max(distance / 3, 30);
+  
+  return {
+    x,
+    y,
+    handleIn: { 
+      x: x - ndx * handleLength, 
+      y: y - ndy * handleLength 
+    },
+    handleOut: { 
+      x: x + ndx * handleLength, 
+      y: y + ndy * handleLength 
+    },
+    id: generateId()
+  };
+};
