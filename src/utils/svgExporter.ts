@@ -933,4 +933,5 @@ const approximateControlPointsFromPath = (pathData: string): ControlPoint[] => {
     console.error('Critical error parsing SVG path data:', error);
     return []; // Devolver array vacío en caso de error crítico
   }
-} // Cerrar la función approximateControlPointsFromPath
+}; // Cerrar la función approximateControlPointsFromPath
+
