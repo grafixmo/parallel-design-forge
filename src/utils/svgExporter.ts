@@ -898,9 +898,9 @@ const approximateControlPointsFromPath = (pathData: string): ControlPoint[] => {
               
               // Update the first point's handle in to match the closure
               firstPoint.handleIn = { 
-                x: firstX - (closePoint.handleOut.x - firstX),
-                y: firstY - (closePoint.handleOut.y - firstY)
-              };
+  x: firstX - (closePoint.handleOut.x - firstX),
+  y: firstY - (closePoint.handleOut.y - firstY)
+};
               
               // Don't add another point since we're closing to the first one
               // Just update the last point's handle out for smooth connection
