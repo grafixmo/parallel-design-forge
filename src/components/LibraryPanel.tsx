@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SavedDesign } from '@/types/bezier';
 import { getDesigns, getDesignsByCategory } from '@/services/supabaseClient';
 import { X } from 'lucide-react';
+import { importSVGFromString } from '@/utils/svgExporter';
 
 interface LibraryPanelProps {
   onClose: () => void;
@@ -46,7 +47,19 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign }) 
         throw new Error(response.error.message);
       }
       
-      setDesigns(response.data || []);
+      // Validate each design to check if it's SVG
+      const processedDesigns = response.data?.map(design => {
+        if (design.shapes_data && design.shapes_data.trim().startsWith('<svg')) {
+          // Just mark it as SVG for UI indication
+          return {
+            ...design,
+            isSvg: true
+          };
+        }
+        return design;
+      }) || [];
+      
+      setDesigns(processedDesigns);
     } catch (err) {
       setError('Failed to load designs. Please try again.');
       console.error('Error fetching designs:', err);
@@ -62,6 +75,11 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign }) 
   const handleSelectDesign = (design: SavedDesign) => {
     onSelectDesign(design);
     onClose();
+  };
+
+  // Check if a string looks like SVG
+  const isSvgContent = (content: string): boolean => {
+    return content.trim().startsWith('<svg');
   };
 
   return (
@@ -123,10 +141,17 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign }) 
                   onClick={() => handleSelectDesign(design)}
                 >
                   <div className="aspect-square mb-2 border rounded flex items-center justify-center bg-gray-50">
-                    <div className="text-5xl text-gray-300">⌘</div>
+                    {(design as any).isSvg ? (
+                      <div className="text-5xl text-blue-300">SVG</div>
+                    ) : (
+                      <div className="text-5xl text-gray-300">⌘</div>
+                    )}
                   </div>
                   <h3 className="font-medium text-sm truncate">{design.name}</h3>
-                  <p className="text-xs text-gray-500 truncate">{design.category}</p>
+                  <p className="text-xs text-gray-500 truncate">
+                    {design.category}
+                    {isSvgContent(design.shapes_data) && " (SVG)"}
+                  </p>
                 </Card>
               ))}
             </div>

@@ -170,12 +170,16 @@ const Index = () => {
   // Import SVG from a string
   const handleImportSVG = (svgString: string) => {
     try {
+      console.log('Importing SVG string:', svgString.substring(0, 200) + '...');
+      
       // Import SVG and convert to BezierObjects
       const importedObjects = importSVGFromString(svgString);
       
       if (importedObjects.length === 0) {
         throw new Error('No valid objects found in the SVG file');
       }
+      
+      console.log('Imported objects:', importedObjects);
       
       // Clear existing objects
       objects.forEach(obj => deleteObject(obj.id));
@@ -264,7 +268,14 @@ const Index = () => {
         throw new Error('Design data is empty');
       }
       
-      console.log('Loading design data:', design.shapes_data);
+      console.log('Loading design data (first 100 chars):', design.shapes_data.substring(0, 100));
+      
+      // Check if it's an SVG file
+      if (design.shapes_data.trim().startsWith('<svg')) {
+        console.log('Processing as SVG data');
+        handleImportSVG(design.shapes_data);
+        return;
+      }
       
       let parsedData: DesignData | null = null;
       
@@ -292,10 +303,11 @@ const Index = () => {
       
       // Check if data has objects array (new format) or just points (old format)
       if (parsedData.objects && parsedData.objects.length > 0) {
+        console.log('Loading objects from parsed data:', parsedData.objects.length);
         // New format with objects
-        parsedData.objects.forEach(obj => {
+        setAllObjects(parsedData.objects.map(obj => {
           // Make sure each object has the required properties
-          const validObject = {
+          return {
             ...obj,
             curveConfig: obj.curveConfig || {
               styles: [{ color: '#000000', width: 2 }],
@@ -306,10 +318,10 @@ const Index = () => {
               rotation: 0,
               scaleX: 1,
               scaleY: 1
-            }
+            },
+            isSelected: false
           };
-          createObject(validObject.points, validObject.name);
-        });
+        }));
       } else if (parsedData.points && parsedData.points.length > 0) {
         // Old format with just points, create a single object
         const pointsWithIds = parsedData.points.map(point => ({
@@ -332,6 +344,9 @@ const Index = () => {
         setBackgroundImage(parsedData.backgroundImage.url);
         setBackgroundOpacity(parsedData.backgroundImage.opacity);
       }
+      
+      // Save current state to history
+      saveCurrentState();
       
       toast({
         title: 'Design Loaded',
