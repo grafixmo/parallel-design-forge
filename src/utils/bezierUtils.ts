@@ -30,6 +30,72 @@ export const calculateNormal = (p0: Point, p1: Point): Point => {
   };
 };
 
+// Calculate unit vector (normalized direction vector)
+export const calculateUnitVector = (p1: Point, p2: Point): Point => {
+  const dx = p2.x - p1.x;
+  const dy = p2.y - p1.y;
+  const distance = Math.sqrt(dx * dx + dy * dy);
+  
+  if (distance === 0) return { x: 1, y: 0 }; // Default direction if points are identical
+  
+  return {
+    x: dx / distance,
+    y: dy / distance
+  };
+};
+
+// Calculate handle points for a new point based on drawing direction
+export const calculateNaturalHandles = (prevPoint: Point, currentPoint: Point, handleLength: number = 50): { handleIn: Point, handleOut: Point } => {
+  // Calculate unit vector in the direction of drawing
+  const directionVector = calculateUnitVector(prevPoint, currentPoint);
+  
+  // Scale handle length based on distance between points
+  const distance = calculateDistance(prevPoint, currentPoint);
+  const adjustedLength = Math.min(handleLength, distance / 2);
+  
+  // Scale for incoming handle (opposite direction)
+  const handleInX = currentPoint.x - directionVector.x * adjustedLength;
+  const handleInY = currentPoint.y - directionVector.y * adjustedLength;
+  
+  // Scale for outgoing handle (same direction)
+  const handleOutX = currentPoint.x + directionVector.x * adjustedLength;
+  const handleOutY = currentPoint.y + directionVector.y * adjustedLength;
+  
+  return {
+    handleIn: { x: handleInX, y: handleInY },
+    handleOut: { x: handleOutX, y: handleOutY }
+  };
+};
+
+// Create a control point with natural handles
+export const createControlPoint = (
+  x: number, 
+  y: number, 
+  previousPoint?: Point
+): ControlPoint => {
+  if (!previousPoint) {
+    // First point - use default horizontal handles
+    return {
+      x,
+      y,
+      handleIn: { x: x - 50, y },
+      handleOut: { x: x + 50, y },
+      id: generateId()
+    };
+  }
+  
+  // Calculate handles based on drawing direction
+  const { handleIn, handleOut } = calculateNaturalHandles(previousPoint, { x, y });
+  
+  return {
+    x,
+    y,
+    handleIn,
+    handleOut,
+    id: generateId()
+  };
+};
+
 // Calculate a point at t (0-1) on a cubic bezier curve
 export const calculateBezierPoint = (
   p0: Point, 
