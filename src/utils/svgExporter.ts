@@ -217,11 +217,199 @@ export const downloadSVG = (svgContent: string, fileName: string = 'bezier-desig
 };
 
 /**
+ * Normalizes design data to ensure a consistent format
+ * Handles both {"objects":[...]} and direct [...] formats
+ */
+export const normalizeDesignData = (designData: string): BezierObject[] => {
+  try {
+    // Parse the JSON
+    const parsedData = JSON.parse(designData);
+    
+    // Handle the case where data is already in array format [{"id":...}]
+    if (Array.isArray(parsedData)) {
+      return parsedData.map(obj => normalizeObject(obj));
+    }
+    
+    // Handle the case where data is in {"objects":[...]} format
+    if (parsedData && parsedData.objects && Array.isArray(parsedData.objects)) {
+      return parsedData.objects.map(obj => normalizeObject(obj));
+    }
+    
+    // If we can't determine the format, return empty array
+    console.error('Unknown design data format:', designData);
+    return [];
+  } catch (error) {
+    console.error('Error parsing design data:', error);
+    return [];
+  }
+};
+
+/**
+ * Normalizes a single bezier object to ensure all required properties
+ */
+const normalizeObject = (obj: any): BezierObject => {
+  if (!obj) return createEmptyObject();
+  
+  // Ensure we have points
+  if (!obj.points || !Array.isArray(obj.points) || obj.points.length === 0) {
+    obj.points = [];
+  }
+  
+  // Ensure each point has the correct structure
+  obj.points = obj.points.map((point: any) => {
+    if (!point) return createEmptyPoint(0, 0);
+    
+    // Ensure point has x,y coordinates
+    if (typeof point.x !== 'number' || typeof point.y !== 'number') {
+      point.x = point.x || 0;
+      point.y = point.y || 0;
+    }
+    
+    // Ensure point has handles
+    if (!point.handleIn || typeof point.handleIn !== 'object') {
+      point.handleIn = { x: point.x - 50, y: point.y };
+    }
+    
+    if (!point.handleOut || typeof point.handleOut !== 'object') {
+      point.handleOut = { x: point.x + 50, y: point.y };
+    }
+    
+    // Ensure handle properties
+    if (typeof point.handleIn.x !== 'number') point.handleIn.x = point.x - 50;
+    if (typeof point.handleIn.y !== 'number') point.handleIn.y = point.y;
+    if (typeof point.handleOut.x !== 'number') point.handleOut.x = point.x + 50;
+    if (typeof point.handleOut.y !== 'number') point.handleOut.y = point.y;
+    
+    // Ensure point has an ID
+    if (!point.id) point.id = generatePointId();
+    
+    return point;
+  });
+  
+  // Ensure object has an ID
+  if (!obj.id) obj.id = generateObjectId();
+  
+  // Ensure object has a name
+  if (!obj.name) obj.name = `Object ${obj.id.slice(0, 6)}`;
+  
+  // Ensure object has transform settings
+  if (!obj.transform) obj.transform = defaultTransform();
+  
+  // Ensure object has curve configuration
+  if (!obj.curveConfig) obj.curveConfig = defaultCurveConfig();
+  
+  return obj;
+};
+
+/**
+ * Creates an empty point at the specified coordinates
+ */
+const createEmptyPoint = (x: number, y: number): ControlPoint => {
+  return {
+    x,
+    y,
+    handleIn: { x: x - 50, y },
+    handleOut: { x: x + 50, y },
+    id: generatePointId()
+  };
+};
+
+/**
+ * Creates an empty bezier object
+ */
+const createEmptyObject = (): BezierObject => {
+  return {
+    id: generateObjectId(),
+    name: 'New Object',
+    points: [],
+    transform: defaultTransform(),
+    curveConfig: defaultCurveConfig(),
+    position: { x: 0, y: 0 }
+  };
+};
+
+/**
+ * Generates a random ID for a point
+ */
+const generatePointId = (): string => {
+  return `pt_${Math.random().toString(36).substring(2, 11)}`;
+};
+
+/**
+ * Generates a random ID for an object
+ */
+const generateObjectId = (): string => {
+  return `obj_${Math.random().toString(36).substring(2, 11)}`;
+};
+
+/**
+ * Generates a template data structure for saving
+ */
+export const createTemplateData = (
+  objects: BezierObject[],
+  name: string,
+  description: string = '',
+  thumbnail: string = '',
+  canvasWidth: number = 800,
+  canvasHeight: number = 600
+) => {
+  // Ensure objects have valid structure
+  const normalizedObjects = objects.map(obj => normalizeObject(obj));
+  
+  // Create template with proper format
+  return {
+    version: "1.0",
+    name: name || 'Untitled Design',
+    description,
+    thumbnail,
+    canvasWidth,
+    canvasHeight,
+    createdAt: new Date().toISOString(),
+    objects: normalizedObjects
+  };
+};
+
+/**
+ * Safely parses template data from various formats
+ */
+export const parseTemplateData = (templateString: string) => {
+  try {
+    // Try to parse the template string
+    const parsed = JSON.parse(templateString);
+    
+    // If it's in the correct template format
+    if (parsed && parsed.objects) {
+      return {
+        ...parsed,
+        objects: normalizeDesignData(JSON.stringify(parsed.objects))
+      };
+    }
+    
+    // If it's just an array of objects
+    if (Array.isArray(parsed)) {
+      return {
+        version: "1.0",
+        name: 'Imported Design',
+        description: '',
+        thumbnail: '',
+        canvasWidth: 800,
+        canvasHeight: 600,
+        createdAt: new Date().toISOString(),
+        objects: normalizeDesignData(templateString)
+      };
+    }
+    
+    // Unknown format
+    console.error('Unknown template format:', templateString);
+    return null;
+  } catch (error) {
+    console.error('Error parsing template data:', error);
+    return null;
+  }
+};
+
+/**
  * Generates a thumbnail from SVG content
- * @param svgString SVG content to create thumbnail from
- * @param width Thumbnail width
- * @param height Thumbnail height
- * @returns Promise that resolves to a data URL of the thumbnail
  */
 export const generateThumbnail = async (
   svgString: string, 
@@ -277,90 +465,6 @@ export const generateThumbnail = async (
       img.src = url;
     } catch (error) {
       reject(new Error(`Error generating thumbnail: ${error}`));
-    }
-  });
-};
-
-/**
- * Validates that an SVG string is properly formatted
- * @param svgString SVG content to validate
- * @returns Whether the SVG is valid
- */
-export const validateSVG = (svgString: string): boolean => {
-  try {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(svgString, 'image/svg+xml');
-    
-    // Check if parsing produced errors
-    const parserError = doc.querySelector('parsererror');
-    if (parserError) {
-      return false;
-    }
-    
-    // Check for required SVG structure
-    const svg = doc.querySelector('svg');
-    if (!svg) {
-      return false;
-    }
-    
-    return true;
-  } catch (error) {
-    console.error('Error validating SVG:', error);
-    return false;
-  }
-};
-
-/**
- * Converts SVG string to a PNG data URL
- * @param svgString SVG content to convert
- * @param width Width of the PNG
- * @param height Height of the PNG
- * @returns Promise that resolves to a PNG data URL
- */
-export const convertSVGtoPNG = async (
-  svgString: string,
-  width: number,
-  height: number
-): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    try {
-      const img = new Image();
-      const svg = new Blob([svgString], {type: 'image/svg+xml'});
-      const url = URL.createObjectURL(svg);
-      
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          URL.revokeObjectURL(url);
-          reject(new Error("Could not get canvas context"));
-          return;
-        }
-        
-        // White background
-        ctx.fillStyle = 'white';
-        ctx.fillRect(0, 0, width, height);
-        
-        // Draw SVG
-        ctx.drawImage(img, 0, 0, width, height);
-        
-        // Get data URL
-        const pngDataUrl = canvas.toDataURL('image/png');
-        URL.revokeObjectURL(url);
-        resolve(pngDataUrl);
-      };
-      
-      img.onerror = (error) => {
-        URL.revokeObjectURL(url);
-        reject(new Error(`Failed to load SVG for PNG conversion: ${error}`));
-      };
-      
-      img.src = url;
-    } catch (error) {
-      reject(new Error(`Error converting SVG to PNG: ${error}`));
     }
   });
 };
