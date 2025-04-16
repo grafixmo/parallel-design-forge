@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect, useState } from 'react';
 import { 
   ControlPoint, 
@@ -75,7 +76,6 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
   
   const POINT_RADIUS = 8;
   const HANDLE_RADIUS = 6;
-  const ZOOM_FACTOR = 0.1;
   
   // Clear all selections and reset drag states
   const clearSelections = () => {
@@ -982,6 +982,8 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       window.removeEventListener('keyup', handleKeyUp);
     };
   }, [selectedObjectIds, isDrawingMode, onUndo, currentDrawingObjectId, objects, onObjectSelect]);
+  
+  const ZOOM_FACTOR = 0.1;
   
   return (
     <div ref={wrapperRef} className="relative w-full h-full overflow-hidden">

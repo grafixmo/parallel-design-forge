@@ -79,6 +79,17 @@ export const getTemplatesByCategory = async (category: string): Promise<{ data: 
   return { data, error };
 };
 
+// Get a specific template by ID
+export const getTemplateById = async (id: string): Promise<{ data: Template | null; error: any }> => {
+  const { data, error } = await supabase
+    .from('templates')
+    .select('*')
+    .eq('id', id)
+    .single();
+    
+  return { data, error };
+};
+
 // Update a template
 export const updateTemplate = async (id: string, updates: Partial<Template>): Promise<{ data: any; error: any }> => {
   const { data, error } = await supabase
@@ -120,5 +131,3 @@ export const likeTemplate = async (id: string): Promise<{ data: any; error: any 
     
   return { data, error };
 };
-
-export default supabase;

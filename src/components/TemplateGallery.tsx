@@ -36,6 +36,7 @@ import {
 } from '@/services/supabaseClient';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
+import { parseTemplateData } from '@/utils/svgExporter';
 
 interface TemplateGalleryProps {
   open: boolean;
@@ -91,12 +92,35 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
   };
   
   const handleSelectTemplate = (template: Template) => {
-    onSelectTemplate(template.design_data);
-    onClose();
-    toast({
-      title: 'Template Loaded',
-      description: `"${template.name}" has been loaded to the canvas`
-    });
+    try {
+      // Parse and normalize the template data before using it
+      const normalizedData = parseTemplateData(template.design_data);
+      
+      if (!normalizedData) {
+        toast({
+          title: 'Error',
+          description: 'Unable to load template - invalid format',
+          variant: 'destructive'
+        });
+        return;
+      }
+      
+      // Pass the normalized data to the parent component
+      onSelectTemplate(JSON.stringify(normalizedData));
+      onClose();
+      
+      toast({
+        title: 'Template Loaded',
+        description: `"${template.name}" has been loaded to the canvas`
+      });
+    } catch (error) {
+      console.error('Error loading template:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to load template data',
+        variant: 'destructive'
+      });
+    }
   };
   
   const handleDeleteTemplate = async () => {
