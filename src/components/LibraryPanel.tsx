@@ -47,18 +47,42 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign }) 
         throw new Error(response.error.message);
       }
       
-      // Validate each design to check if it's SVG
+      // Validate each design and check if it's SVG
       const processedDesigns = response.data?.map(design => {
-        if (design.shapes_data && design.shapes_data.trim().startsWith('<svg')) {
-          // Just mark it as SVG for UI indication
+        try {
+          // Check if it's an SVG by looking for SVG tag
+          if (design.shapes_data && typeof design.shapes_data === 'string' && 
+              design.shapes_data.trim().startsWith('<svg')) {
+            console.log(`Design ${design.name} is an SVG`);
+            return {
+              ...design,
+              isSvg: true
+            };
+          }
+          
+          // Try to parse as JSON to validate
+          JSON.parse(design.shapes_data);
+          return design;
+        } catch (parseError) {
+          console.warn(`Error parsing design data for ${design.name}:`, parseError);
+          // If JSON parse fails, check if it might be SVG despite not starting with <svg>
+          if (design.shapes_data && typeof design.shapes_data === 'string' && 
+              design.shapes_data.includes('<svg')) {
+            console.log(`Design ${design.name} contains SVG tag but in an unusual format`);
+            return {
+              ...design,
+              isSvg: true
+            };
+          }
+          // Still include the design even if it has parsing issues
           return {
             ...design,
-            isSvg: true
+            hasParseError: true
           };
         }
-        return design;
       }) || [];
       
+      console.log(`Loaded ${processedDesigns.length} designs, including ${processedDesigns.filter(d => (d as any).isSvg).length} SVGs`);
       setDesigns(processedDesigns);
     } catch (err) {
       setError('Failed to load designs. Please try again.');
@@ -73,13 +97,40 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign }) 
   };
 
   const handleSelectDesign = (design: SavedDesign) => {
+    // Add diagnostic log
+    console.log(`Selected design: ${design.name}, isSVG: ${(design as any).isSvg}, data length: ${design.shapes_data?.length || 0}`);
+    if ((design as any).hasParseError) {
+      console.warn(`Note: Design ${design.name} had parsing errors`);
+    }
+    
     onSelectDesign(design);
     onClose();
   };
 
   // Check if a string looks like SVG
   const isSvgContent = (content: string): boolean => {
-    return content.trim().startsWith('<svg');
+    if (!content || typeof content !== 'string') return false;
+    return content.trim().startsWith('<svg') || content.includes('<svg ');
+  };
+
+  // Render SVG preview safely
+  const renderSvgPreview = (svgContent: string) => {
+    try {
+      // Create a safe version for display
+      const cleanSvg = svgContent
+        .replace(/script/gi, 'removed-script') // Remove potential script tags
+        .replace(/on\w+=/gi, 'removed-event='); // Remove event handlers
+        
+      return (
+        <div 
+          className="w-full h-full flex items-center justify-center"
+          dangerouslySetInnerHTML={{ __html: cleanSvg }}
+        />
+      );
+    } catch (error) {
+      console.error("Error rendering SVG preview:", error);
+      return <div className="text-5xl text-blue-300">SVG</div>;
+    }
   };
 
   return (
@@ -140,9 +191,13 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign }) 
                   className="p-4 hover:shadow-md transition-shadow cursor-pointer"
                   onClick={() => handleSelectDesign(design)}
                 >
-                  <div className="aspect-square mb-2 border rounded flex items-center justify-center bg-gray-50">
+                  <div className="aspect-square mb-2 border rounded flex items-center justify-center bg-gray-50 overflow-hidden">
                     {(design as any).isSvg ? (
-                      <div className="text-5xl text-blue-300">SVG</div>
+                      isSvgContent(design.shapes_data) ? 
+                        renderSvgPreview(design.shapes_data) : 
+                        <div className="text-5xl text-blue-300">SVG</div>
+                    ) : (design as any).hasParseError ? (
+                      <div className="text-5xl text-red-300">!</div>
                     ) : (
                       <div className="text-5xl text-gray-300">⌘</div>
                     )}
@@ -150,7 +205,8 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign }) 
                   <h3 className="font-medium text-sm truncate">{design.name}</h3>
                   <p className="text-xs text-gray-500 truncate">
                     {design.category}
-                    {isSvgContent(design.shapes_data) && " (SVG)"}
+                    {(design as any).isSvg && " (SVG)"}
+                    {(design as any).hasParseError && " (Data Error)"}
                   </p>
                 </Card>
               ))}

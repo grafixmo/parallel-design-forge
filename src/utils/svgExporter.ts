@@ -1,4 +1,3 @@
-
 import { 
   ControlPoint, 
   CurveConfig, 
@@ -219,22 +218,37 @@ export const importSVGFromString = (svgString: string): BezierObject[] => {
   try {
     console.log('Starting SVG import process...');
     
+    // Sanitize and validate SVG input
+    if (!svgString || typeof svgString !== 'string') {
+      throw new Error('Invalid SVG input: empty or not a string');
+    }
+    
+    // Trim and normalize SVG string
+    const normalizedSvg = svgString.trim().replace(/\s+/g, ' ');
+    
+    // Check if it's actually an SVG
+    if (!normalizedSvg.includes('<svg')) {
+      throw new Error('Input does not contain SVG markup');
+    }
+    
     // Parse the SVG string into a DOM document
     const parser = new DOMParser();
-    const svgDoc = parser.parseFromString(svgString, 'image/svg+xml');
+    const svgDoc = parser.parseFromString(normalizedSvg, 'image/svg+xml');
     
     // Check for parsing errors
     const parserError = svgDoc.querySelector('parsererror');
     if (parserError) {
-      throw new Error('Invalid SVG format');
+      console.error('SVG parsing error:', parserError.textContent);
+      throw new Error('Invalid SVG format: parsing error');
     }
     
     // Get the SVG root element
     const svgRoot = svgDoc.documentElement;
     if (!svgRoot || svgRoot.tagName !== 'svg') {
-      throw new Error('No SVG element found');
+      throw new Error('No SVG element found in the provided content');
     }
     
+    console.log('SVG parsed successfully, searching for path elements...');
     const importedObjects: BezierObject[] = [];
     
     // Check if this is a Qordatta-generated SVG with our custom metadata
@@ -296,20 +310,8 @@ export const importSVGFromString = (svgString: string): BezierObject[] => {
             
             // Validate points data
             if (points.length > 0) {
-              // Ensure all points have valid IDs
-              points = points.map(point => ({
-                ...point,
-                id: point.id || generateId(),
-                // Ensure handle positions exist
-                handleIn: point.handleIn || {
-                  x: point.x - 50,
-                  y: point.y
-                },
-                handleOut: point.handleOut || {
-                  x: point.x + 50,
-                  y: point.y
-                }
-              }));
+              // Ensure all points have valid IDs and handle positions
+              points = points.map(point => validateAndRepairPoint(point));
             }
           } catch (e) {
             console.warn('Error parsing Qordatta points metadata:', e);
@@ -368,7 +370,9 @@ export const importSVGFromString = (svgString: string): BezierObject[] => {
     
     // If no objects were created, try a simpler approach
     if (importedObjects.length === 0) {
-      console.log('No objects created from groups, trying simpler approach');
+      console.log('No objects created from groups, trying simpler approach with direct path extraction');
+      
+      // First, attempt to find all paths
       const paths = svgDoc.querySelectorAll('path');
       if (paths.length > 0) {
         // Create one object with all paths
@@ -378,33 +382,75 @@ export const importSVGFromString = (svgString: string): BezierObject[] => {
           importedObjects.push(allPathsObject);
           console.log('Created single object from all paths');
         } else {
-          throw new Error('Could not process SVG paths');
+          // If that failed, try a more aggressive approach by extracting path data directly
+          console.log('Attempting direct path data extraction as fallback');
+          const pathElements = Array.from(paths);
+          const pathData = pathElements[0]?.getAttribute('d');
+          
+          if (pathData) {
+            console.log('Found path data, generating points directly');
+            const points = approximateControlPointsFromPath(pathData);
+            
+            if (points.length >= 2) {
+              const fallbackObject: BezierObject = {
+                id: generateId(),
+                name: 'Extracted SVG Path',
+                points: points,
+                curveConfig: defaultCurveConfig(),
+                transform: defaultTransform(),
+                isSelected: false
+              };
+              
+              importedObjects.push(fallbackObject);
+              console.log('Created object with directly extracted points');
+            } else {
+              throw new Error('Could not generate sufficient control points from SVG path data');
+            }
+          } else {
+            throw new Error('No path data found in SVG paths');
+          }
         }
       } else {
-        throw new Error('No path elements found in SVG');
+        // Last resort: try to find any element with a shape
+        console.log('No path elements found, looking for other shape elements');
+        const shapes = svgDoc.querySelectorAll('rect, circle, ellipse, polygon, polyline');
+        
+        if (shapes.length > 0) {
+          console.log(`Found ${shapes.length} shape elements, creating simplified representation`);
+          
+          // Create a very simple object with 4 corner points
+          const width = parseFloat(svgRoot.getAttribute('width') || '100');
+          const height = parseFloat(svgRoot.getAttribute('height') || '100');
+          
+          const simplePoints: ControlPoint[] = [
+            createControlPoint(0, 0),
+            createControlPoint(width, 0),
+            createControlPoint(width, height),
+            createControlPoint(0, height)
+          ];
+          
+          const simpleObject: BezierObject = {
+            id: generateId(),
+            name: 'SVG Shape Outline',
+            points: simplePoints,
+            curveConfig: defaultCurveConfig(),
+            transform: defaultTransform(),
+            isSelected: false
+          };
+          
+          importedObjects.push(simpleObject);
+        } else {
+          throw new Error('No drawable elements found in SVG');
+        }
       }
     }
     
     // Validate and sanitize all objects before returning
     const validatedObjects = importedObjects.map(obj => {
       // Ensure all points have valid properties
-      const validPoints = obj.points.map(point => {
-        return {
-          ...point,
-          x: isNaN(point.x) ? 0 : point.x,
-          y: isNaN(point.y) ? 0 : point.y,
-          id: point.id || generateId(),
-          handleIn: {
-            x: isNaN(point.handleIn?.x) ? point.x - 50 : point.handleIn.x,
-            y: isNaN(point.handleIn?.y) ? point.y : point.handleIn.y
-          },
-          handleOut: {
-            x: isNaN(point.handleOut?.x) ? point.x + 50 : point.handleOut.x,
-            y: isNaN(point.handleOut?.y) ? point.y : point.handleOut.y
-          }
-        };
-      });
+      const validPoints = obj.points.map(point => validateAndRepairPoint(point));
       
+      // Create a cleaned-up object
       return {
         ...obj,
         points: validPoints,
@@ -414,13 +460,50 @@ export const importSVGFromString = (svgString: string): BezierObject[] => {
       };
     });
     
-    console.log(`Imported ${validatedObjects.length} objects with valid points`);
+    console.log(`Completed import: ${validatedObjects.length} objects with ${validatedObjects.reduce((sum, obj) => sum + obj.points.length, 0)} total points`);
     
     return validatedObjects;
   } catch (error) {
     console.error('Error importing SVG:', error);
     throw new Error(`Failed to import SVG: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
+};
+
+/**
+ * Validates and repairs a control point to ensure all properties are valid
+ */
+const validateAndRepairPoint = (point: any): ControlPoint => {
+  if (!point) {
+    // Create default point if null
+    return createControlPoint(0, 0);
+  }
+  
+  // Ensure x and y are valid numbers
+  const x = typeof point.x === 'number' && !isNaN(point.x) ? point.x : 0;
+  const y = typeof point.y === 'number' && !isNaN(point.y) ? point.y : 0;
+  
+  // Validate handle in
+  let handleIn: Point = { x: x - 50, y: y };
+  if (point.handleIn) {
+    if (typeof point.handleIn.x === 'number' && !isNaN(point.handleIn.x) &&
+        typeof point.handleIn.y === 'number' && !isNaN(point.handleIn.y)) {
+      handleIn = point.handleIn;
+    }
+  }
+  
+  // Validate handle out
+  let handleOut: Point = { x: x + 50, y: y };
+  if (point.handleOut) {
+    if (typeof point.handleOut.x === 'number' && !isNaN(point.handleOut.x) &&
+        typeof point.handleOut.y === 'number' && !isNaN(point.handleOut.y)) {
+      handleOut = point.handleOut;
+    }
+  }
+  
+  // Ensure point has an ID
+  const id = point.id || generateId();
+  
+  return { x, y, handleIn, handleOut, id };
 };
 
 /**
@@ -505,9 +588,9 @@ const approximateControlPointsFromPath = (pathData: string): ControlPoint[] => {
   
   // This is a very simplified parser - a real implementation would be more robust
   try {
-    console.log('Parsing path data...');
+    console.log('Parsing path data:', pathData.substring(0, 100) + (pathData.length > 100 ? '...' : ''));
     
-    // Remove all letters and replace them with spaces
+    // Remove all letters and replace them with spaces for tokenization
     const cleaned = pathData.replace(/([A-Za-z])/g, ' $1 ').trim();
     const tokens = cleaned.split(/\s+/);
     
@@ -522,19 +605,24 @@ const approximateControlPointsFromPath = (pathData: string): ControlPoint[] => {
     while (i < tokens.length) {
       const token = tokens[i++];
       
+      if (!token) continue;
+      
       if (token === 'M' || token === 'm') {
         // Move to command
         if (i + 1 >= tokens.length) break;
         
         try {
-          currentX = parseFloat(tokens[i++]);
-          currentY = parseFloat(tokens[i++]);
+          const x = parseFloat(tokens[i++] || '0');
+          const y = parseFloat(tokens[i++] || '0');
           
           // Check for NaN values
-          if (isNaN(currentX) || isNaN(currentY)) {
+          if (isNaN(x) || isNaN(y)) {
             console.log('Invalid M command coordinates, skipping');
             continue;
           }
+          
+          currentX = token === 'm' ? currentX + x : x;
+          currentY = token === 'm' ? currentY + y : y;
           
           // Remember the first point for Z command
           if (points.length === 0) {
@@ -542,58 +630,152 @@ const approximateControlPointsFromPath = (pathData: string): ControlPoint[] => {
             firstY = currentY;
           }
           
-          // Add the point
-          points.push({
-            x: currentX,
-            y: currentY,
-            handleIn: { x: currentX - 50, y: currentY },
-            handleOut: { x: currentX + 50, y: currentY },
-            id: generateId()
-          });
+          // Add the point with default handles
+          points.push(createControlPoint(currentX, currentY));
           
           console.log(`Added M point at ${currentX},${currentY}`);
         } catch (e) {
           console.log('Error processing M command:', e);
+        }
+      } else if (token === 'L' || token === 'l') {
+        // Line to command
+        if (i + 1 >= tokens.length) break;
+        
+        try {
+          const x = parseFloat(tokens[i++] || '0');
+          const y = parseFloat(tokens[i++] || '0');
+          
+          // Check for NaN values
+          if (isNaN(x) || isNaN(y)) {
+            console.log('Invalid L command coordinates, skipping');
+            continue;
+          }
+          
+          currentX = token === 'l' ? currentX + x : x;
+          currentY = token === 'l' ? currentY + y : y;
+          
+          // Add the point with calculated handles
+          if (points.length > 0) {
+            const prevPoint = points[points.length - 1];
+            points.push(createControlPoint(currentX, currentY, prevPoint));
+          } else {
+            points.push(createControlPoint(currentX, currentY));
+          }
+          
+          console.log(`Added L point at ${currentX},${currentY}`);
+        } catch (e) {
+          console.log('Error processing L command:', e);
         }
       } else if (token === 'C' || token === 'c') {
         // Cubic bezier curve command
         if (i + 5 >= tokens.length) break;
         
         try {
-          const x1 = parseFloat(tokens[i++]);
-          const y1 = parseFloat(tokens[i++]);
-          const x2 = parseFloat(tokens[i++]);
-          const y2 = parseFloat(tokens[i++]);
-          const x = parseFloat(tokens[i++]);
-          const y = parseFloat(tokens[i++]);
+          const x1 = parseFloat(tokens[i++] || '0');
+          const y1 = parseFloat(tokens[i++] || '0');
+          const x2 = parseFloat(tokens[i++] || '0');
+          const y2 = parseFloat(tokens[i++] || '0');
+          const x = parseFloat(tokens[i++] || '0');
+          const y = parseFloat(tokens[i++] || '0');
           
           // Check for NaN values
-          if (isNaN(x1) || isNaN(y1) || isNaN(x2) || isNaN(y2) || isNaN(x) || isNaN(y)) {
+          if ([x1, y1, x2, y2, x, y].some(v => isNaN(v))) {
             console.log('Invalid C command coordinates, skipping');
             continue;
           }
           
+          // Convert to absolute coordinates if relative
+          const absX1 = token === 'c' ? currentX + x1 : x1;
+          const absY1 = token === 'c' ? currentY + y1 : y1;
+          const absX2 = token === 'c' ? currentX + x2 : x2;
+          const absY2 = token === 'c' ? currentY + y2 : y2;
+          const absX = token === 'c' ? currentX + x : x;
+          const absY = token === 'c' ? currentY + y : y;
+          
           // Update last point's handle out
           if (points.length > 0) {
             const lastPoint = points[points.length - 1];
-            lastPoint.handleOut = { x: x1, y: y1 };
+            lastPoint.handleOut = { x: absX1, y: absY1 };
+          } else if (absX1 !== 0 || absY1 !== 0) {
+            // If there's no previous point but handle is not at origin, create an artificial first point
+            points.push({
+              x: currentX,
+              y: currentY,
+              handleIn: { x: currentX - 50, y: currentY },
+              handleOut: { x: absX1, y: absY1 },
+              id: generateId()
+            });
+          }
+          
+          // Add new point with handle in from the curve
+          points.push({
+            x: absX,
+            y: absY,
+            handleIn: { x: absX2, y: absY2 },
+            handleOut: { x: absX + (absX - absX2), y: absY + (absY - absY2) }, // Approximate handle out
+            id: generateId()
+          });
+          
+          console.log(`Added C point at ${absX},${absY} with handles`);
+          
+          currentX = absX;
+          currentY = absY;
+        } catch (e) {
+          console.log('Error processing C command:', e);
+        }
+      } else if (token === 'S' || token === 's') {
+        // Smooth cubic bezier curve command
+        if (i + 3 >= tokens.length) break;
+        
+        try {
+          const x2 = parseFloat(tokens[i++] || '0');
+          const y2 = parseFloat(tokens[i++] || '0');
+          const x = parseFloat(tokens[i++] || '0');
+          const y = parseFloat(tokens[i++] || '0');
+          
+          // Check for NaN values
+          if ([x2, y2, x, y].some(v => isNaN(v))) {
+            console.log('Invalid S command coordinates, skipping');
+            continue;
+          }
+          
+          // Convert to absolute coordinates if relative
+          const absX2 = token === 's' ? currentX + x2 : x2;
+          const absY2 = token === 's' ? currentY + y2 : y2;
+          const absX = token === 's' ? currentX + x : x;
+          const absY = token === 's' ? currentY + y : y;
+          
+          // Calculate the reflection of the previous control point
+          let x1 = currentX;
+          let y1 = currentY;
+          
+          if (points.length > 0) {
+            const prevPoint = points[points.length - 1];
+            if (prevPoint.handleOut) {
+              // Reflect the handle
+              x1 = currentX + (currentX - prevPoint.handleOut.x);
+              y1 = currentY + (currentY - prevPoint.handleOut.y);
+            }
+            
+            // Update previous point's handle out
+            prevPoint.handleOut = { x: x1, y: y1 };
           }
           
           // Add new point
           points.push({
-            x,
-            y,
-            handleIn: { x: x2, y: y2 },
-            handleOut: { x: x + (x - x2), y: y + (y - y2) }, // Approximate handle out
+            x: absX,
+            y: absY,
+            handleIn: { x: absX2, y: absY2 },
+            handleOut: { x: absX + (absX - absX2), y: absY + (absY - absY2) },
             id: generateId()
           });
           
-          console.log(`Added C point at ${x},${y} with handles`);
+          console.log(`Added S point at ${absX},${absY}`);
           
-          currentX = x;
-          currentY = y;
+          currentX = absX;
+          currentY = absY;
         } catch (e) {
-          console.log('Error processing C command:', e);
+          console.log('Error processing S command:', e);
         }
       } else if (token === 'Z' || token === 'z') {
         // Close path command - connect back to first point
@@ -601,19 +783,34 @@ const approximateControlPointsFromPath = (pathData: string): ControlPoint[] => {
           if (points.length > 0 && (currentX !== firstX || currentY !== firstY)) {
             console.log(`Adding Z point to close path back to ${firstX},${firstY}`);
             
-            points.push({
-              x: firstX,
-              y: firstY,
-              handleIn: { x: firstX - 50, y: firstY },
-              handleOut: { x: firstX + 50, y: firstY },
-              id: generateId()
-            });
+            // If we already have points, use the last point to determine handle positions for the closing point
+            if (points.length > 1) {
+              const lastPoint = points[points.length - 1];
+              const firstPoint = points[0];
+              
+              // Create a new point that closes back to the first point
+              const closePoint = createControlPoint(firstX, firstY, lastPoint);
+              
+              // Update the first point's handle in to match the closure
+              firstPoint.handleIn = { 
+                x: firstX - (closePoint.handleOut.x - firstX),
+                y: firstY - (closePoint.handleOut.y - firstY)
+              };
+              
+              points.push(closePoint);
+            } else {
+              // Just add a simple point to close
+              points.push(createControlPoint(firstX, firstY));
+            }
+            
+            currentX = firstX;
+            currentY = firstY;
           }
         } catch (e) {
           console.log('Error processing Z command:', e);
         }
       } else {
-        // Skip other commands (for simplicity)
+        // Skip other commands for now (A, Q, T, H, V)
         console.log(`Skipping unsupported command: ${token}`);
         i++;
       }
@@ -623,342 +820,40 @@ const approximateControlPointsFromPath = (pathData: string): ControlPoint[] => {
     
     // If we have at least 2 points, make sure handles are properly set
     if (points.length >= 2) {
-      // For the first point, set handle out in direction of second point
-      const p0 = points[0];
-      const p1 = points[1];
-      const dx = p1.x - p0.x;
-      const dy = p1.y - p0.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      
-      if (dist > 0) {
-        const handleLen = Math.min(50, dist / 3);
-        p0.handleOut = {
-          x: p0.x + (dx / dist) * handleLen,
-          y: p0.y + (dy / dist) * handleLen
-        };
-        
-        p1.handleIn = {
-          x: p1.x - (dx / dist) * handleLen,
-          y: p1.y - (dy / dist) * handleLen
-        };
-      }
-      
-      // For the last point, set handle in direction of second-to-last point
-      if (points.length > 2) {
-        const pLast = points[points.length - 1];
-        const pPrev = points[points.length - 2];
-        const dx = pLast.x - pPrev.x;
-        const dy = pLast.y - pPrev.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        
-        if (dist > 0) {
-          const handleLen = Math.min(50, dist / 3);
-          pLast.handleIn = {
-            x: pLast.x - (dx / dist) * handleLen,
-            y: pLast.y - (dy / dist) * handleLen
-          };
-          
-          pPrev.handleOut = {
-            x: pPrev.x + (dx / dist) * handleLen,
-            y: pPrev.y + (dy / dist) * handleLen
-          };
-        }
-      }
+      // Improve handle positions for smoother curves
+      adjustHandlesForSmoothCurves(points);
     }
     
     return points;
   } catch (error) {
     console.error('Error parsing SVG path:', error);
-    return [];
+    // Return with at least 2 points (min required for a path)
+    if (points.length < 2) {
+      console.log('Error resulted in too few points, adding placeholder points');
+      return [
+        createControlPoint(0, 0),
+        createControlPoint(100, 100)
+      ];
+    }
+    return points;
   }
 };
 
 /**
- * Parse transform attribute from SVG
- * This is a simplified implementation for basic transforms
+ * Adjust handle positions for smoother curves
  */
-const parseTransform = (transform: string): Partial<TransformSettings> | null => {
-  if (!transform) return null;
+const adjustHandlesForSmoothCurves = (points: ControlPoint[]): void => {
+  if (points.length < 2) return;
   
-  const result: Partial<TransformSettings> = {
-    rotation: 0,
-    scaleX: 1,
-    scaleY: 1
-  };
-  
-  // Extract rotation
-  const rotateMatch = transform.match(/rotate\s*\(\s*([^,)]+)/);
-  if (rotateMatch && rotateMatch[1]) {
-    result.rotation = parseFloat(rotateMatch[1]) || 0;
-  }
-  
-  // Extract scale
-  const scaleMatch = transform.match(/scale\s*\(\s*([^,)]+)(?:,\s*([^)]+))?/);
-  if (scaleMatch) {
-    if (scaleMatch[1]) {
-      result.scaleX = parseFloat(scaleMatch[1]) || 1;
-    }
-    if (scaleMatch[2]) {
-      result.scaleY = parseFloat(scaleMatch[2]) || 1;
-    } else if (scaleMatch[1]) {
-      // If only one value is provided, use it for both x and y
-      result.scaleY = result.scaleX;
-    }
-  }
-  
-  return result;
-};
-
-/**
- * Normalizes design data to ensure a consistent format
- * Handles both {"objects":[...]} and direct [...] formats
- */
-export const normalizeDesignData = (designData: string): BezierObject[] => {
-  try {
-    // Parse the JSON
-    const parsedData = JSON.parse(designData);
+  // For each point (except first and last), adjust handles based on neighboring points
+  for (let i = 1; i < points.length - 1; i++) {
+    const prev = points[i - 1];
+    const curr = points[i];
+    const next = points[i + 1];
     
-    // Handle the case where data is already in array format [{"id":...}]
-    if (Array.isArray(parsedData)) {
-      return parsedData.map(obj => normalizeObject(obj));
-    }
+    // Calculate direction vectors
+    const toPrev = { x: prev.x - curr.x, y: prev.y - curr.y };
+    const toNext = { x: next.x - curr.x, y: next.y - curr.y };
     
-    // Handle the case where data is in {"objects":[...]} format
-    if (parsedData && parsedData.objects && Array.isArray(parsedData.objects)) {
-      return parsedData.objects.map(obj => normalizeObject(obj));
-    }
-    
-    // If we can't determine the format, return empty array
-    console.error('Unknown design data format:', designData);
-    return [];
-  } catch (error) {
-    console.error('Error parsing design data:', error);
-    return [];
-  }
-};
-
-/**
- * Normalizes a single bezier object to ensure all required properties
- */
-const normalizeObject = (obj: any): BezierObject => {
-  if (!obj) return createEmptyObject();
-  
-  // Ensure we have points
-  if (!obj.points || !Array.isArray(obj.points) || obj.points.length === 0) {
-    obj.points = [];
-  }
-  
-  // Ensure each point has the correct structure
-  obj.points = obj.points.map((point: any) => {
-    if (!point) return createEmptyPoint(0, 0);
-    
-    // Ensure point has x,y coordinates
-    if (typeof point.x !== 'number' || typeof point.y !== 'number') {
-      point.x = point.x || 0;
-      point.y = point.y || 0;
-    }
-    
-    // Ensure point has handles
-    if (!point.handleIn || typeof point.handleIn !== 'object') {
-      point.handleIn = { x: point.x - 50, y: point.y };
-    }
-    
-    if (!point.handleOut || typeof point.handleOut !== 'object') {
-      point.handleOut = { x: point.x + 50, y: point.y };
-    }
-    
-    // Ensure handle properties
-    if (typeof point.handleIn.x !== 'number') point.handleIn.x = point.x - 50;
-    if (typeof point.handleIn.y !== 'number') point.handleIn.y = point.y;
-    if (typeof point.handleOut.x !== 'number') point.handleOut.x = point.x + 50;
-    if (typeof point.handleOut.y !== 'number') point.handleOut.y = point.y;
-    
-    // Ensure point has an ID
-    if (!point.id) point.id = generatePointId();
-    
-    return point;
-  });
-  
-  // Ensure object has an ID
-  if (!obj.id) obj.id = generateObjectId();
-  
-  // Ensure object has a name
-  if (!obj.name) obj.name = `Object ${obj.id.slice(0, 6)}`;
-  
-  // Ensure object has transform settings
-  if (!obj.transform) obj.transform = defaultTransform();
-  
-  // Ensure object has curve configuration
-  if (!obj.curveConfig) obj.curveConfig = defaultCurveConfig();
-  
-  return obj;
-};
-
-/**
- * Creates an empty point at the specified coordinates
- */
-const createEmptyPoint = (x: number, y: number): ControlPoint => {
-  return {
-    x,
-    y,
-    handleIn: { x: x - 50, y },
-    handleOut: { x: x + 50, y },
-    id: generatePointId()
-  };
-};
-
-/**
- * Creates an empty bezier object
- */
-const createEmptyObject = (): BezierObject => {
-  return {
-    id: generateObjectId(),
-    name: 'New Object',
-    points: [],
-    transform: defaultTransform(),
-    curveConfig: defaultCurveConfig(),
-    isSelected: false,
-    position: { x: 0, y: 0 }
-  };
-};
-
-/**
- * Generates a random ID for a point
- */
-const generatePointId = (): string => {
-  return `pt_${Math.random().toString(36).substring(2, 11)}`;
-};
-
-/**
- * Generates a random ID for an object
- */
-const generateObjectId = (): string => {
-  return `obj_${Math.random().toString(36).substring(2, 11)}`;
-};
-
-/**
- * Generates a template data structure for saving
- */
-export const createTemplateData = (
-  objects: BezierObject[],
-  name: string,
-  description: string = '',
-  thumbnail: string = '',
-  canvasWidth: number = 800,
-  canvasHeight: number = 600
-) => {
-  // Ensure objects have valid structure
-  const normalizedObjects = objects.map(obj => normalizeObject(obj));
-  
-  // Create template with proper format
-  return {
-    version: "1.0",
-    name: name || 'Untitled Design',
-    description,
-    thumbnail,
-    canvasWidth,
-    canvasHeight,
-    createdAt: new Date().toISOString(),
-    objects: normalizedObjects
-  };
-};
-
-/**
- * Safely parses template data from various formats
- */
-export const parseTemplateData = (templateString: string) => {
-  try {
-    // Try to parse the template string
-    const parsed = JSON.parse(templateString);
-    
-    // If it's in the correct template format
-    if (parsed && parsed.objects) {
-      return {
-        ...parsed,
-        objects: normalizeDesignData(JSON.stringify(parsed.objects))
-      };
-    }
-    
-    // If it's just an array of objects
-    if (Array.isArray(parsed)) {
-      return {
-        version: "1.0",
-        name: 'Imported Design',
-        description: '',
-        thumbnail: '',
-        canvasWidth: 800,
-        canvasHeight: 600,
-        createdAt: new Date().toISOString(),
-        objects: normalizeDesignData(templateString)
-      };
-    }
-    
-    // Unknown format
-    console.error('Unknown template format:', templateString);
-    return null;
-  } catch (error) {
-    console.error('Error parsing template data:', error);
-    return null;
-  }
-};
-
-/**
- * Generates a thumbnail from SVG content
- */
-export const generateThumbnail = async (
-  svgString: string, 
-  width: number = 200, 
-  height: number = 150
-): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    try {
-      const img = new Image();
-      const svg = new Blob([svgString], {type: 'image/svg+xml'});
-      const url = URL.createObjectURL(svg);
-      
-      img.onload = () => {
-        // Create a small canvas for the thumbnail
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          URL.revokeObjectURL(url);
-          reject(new Error("Could not get canvas context"));
-          return;
-        }
-        
-        // Draw white background
-        ctx.fillStyle = 'white';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        
-        // Calculate aspect ratio to fit the image
-        const scale = Math.min(
-          canvas.width / img.width,
-          canvas.height / img.height
-        );
-        
-        const x = (canvas.width - img.width * scale) / 2;
-        const y = (canvas.height - img.height * scale) / 2;
-        
-        // Draw the SVG on the canvas
-        ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
-        
-        // Convert to data URL
-        const dataUrl = canvas.toDataURL('image/png');
-        URL.revokeObjectURL(url);
-        resolve(dataUrl);
-      };
-      
-      img.onerror = () => {
-        URL.revokeObjectURL(url);
-        reject(new Error("Failed to load SVG for thumbnail"));
-      };
-      
-      img.src = url;
-    } catch (error) {
-      reject(new Error(`Error generating thumbnail: ${error}`));
-    }
-  });
-};
+    // Normalize vectors
+    const toPrevLength =
