@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { 
   ControlPoint, 
@@ -12,7 +13,7 @@ import BezierCanvas from '@/components/BezierCanvas';
 import Header from '@/components/Header';
 import LibraryPanel from '@/components/LibraryPanel';
 import { generateId } from '@/utils/bezierUtils';
-import { exportAsSVG, downloadSVG } from '@/utils/svgExporter';
+import { exportAsSVG, downloadSVG, importSVGFromString } from '@/utils/svgExporter';
 import { saveDesign, saveTemplate, Template } from '@/services/supabaseClient';
 import { useToast } from '@/hooks/use-toast';
 import { useBezierObjects } from '@/hooks/useBezierObjects';
@@ -40,7 +41,8 @@ const Index = () => {
     createObject,
     selectObject,
     deselectAllObjects,
-    updateObjects, // This will be used instead of updateObjectPoints
+    updateObjects,
+    setAllObjects,
     updateObjectCurveConfig,
     updateObjectTransform,
     deleteObject,
@@ -135,8 +137,7 @@ const Index = () => {
   
   // Handler for updating all objects
   const handleObjectsChange = (updatedObjects: BezierObject[]) => {
-    // This is a simplified version - in a real app you'd need to merge with existing objects
-    updateObjects(updatedObjects); // Use updateObjects instead of updateObjectPoints
+    updateObjects(updatedObjects);
   };
   
   // Export design as SVG
@@ -152,7 +153,7 @@ const Index = () => {
     
     // Generate SVG content
     const svgContent = exportAsSVG(
-      objects, // Pass the whole objects array instead of flatMap
+      objects,
       canvasWidth,
       canvasHeight
     );
@@ -163,6 +164,39 @@ const Index = () => {
       title: 'Design Exported',
       description: 'Your design has been exported as an SVG file.'
     });
+  };
+
+  // Import SVG from a string
+  const handleImportSVG = (svgString: string) => {
+    try {
+      // Import SVG and convert to BezierObjects
+      const importedObjects = importSVGFromString(svgString);
+      
+      if (importedObjects.length === 0) {
+        throw new Error('No valid objects found in the SVG file');
+      }
+      
+      // Clear existing objects
+      objects.forEach(obj => deleteObject(obj.id));
+      
+      // Add all imported objects to the canvas
+      setAllObjects(importedObjects);
+      
+      // Save the new state
+      saveCurrentState();
+      
+      toast({
+        title: 'SVG Imported',
+        description: `Imported ${importedObjects.length} object(s) from SVG file.`
+      });
+    } catch (error) {
+      console.error('Error importing SVG:', error);
+      toast({
+        title: 'Import Failed',
+        description: error instanceof Error ? error.message : 'Failed to import SVG file',
+        variant: 'destructive'
+      });
+    }
   };
   
   // Save design to Supabase
@@ -339,6 +373,7 @@ const Index = () => {
         onSaveDesign={handleSaveDesign}
         onLoadDesigns={() => setShowLibrary(true)}
         onExportSVG={handleExportSVG}
+        onImportSVG={handleImportSVG}
         onLoadTemplate={handleLoadTemplate}
         isDrawingMode={isDrawingMode}
         onToggleDrawingMode={handleToggleDrawingMode}

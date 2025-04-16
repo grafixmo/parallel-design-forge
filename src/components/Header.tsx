@@ -1,7 +1,7 @@
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { PenLine, Trash2, Upload, Save, Database, MousePointer, Image } from 'lucide-react';
+import { PenLine, Trash2, Upload, Save, Database, MousePointer, Image, ArrowDownToLine, ArrowUpFromLine } from 'lucide-react';
 import {
   Tooltip,
   TooltipContent,
@@ -22,13 +22,20 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
 import TemplateGallery from './TemplateGallery';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface HeaderProps {
   onClearCanvas: () => void;
   onSaveDesign: (name: string, category: string) => void;
   onLoadDesigns: () => void;
   onExportSVG: () => void;
-  onLoadTemplate?: (templateData: string) => void; // New prop for loading templates
+  onImportSVG?: (data: string) => void; // New prop for importing SVG
+  onLoadTemplate?: (templateData: string) => void;
   isDrawingMode?: boolean;
   onToggleDrawingMode?: () => void;
 }
@@ -38,6 +45,7 @@ const Header: React.FC<HeaderProps> = ({
   onSaveDesign,
   onLoadDesigns,
   onExportSVG,
+  onImportSVG,
   onLoadTemplate,
   isDrawingMode = true,
   onToggleDrawingMode
@@ -46,6 +54,7 @@ const Header: React.FC<HeaderProps> = ({
   const [designCategory, setDesignCategory] = useState('Collares');
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [galleryOpen, setGalleryOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   const handleSaveClick = () => {
     setSaveDialogOpen(true);
@@ -61,6 +70,39 @@ const Header: React.FC<HeaderProps> = ({
   const handleSelectTemplate = (templateData: string) => {
     if (onLoadTemplate) {
       onLoadTemplate(templateData);
+    }
+  };
+
+  const handleImportClick = () => {
+    // Trigger the hidden file input
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    }
+  };
+
+  const handleFileInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const content = e.target?.result as string;
+      if (content && onImportSVG) {
+        onImportSVG(content);
+      }
+    };
+    reader.onerror = () => {
+      toast({
+        title: 'Import Failed',
+        description: 'Failed to read the SVG file',
+        variant: 'destructive'
+      });
+    };
+    reader.readAsText(file);
+    
+    // Reset the file input value to allow importing the same file again
+    if (event.target) {
+      event.target.value = '';
     }
   };
   
@@ -199,23 +241,46 @@ const Header: React.FC<HeaderProps> = ({
           </DialogContent>
         </Dialog>
         
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button 
-                variant="default" 
-                onClick={onExportSVG}
-                className="bg-indigo-600 hover:bg-indigo-700"
-              >
-                <Database className="h-4 w-4 mr-2" />
-                Export SVG
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>Export design as SVG file</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        {/* Replace the Export SVG button with a dropdown menu */}
+        <DropdownMenu>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <DropdownMenuTrigger asChild>
+                  <Button 
+                    variant="default" 
+                    className="bg-indigo-600 hover:bg-indigo-700"
+                  >
+                    <Database className="h-4 w-4 mr-2" />
+                    Export/Import SVG
+                  </Button>
+                </DropdownMenuTrigger>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Export or import SVG files</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+          <DropdownMenuContent align="end" className="w-56 bg-white">
+            <DropdownMenuItem onClick={onExportSVG} className="cursor-pointer">
+              <ArrowDownToLine className="mr-2 h-4 w-4" />
+              <span>Export SVG to Desktop</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleImportClick} className="cursor-pointer">
+              <ArrowUpFromLine className="mr-2 h-4 w-4" />
+              <span>Import SVG from Desktop</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        
+        {/* Hidden file input for importing SVG */}
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={handleFileInputChange}
+          accept=".svg"
+          className="hidden"
+        />
       </div>
       
       {/* Gallery component */}
