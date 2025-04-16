@@ -351,8 +351,7 @@ export const importSVGFromString = (svgString: string): BezierObject[] => {
     const isQordattaFormat = svgDoc.querySelector('metadata qordatta\\:design') !== null;
     console.log('Is Qordatta format?', isQordattaFormat);
     
-    // Process all path groups (g elements)
-    const groups = svgDoc.querySelectorAll('g');
+    // Process all path groups (g elements)\n    const groups = svgDoc.querySelectorAll('g');
     console.log(`Found ${groups.length} groups in SVG`);
     
     if (groups.length === 0) {
@@ -684,16 +683,6 @@ const approximateControlPointsFromPath = (pathData: string): ControlPoint[] => {
     console.log('Parsing path data:', pathData.substring(0, 100) + (pathData.length > 100 ? '...' : ''));
     
     // Remove all letters and replace them with spaces for tokenization
-    const cleaned = pathData.replace(/([A-Za-z])/g, ' $1
-                                     const approximateControlPointsFromPath = (pathData: string): ControlPoint[] => {
-  // Simple path parser that extracts points from M, C, S, and Z commands
-  const points: ControlPoint[] = [];
-  
-  // This is a very simplified parser - a real implementation would be more robust
-  try {
-    console.log('Parsing path data:', pathData.substring(0, 100) + (pathData.length > 100 ? '...' : ''));
-    
-    // Remove all letters and replace them with spaces for tokenization
     const cleaned = pathData.replace(/([A-Za-z])/g, ' $1 ').trim();
     const tokens = cleaned.split(/\s+/);
     
@@ -868,61 +857,3 @@ const approximateControlPointsFromPath = (pathData: string): ControlPoint[] => {
           // Add new point
           points.push({
             x: absX,
-            y: absY,
-            handleIn: { x: absX2, y: absY2 },
-            handleOut: { x: absX + (absX - absX2), y: absY + (absY - absY2) },
-            id: generateId()
-          });
-          
-          console.log(`Added S point at ${absX},${absY}`);
-          
-          currentX = absX;
-          currentY = absY;
-        } catch (e) {
-          console.log('Error processing S command:', e);
-        }
-      }
-      else if (token === 'Z' || token === 'z') {
-        // Close path command - connect back to first point
-        try {
-          if (points.length > 0 && (currentX !== firstX || currentY !== firstY)) {
-            console.log(`Adding Z point to close path back to ${firstX},${firstY}`);
-            
-            // If we already have points, use the last point to determine handle positions for the closing point
-            if (points.length > 1) {
-              const lastPoint = points[points.length - 1];
-              const firstPoint = points[0];
-              
-              // Create a new point that closes back to the first point
-              const closePoint = createControlPoint(firstX, firstY, lastPoint);
-              
-              // Update the first point's handle in to match the closure
-              firstPoint.handleIn = { 
-  x: firstX - (closePoint.handleOut.x - firstX),
-  y: firstY - (closePoint.handleOut.y - firstY)
-};
-              
-              // Don't add another point since we're closing to the first one
-              // Just update the last point's handle out for smooth connection
-              lastPoint.handleOut = closePoint.handleOut;
-            } else {
-              // If we only have one point, create a closing point
-              points.push(createControlPoint(firstX, firstY));
-            }
-            
-            currentX = firstX;
-            currentY = firstY;
-          }
-        } catch (e) {
-          console.log('Error processing Z command:', e);
-        }
-      }
-    }
-    
-    return points;
-  } catch (error) {
-    console.error('Error parsing SVG path:', error);
-    return [];
-  }
-};
-    
