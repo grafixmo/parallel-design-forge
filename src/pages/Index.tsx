@@ -173,37 +173,68 @@ const Index = () => {
         throw new Error('Design data is empty');
       }
       
-      console.log(`Loading design: ${design.name}, data type: ${typeof design.shapes_data}, length: ${design.shapes_data.length}`);
-      console.log('Data preview:', design.shapes_data.substring(0, 100) + '...');
+      // Log information about the data type
+      const dataType = typeof design.shapes_data;
+      const dataLength = dataType === 'string' ? design.shapes_data.length : 1;
+      console.log(`Loading design: ${design.name}, data type: ${dataType}, length: ${dataLength}`);
       
-      // First, check if it's an SVG file
-      if (typeof design.shapes_data === 'string' && 
-          (design.shapes_data.trim().startsWith('<svg') || design.shapes_data.includes('<svg '))) {
-        console.log('Processing as SVG data');
-        handleImportSVG(design.shapes_data);
-        return;
+      // Create a variable to hold the string form of shapes_data
+      let shapesDataString: string;
+      // Create a variable to potentially hold parsed data from non-string sources
+      let preParseData: any = null;
+      
+      // Handle different data types
+      if (dataType === 'string') {
+        // If it's already a string, just use it
+        shapesDataString = design.shapes_data as string;
+        
+        // Show a preview for debugging
+        if (shapesDataString.length > 100) {
+          console.log('Data preview:', shapesDataString.substring(0, 100) + '...');
+        } else {
+          console.log('Data preview:', shapesDataString);
+        }
+        
+        // First, check if it's an SVG file
+        if (shapesDataString.trim().startsWith('<svg') || shapesDataString.includes('<svg ')) {
+          console.log('Processing as SVG data');
+          handleImportSVG(shapesDataString);
+          return;
+        }
+      } else if (dataType === 'object' && design.shapes_data !== null) {
+        // If it's already an object, keep a reference to the parsed version
+        preParseData = design.shapes_data;
+        
+        // And convert it to a string for operations that expect strings
+        shapesDataString = JSON.stringify(design.shapes_data);
+        console.log('Converted object data to string form for processing');
+      } else {
+        // Handle null, undefined, or unexpected types
+        throw new Error(`Unexpected shapes_data type: ${dataType}`);
       }
       
-      // Attempt to parse as JSON
-      let parsedData: DesignData | null = null;
+      // Attempt to parse as JSON if we don't already have a parsed object
+      let parsedData: DesignData | null = preParseData;
       let parseError = null;
       
-      try {
-        // Try parsing as JSON
-        parsedData = JSON.parse(design.shapes_data);
-        console.log('Successfully parsed JSON data');
-      } catch (error) {
-        parseError = error;
-        console.error('Error parsing design JSON:', error);
-        
-        // If it has SVG tags but didn't pass the initial check, try again as SVG
-        if (typeof design.shapes_data === 'string' && design.shapes_data.includes('<svg')) {
-          console.log('JSON parse failed but found SVG tags, trying as SVG');
-          try {
-            handleImportSVG(design.shapes_data);
-            return;
-          } catch (svgError) {
-            console.error('Secondary SVG import attempt also failed:', svgError);
+      if (!parsedData) {
+        try {
+          // Try parsing as JSON
+          parsedData = JSON.parse(shapesDataString);
+          console.log('Successfully parsed JSON data');
+        } catch (error) {
+          parseError = error;
+          console.error('Error parsing design JSON:', error);
+          
+          // If it has SVG tags but didn't pass the initial check, try again as SVG
+          if (shapesDataString.includes('<svg')) {
+            console.log('JSON parse failed but found SVG tags, trying as SVG');
+            try {
+              handleImportSVG(shapesDataString);
+              return;
+            } catch (svgError) {
+              console.error('Secondary SVG import attempt also failed:', svgError);
+            }
           }
         }
       }

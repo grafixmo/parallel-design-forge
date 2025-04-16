@@ -1,3 +1,4 @@
+
 import {
   ControlPoint,
   CurveConfig,
@@ -859,12 +860,12 @@ const approximateControlPointsFromPath = (pathData: string): ControlPoint[] => {
           // Add new point
           points.push({
             x: absX,
-            y: absY, // Añadir coordenada y
-            handleIn: { x: absX2, y: absY2 }, // Añadir handleIn
-             // Approximate handle out by reflecting the handleIn (absX2, absY2)
+            y: absY,
+            handleIn: { x: absX2, y: absY2 },
+            // Approximate handle out by reflecting the handleIn (absX2, absY2)
             handleOut: { x: absX + (absX - absX2), y: absY + (absY - absY2) },
-            id: generateId() // Añadir id
-          }); // Cerrar el objeto del punto
+            id: generateId() 
+          });
 
           console.log(`Added S point at ${absX},${absY}`);
 
@@ -872,7 +873,7 @@ const approximateControlPointsFromPath = (pathData: string): ControlPoint[] => {
           currentY = absY;
         } catch (e) {
           console.log('Error processing S command:', e);
-        } // Cerrar catch del comando S
+        }
       } else if (token === 'Z' || token === 'z') {
         // Close path command - connect back to first point
         try {
@@ -918,19 +919,19 @@ const approximateControlPointsFromPath = (pathData: string): ControlPoint[] => {
           }
         } catch (e) {
           console.log('Error processing Z command:', e);
-        } // Cerrar catch del comando Z
+        }
       } else {
-         // Comando desconocido o dato inválido
+         // Unknown command or invalid data
          console.log(`Unknown or invalid token encountered: ${token}`);
          // You might want to add logic here to skip expected parameters for unknown commands
       }
-    } // Cerrar el bucle while
+    }
 
     console.log(`Finished parsing path data. Generated ${points.length} points.`);
-    return points; // Devolver los puntos generados
+    return points;
 
   } catch (error) {
     console.error('Critical error parsing SVG path data:', error);
-    return []; // Devolver array vacío en caso de error crítico
+    return [];
   }
-}; // Cerrar la función approximateControlPointsFromPath
+};
