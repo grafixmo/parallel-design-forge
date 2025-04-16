@@ -66,6 +66,7 @@ export const parseTemplateData = (templateData: string): any => {
     return null;
   }
 };
+
 /**
  * Exports multiple BezierObjects to SVG format
  * @param objects Array of BezierObjects to export
@@ -163,6 +164,7 @@ export const exportAsSVG = (
     </svg>`;
   }
 };
+
 /**
  * Generates an SVG path element from path data and style
  */
@@ -232,6 +234,7 @@ const defaultCurveStyle = (): CurveStyle => {
     lineJoin: 'round'
   };
 };
+
 /**
  * Downloads an SVG file to the user's device
  * @param svgContent SVG content to download
@@ -265,46 +268,6 @@ export const downloadSVG = (svgContent: string, fileName: string = 'bezier-desig
   }
 };
 
-/**
- * Helper function to create a control point with appropriate handles
- * @param x X coordinate
- * @param y Y coordinate
- * @param prevPoint Optional previous point to adjust handles
- * @returns New control point
- */
-const createControlPoint = (x: number, y: number, prevPoint?: ControlPoint): ControlPoint => {
-  // Default handle distance (can be adjusted based on point spacing)
-  const handleDist = 50;
-  
-  let handleIn = { x: x - handleDist, y };
-  let handleOut = { x: x + handleDist, y };
-  
-  // If we have a previous point, calculate better handle positions
-  if (prevPoint) {
-    // Calculate vector from previous point to this one
-    const dx = x - prevPoint.x;
-    const dy = y - prevPoint.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    
-    // Normalize and scale the vector for handles
-    if (dist > 0) {
-      const ndx = dx / dist * handleDist;
-      const ndy = dy / dist * handleDist;
-      
-      // Set handle positions based on the direction from prev point
-      handleIn = { x: x - ndx, y: y - ndy };
-      handleOut = { x: x + ndx, y: y + ndy };
-    }
-  }
-  
-  return {
-    x,
-    y,
-    handleIn,
-    handleOut,
-    id: generateId()
-  };
-};
 /**
  * Imports an SVG string and converts it to BezierObjects
  * @param svgString SVG content as string
@@ -351,7 +314,8 @@ export const importSVGFromString = (svgString: string): BezierObject[] => {
     const isQordattaFormat = svgDoc.querySelector('metadata qordatta\\:design') !== null;
     console.log('Is Qordatta format?', isQordattaFormat);
     
-    // Process all path groups (g elements)\n    const groups = svgDoc.querySelectorAll('g');
+    // Process all path groups (g elements)
+    const groups = svgDoc.querySelectorAll('g');
     console.log(`Found ${groups.length} groups in SVG`);
     
     if (groups.length === 0) {
@@ -413,6 +377,7 @@ export const importSVGFromString = (svgString: string): BezierObject[] => {
             points = undefined;
           }
         }
+        
         // If we couldn't get points from metadata, extract them from paths
         if (!points || points.length < 2) {
           console.log('No valid points in metadata, extracting from paths');
@@ -538,6 +503,7 @@ export const importSVGFromString = (svgString: string): BezierObject[] => {
         }
       }
     }
+    
     // Validate and sanitize all objects before returning
     const validatedObjects = importedObjects.map(obj => {
       // Ensure all points have valid properties
@@ -627,6 +593,7 @@ const processSVGPaths = (paths: SVGPathElement[], existingCurveConfig?: CurveCon
     console.log('No valid path data found');
     return null;
   }
+  
   // Create control points from the first path
   const mainPath = pathElements[0];
   console.log('Generating control points from path:', mainPath.d.substring(0, 50) + '...');
@@ -758,8 +725,7 @@ const approximateControlPointsFromPath = (pathData: string): ControlPoint[] => {
         } catch (e) {
           console.log('Error processing L command:', e);
         }
-      }
-      else if (token === 'C' || token === 'c') {
+      } else if (token === 'C' || token === 'c') {
         // Cubic bezier curve command
         if (i + 5 >= tokens.length) break;
         
@@ -857,3 +823,84 @@ const approximateControlPointsFromPath = (pathData: string): ControlPoint[] => {
           // Add new point
           points.push({
             x: absX,
+            y: absY,
+            handleIn: { x: absX2, y: absY2 },
+            handleOut: { x: absX + (absX - absX2), y: absY + (absY - absY2) },
+            id: generateId()
+          });
+          
+          console.log(`Added S point at ${absX},${absY}`);
+          
+          currentX = absX;
+          currentY = absY;
+        } catch (e) {
+          console.log('Error processing S command:', e);
+        }
+      } else if (token === 'Z' || token === 'z') {
+        // Close path command - connect back to first point
+        try {
+          if (points.length > 0 && (currentX !== firstX || currentY !== firstY)) {
+            console.log(`Adding Z point to close path back to ${firstX},${firstY}`);
+            
+            // If we already have points, use the last point to determine handle positions for the closing point
+            if (points.length > 1) {
+              const lastPoint = points[points.length - 1];
+              const firstPoint = points[0];
+              
+              // Create a new point that closes back to the first point
+              const closePoint = createControlPoint(firstX, firstY, lastPoint);
+              
+              // Update the first point's handle in to match the closure
+              firstPoint.handleIn = {
+                x: firstX - (closePoint.handleOut.x - firstX), // Cerrar paréntesis
+                y: firstY - (closePoint.handleOut.y - firstY)  // Añadir cálculo para y
+              };
+            }
+            // No es necesario añadir explícitamente el closePoint a points,
+            // ya que representa el primer punto al que volvemos.
+            // El último punto ya está conectado al primero a través de los handles.
+            console.log('Path closed back to start point.');
+          } else {
+            console.log('Path already closed or only one point, skipping Z command.');
+          }
+        } catch (e) {
+          console.log('Error processing Z command:', e);
+        }
+      } else {
+        // Comando desconocido o dato inválido, intentar saltar los parámetros esperados si es posible
+        console.log(`Unknown or invalid token encountered: ${token}`);
+        // Podríamos añadir lógica para intentar saltar un número esperado de parámetros
+        // para comandos desconocidos, pero por simplicidad, simplemente continuamos.
+      }
+    } // Cierre del bucle while [cite: 122]
+
+    console.log(`Finished parsing path data. Generated ${points.length} points.`);
+    return points; // Devolver los puntos generados
+
+  } catch (error) {
+    console.error('Critical error parsing SVG path data:', error);
+    // Devolver un array vacío o lanzar el error dependiendo de cómo se quiera manejar
+    return []; // Devolver array vacío en caso de error crítico en el parseo
+  }
+}; // Cierre de la función approximateControlPointsFromPath [cite: 117]
+
+// Añadir la función createControlPoint si no está ya definida en este archivo
+// (basado en su uso en el código)
+const createControlPoint = (x: number, y: number, prevPoint?: ControlPoint): ControlPoint => {
+  let handleIn = { x: x - 50, y: y }; // Handle por defecto
+  let handleOut = { x: x + 50, y: y }; // Handle por defecto
+
+  if (prevPoint) {
+    // Calcular handles basados en el punto previo para líneas (rectas)
+    handleIn = { x: x - (x - prevPoint.x) * 0.5, y: y - (y - prevPoint.y) * 0.5 };
+    handleOut = { x: x + (x - prevPoint.x) * 0.5, y: y + (y - prevPoint.y) * 0.5 };
+  }
+
+  return {
+    id: generateId(),
+    x,
+    y,
+    handleIn,
+    handleOut,
+  };
+};
