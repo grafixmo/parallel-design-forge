@@ -934,4 +934,3 @@ const approximateControlPointsFromPath = (pathData: string): ControlPoint[] => {
     return []; // Devolver array vacío en caso de error crítico
   }
 }; // Cerrar la función approximateControlPointsFromPath
-
