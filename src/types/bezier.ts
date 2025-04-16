@@ -1,3 +1,4 @@
+
 export interface Point {
   x: number;
   y: number;
@@ -14,6 +15,12 @@ export interface ControlPoint {
 export interface CurveStyle {
   color: string;
   width: number;
+  // Add missing properties referenced in the code
+  fill?: string;
+  opacity?: number;
+  lineCap?: string;
+  lineJoin?: string;
+  dashArray?: string;
 }
 
 export interface CurveConfig {
@@ -41,6 +48,9 @@ export interface BezierObject {
   transform: TransformSettings;
   name: string;
   isSelected: boolean;
+  // Add missing properties referenced in the code
+  position?: { x: number, y: number };
+  showControlPoints?: boolean;
 }
 
 export interface DesignData {

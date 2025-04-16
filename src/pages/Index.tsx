@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { 
   ControlPoint, 
@@ -151,28 +150,9 @@ const Index = () => {
       return;
     }
     
-    // Prepare data for export
-    const designData: DesignData = {
-      objects: objects,
-      backgroundImage: backgroundImage ? {
-        url: backgroundImage,
-        opacity: backgroundOpacity
-      } : undefined
-    };
-    
     // Generate SVG content
     const svgContent = exportAsSVG(
-      objects.flatMap(obj => obj.points), // All points from all objects
-      objects[0]?.curveConfig || { // Use first object's config or default
-        styles: [{ color: '#000000', width: 5 }],
-        parallelCount: 2,
-        spacing: 8
-      }, 
-      objects[0]?.transform || { // Use first object's transform or default
-        rotation: 0,
-        scaleX: 1.0,
-        scaleY: 1.0
-      },
+      objects, // Pass the whole objects array instead of flatMap
       canvasWidth,
       canvasHeight
     );

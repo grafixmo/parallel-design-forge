@@ -177,8 +177,8 @@ const defaultCurveStyle = (): CurveStyle => {
   return {
     color: '#000000',
     width: 2,
-    opacity: 1,
     fill: 'none',
+    opacity: 1,
     lineCap: 'round',
     lineJoin: 'round'
   };
@@ -325,6 +325,7 @@ const createEmptyObject = (): BezierObject => {
     points: [],
     transform: defaultTransform(),
     curveConfig: defaultCurveConfig(),
+    isSelected: false,
     position: { x: 0, y: 0 }
   };
 };
