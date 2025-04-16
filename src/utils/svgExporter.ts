@@ -1,4 +1,3 @@
-
 import { 
   ControlPoint, 
   CurveConfig, 
@@ -8,6 +7,65 @@ import {
   Point
 } from '../types/bezier';
 import { generatePathData, generateId } from './bezierUtils';
+
+/**
+ * Parses template data from various formats to ensure consistent structure
+ * @param templateData The raw template data as string
+ * @returns Parsed and normalized template data object or null if invalid
+ */
+export const parseTemplateData = (templateData: string): any => {
+  try {
+    // First attempt to parse as JSON
+    let parsed: any;
+    
+    try {
+      parsed = JSON.parse(templateData);
+    } catch (e) {
+      // If not valid JSON, check if it's SVG and try to import
+      if (typeof templateData === 'string' && (templateData.includes('<svg') || templateData.startsWith('<?xml'))) {
+        console.log('Template appears to be SVG format, attempting import');
+        return importSVGFromString(templateData);
+      } else {
+        throw new Error('Template data is neither valid JSON nor SVG');
+      }
+    }
+    
+    // Check what kind of data structure we have
+    if (parsed.objects && Array.isArray(parsed.objects)) {
+      // It's already in the expected format with objects array
+      return parsed;
+    } else if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].points) {
+      // It's an array of objects, convert to expected format
+      return { objects: parsed };
+    } else if (parsed.points && Array.isArray(parsed.points)) {
+      // It's a single object with points array, convert to expected format
+      const singleObject = {
+        id: parsed.id || generateId(),
+        name: parsed.name || 'Imported Object',
+        points: parsed.points,
+        curveConfig: parsed.curveConfig || {
+          styles: [{ color: '#000000', width: 2 }],
+          parallelCount: 1,
+          spacing: 5
+        },
+        transform: parsed.transform || {
+          rotation: 0,
+          scaleX: 1,
+          scaleY: 1
+        },
+        isSelected: false
+      };
+      return { objects: [singleObject] };
+    }
+    
+    // If we couldn't determine the format, return null
+    console.error('Could not parse template data into a recognized format');
+    return null;
+  } catch (error) {
+    console.error('Error parsing template data:', error);
+    return null;
+  }
+};
 
 /**
  * Exports multiple BezierObjects to SVG format
@@ -794,188 +852,4 @@ const approximateControlPointsFromPath = (pathData: string): ControlPoint[] => {
               
               // Update the first point's handle in to match the closure
               firstPoint.handleIn = { 
-                x: firstX - (closePoint.handleOut.x - firstX),
-                y: firstY - (closePoint.handleOut.y - firstY)
-              };
-              
-              points.push(closePoint);
-            } else {
-              // Just add a simple point to close
-              points.push(createControlPoint(firstX, firstY));
-            }
-            
-            currentX = firstX;
-            currentY = firstY;
-          }
-        } catch (e) {
-          console.log('Error processing Z command:', e);
-        }
-      } else {
-        // Skip other commands for now (A, Q, T, H, V)
-        console.log(`Skipping unsupported command: ${token}`);
-        i++;
-      }
-    }
-    
-    console.log(`Generated ${points.length} points from path`);
-    
-    // If we have at least 2 points, make sure handles are properly set
-    if (points.length >= 2) {
-      // Improve handle positions for smoother curves
-      adjustHandlesForSmoothCurves(points);
-    }
-    
-    return points;
-  } catch (error) {
-    console.error('Error parsing SVG path:', error);
-    // Return with at least 2 points (min required for a path)
-    if (points.length < 2) {
-      console.log('Error resulted in too few points, adding placeholder points');
-      return [
-        createControlPoint(0, 0),
-        createControlPoint(100, 100)
-      ];
-    }
-    return points;
-  }
-};
-
-/**
- * Adjust handle positions for smoother curves
- */
-const adjustHandlesForSmoothCurves = (points: ControlPoint[]): void => {
-  if (points.length < 2) return;
-  
-  // For each point (except first and last), adjust handles based on neighboring points
-  for (let i = 1; i < points.length - 1; i++) {
-    const prev = points[i - 1];
-    const curr = points[i];
-    const next = points[i + 1];
-    
-    // Calculate direction vectors
-    const toPrev = { x: prev.x - curr.x, y: prev.y - curr.y };
-    const toNext = { x: next.x - curr.x, y: next.y - curr.y };
-    
-    // Normalize vectors
-    const toPrevLength = Math.sqrt(toPrev.x * toPrev.x + toPrev.y * toPrev.y);
-    const toNextLength = Math.sqrt(toNext.x * toNext.x + toNext.y * toNext.y);
-    
-    if (toPrevLength === 0 || toNextLength === 0) continue;
-    
-    const toPrevNorm = { 
-      x: toPrev.x / toPrevLength, 
-      y: toPrev.y / toPrevLength 
-    };
-    
-    const toNextNorm = { 
-      x: toNext.x / toNextLength, 
-      y: toNext.y / toNextLength 
-    };
-    
-    // Calculate handle scale based on distance to adjacent points
-    // Use 1/3 of the distance as a rule of thumb for bezier handles
-    const handleInLength = toPrevLength / 3;
-    const handleOutLength = toNextLength / 3;
-    
-    // Set the handles to point in opposite directions of the adjacent points
-    curr.handleIn = {
-      x: curr.x + toPrevNorm.x * handleInLength,
-      y: curr.y + toPrevNorm.y * handleInLength
-    };
-    
-    curr.handleOut = {
-      x: curr.x + toNextNorm.x * handleOutLength,
-      y: curr.y + toNextNorm.y * handleOutLength
-    };
-  }
-  
-  // Adjust first and last point handles if there are enough points
-  if (points.length >= 2) {
-    const first = points[0];
-    const second = points[1];
-    
-    // For the first point, set handle out based on direction to second point
-    const toSecond = { 
-      x: second.x - first.x, 
-      y: second.y - first.y 
-    };
-    
-    const toSecondLength = Math.sqrt(toSecond.x * toSecond.x + toSecond.y * toSecond.y);
-    
-    if (toSecondLength > 0) {
-      const handleOutLength = toSecondLength / 3;
-      first.handleOut = {
-        x: first.x + (toSecond.x / toSecondLength) * handleOutLength,
-        y: first.y + (toSecond.y / toSecondLength) * handleOutLength
-      };
-    }
-    
-    // For the last point, set handle in based on direction from second-to-last point
-    const last = points[points.length - 1];
-    const secondLast = points[points.length - 2];
-    
-    const toSecondLast = { 
-      x: secondLast.x - last.x, 
-      y: secondLast.y - last.y 
-    };
-    
-    const toSecondLastLength = Math.sqrt(toSecondLast.x * toSecondLast.x + toSecondLast.y * toSecondLast.y);
-    
-    if (toSecondLastLength > 0) {
-      const handleInLength = toSecondLastLength / 3;
-      last.handleIn = {
-        x: last.x + (toSecondLast.x / toSecondLastLength) * handleInLength,
-        y: last.y + (toSecondLast.y / toSecondLastLength) * handleInLength
-      };
-    }
-  }
-};
-
-/**
- * Creates a new control point
- */
-const createControlPoint = (
-  x: number, 
-  y: number, 
-  previousPoint?: Point
-): ControlPoint => {
-  if (!previousPoint) {
-    // First point - use default horizontal handles
-    return {
-      x,
-      y,
-      handleIn: { x: x - 50, y },
-      handleOut: { x: x + 50, y },
-      id: generateId()
-    };
-  }
-  
-  // Calculate direction vector from previous point to this point
-  const dx = x - previousPoint.x;
-  const dy = y - previousPoint.y;
-  
-  // Calculate distance between points
-  const distance = Math.sqrt(dx * dx + dy * dy);
-  
-  // Normalize direction vector
-  const norm = distance > 0 ? distance : 1;
-  const ndx = dx / norm;
-  const ndy = dy / norm;
-  
-  // Set handle lengths proportional to the distance, but with a minimum
-  const handleLength = Math.max(distance / 3, 30);
-  
-  return {
-    x,
-    y,
-    handleIn: { 
-      x: x - ndx * handleLength, 
-      y: y - ndy * handleLength 
-    },
-    handleOut: { 
-      x: x + ndx * handleLength, 
-      y: y + ndy * handleLength 
-    },
-    id: generateId()
-  };
-};
+                x: firstX - (closePoint.handleOut.x - firstX
