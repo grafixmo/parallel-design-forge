@@ -4,7 +4,39 @@ import { SavedDesign } from '../types/bezier';
 const supabaseUrl = 'https://nwrihwenctfimyjcbcal.supabase.co';
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im53cmlod2VuY3RmaW15amNiY2FsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDIwNzUxNjMsImV4cCI6MjA1NzY1MTE2M30.fXmf6GUUn0OaEmisInSUP2oBlP2oBGhMSBOSx8HYI2k';
 
-const supabase = createClient(supabaseUrl, supabaseKey);
+// Log connection attempt
+console.log(`Attempting to connect to Supabase at: ${supabaseUrl}`);
+
+// Create the Supabase client with better error handling
+const supabase = createClient(supabaseUrl, supabaseKey, {
+  auth: {
+    autoRefreshToken: true,
+    persistSession: true,
+  }
+});
+
+// Verify connection
+const verifyConnection = async () => {
+  try {
+    console.log('Testing Supabase connection...');
+    // Attempt a simple query to check connection
+    const { data, error } = await supabase.from('designs').select('count', { count: 'exact', head: true });
+    
+    if (error) {
+      console.error('Supabase connection error:', error);
+      return { success: false, error };
+    }
+    
+    console.log('Supabase connection successful!', data);
+    return { success: true, data };
+  } catch (err) {
+    console.error('Unexpected error testing Supabase connection:', err);
+    return { success: false, error: err };
+  }
+};
+
+// Execute connection test
+verifyConnection();
 
 // Helper function to ensure design data is properly formatted
 const normalizeDesignData = (design: SavedDesign): SavedDesign => {
@@ -283,3 +315,27 @@ export const likeTemplate = async (id: string): Promise<{ data: any; error: any 
     
   return { data, error };
 };
+
+// Utility function to check table access
+export const checkTableAccess = async (tableName: string): Promise<{ accessible: boolean; error?: any }> => {
+  try {
+    console.log(`Checking access to ${tableName} table...`);
+    const { data, error } = await supabase
+      .from(tableName)
+      .select('count', { count: 'exact', head: true });
+    
+    if (error) {
+      console.error(`Error accessing ${tableName} table:`, error);
+      return { accessible: false, error };
+    }
+    
+    console.log(`${tableName} table is accessible`);
+    return { accessible: true };
+  } catch (err) {
+    console.error(`Unexpected error checking ${tableName} table:`, err);
+    return { accessible: false, error: err };
+  }
+};
+
+// Export supabase client for direct access if needed
+export { supabase };
