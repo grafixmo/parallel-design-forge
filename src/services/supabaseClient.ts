@@ -7,11 +7,47 @@ const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// Original functions
+// Helper function to ensure design data is properly formatted
+const normalizeDesignData = (design: SavedDesign): SavedDesign => {
+  const normalizedDesign = { ...design };
+  
+  // Ensure shapes_data is a string
+  if (normalizedDesign.shapes_data) {
+    if (typeof normalizedDesign.shapes_data !== 'string') {
+      // If it's an object, stringify it
+      normalizedDesign.shapes_data = JSON.stringify(normalizedDesign.shapes_data);
+    }
+  }
+  
+  return normalizedDesign;
+};
+
+// Original functions (modified to ensure data consistency)
 export const saveDesign = async (design: SavedDesign): Promise<{ data: any; error: any }> => {
+  const normalizedDesign = normalizeDesignData(design);
+  
   const { data, error } = await supabase
     .from('designs')
-    .insert([design])
+    .insert([normalizedDesign])
+    .select();
+    
+  return { data, error };
+};
+
+// New function to update an existing design
+export const updateDesign = async (id: string, updates: Partial<SavedDesign>): Promise<{ data: any; error: any }> => {
+  // Make sure shapes_data is a string if present
+  if (updates.shapes_data && typeof updates.shapes_data !== 'string') {
+    updates = {
+      ...updates,
+      shapes_data: JSON.stringify(updates.shapes_data)
+    };
+  }
+  
+  const { data, error } = await supabase
+    .from('designs')
+    .update(updates)
+    .eq('id', id)
     .select();
     
   return { data, error };

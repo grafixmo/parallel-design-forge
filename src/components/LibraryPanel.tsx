@@ -11,9 +11,10 @@ import {
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SavedDesign } from '@/types/bezier';
-import { getDesigns, getDesignsByCategory } from '@/services/supabaseClient';
+import { getDesigns, getDesignsByCategory, updateDesign } from '@/services/supabaseClient';
 import { X } from 'lucide-react';
 import { importSVGFromString } from '@/utils/svgExporter';
+import { useToast } from '@/hooks/use-toast';
 
 interface LibraryPanelProps {
   onClose: () => void;
@@ -25,6 +26,7 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign }) 
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
 
   useEffect(() => {
     fetchDesigns();
@@ -47,62 +49,87 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign }) 
         throw new Error(response.error.message);
       }
       
-      // Validate each design and check if it's SVG
-      const processedDesigns = response.data?.map(design => {
+      // Validate and normalize each design
+      const processedDesigns = await Promise.all((response.data || []).map(async (design) => {
         try {
-          // Ensure shapes_data is a string before any string operations
-          const shapesData = design.shapes_data;
+          // Store original data type for debugging
+          const originalDataType = typeof design.shapes_data;
           
-          // First check if shapes_data is a string
-          if (typeof shapesData === 'string') {
-            // Check if it's an SVG by looking for SVG tag
-            if (shapesData.trim().startsWith('<svg')) {
-              console.log(`Design ${design.name} is an SVG`);
-              return {
-                ...design,
-                isSvg: true
-              };
-            }
+          // Ensure shapes_data is a string
+          let normalizedData: string;
+          let dataFormat: 'json' | 'svg' | 'invalid' = 'invalid';
+          let needsUpdate = false;
+          
+          if (typeof design.shapes_data === 'string') {
+            normalizedData = design.shapes_data;
             
-            // Try to parse as JSON to validate
-            JSON.parse(shapesData);
-            return design;
+            // Check if it's an SVG
+            if (normalizedData.trim().startsWith('<svg') || normalizedData.includes('<svg ')) {
+              dataFormat = 'svg';
+            } else {
+              // Try to parse as JSON to validate
+              try {
+                JSON.parse(normalizedData);
+                dataFormat = 'json';
+              } catch (parseError) {
+                console.warn(`Design ${design.name} has invalid JSON data`);
+              }
+            }
+          } else if (typeof design.shapes_data === 'object' && design.shapes_data !== null) {
+            // Convert object to string for consistency
+            normalizedData = JSON.stringify(design.shapes_data);
+            dataFormat = 'json';
+            needsUpdate = true; // Flag for database update
+            
+            // Auto-fix: update the design in the database with stringified data
+            if (design.id && needsUpdate) {
+              try {
+                console.log(`Fixing design ${design.name} with ID ${design.id} - converting object to JSON string`);
+                const updateResult = await updateDesign(design.id, { 
+                  shapes_data: normalizedData 
+                });
+                
+                if (updateResult.error) {
+                  console.error(`Failed to fix design ${design.name}:`, updateResult.error);
+                } else {
+                  console.log(`Successfully fixed design ${design.name}`);
+                }
+              } catch (updateError) {
+                console.error(`Error updating design ${design.name}:`, updateError);
+              }
+            }
           } else {
-            // Handle non-string data (could be an object that was already parsed)
-            console.log(`Design ${design.name} has non-string data of type ${typeof shapesData}`);
-            
-            // If it's already an object, we'll convert it back to a string for consistency
-            if (typeof shapesData === 'object' && shapesData !== null) {
-              return {
-                ...design,
-                shapes_data: JSON.stringify(shapesData),
-                isObject: true
-              };
-            }
-            
-            // If it's undefined or null, mark it as having an error
-            return {
-              ...design,
-              hasParseError: true
-            };
+            // Unknown data type, set as empty string to prevent errors
+            normalizedData = '';
+            console.warn(`Design ${design.name} has invalid shapes_data of type ${typeof design.shapes_data}`);
           }
-        } catch (parseError) {
-          console.warn(`Error parsing design data for ${design.name}:`, parseError);
-          // If JSON parse fails, check if it might be SVG despite not starting with <svg>
-          if (typeof design.shapes_data === 'string' && design.shapes_data.includes('<svg')) {
-            console.log(`Design ${design.name} contains SVG tag but in an unusual format`);
-            return {
-              ...design,
-              isSvg: true
-            };
-          }
-          // Still include the design even if it has parsing issues
+          
           return {
             ...design,
-            hasParseError: true
+            shapes_data: normalizedData,
+            originalDataType,
+            isSvg: dataFormat === 'svg',
+            isJson: dataFormat === 'json',
+            isInvalid: dataFormat === 'invalid',
+            needsFixing: needsUpdate
+          };
+        } catch (processError) {
+          console.warn(`Error processing design ${design.name}:`, processError);
+          return {
+            ...design,
+            hasParseError: true,
+            isInvalid: true
           };
         }
-      }) || [];
+      }));
+      
+      const fixedDesignsCount = processedDesigns.filter(d => (d as any).needsFixing).length;
+      if (fixedDesignsCount > 0) {
+        toast({
+          title: "Database Cleanup",
+          description: `Fixed ${fixedDesignsCount} designs with incorrect data format`,
+        });
+      }
       
       console.log(`Loaded ${processedDesigns.length} designs, including ${processedDesigns.filter(d => (d as any).isSvg).length} SVGs`);
       setDesigns(processedDesigns);
@@ -163,15 +190,24 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign }) 
         <div className="text-5xl text-blue-300">SVG</div>;
     } 
     
-    if ((design as any).hasParseError) {
-      return <div className="text-5xl text-red-300">!</div>;
-    }
-    
-    if ((design as any).isObject) {
+    if ((design as any).isJson) {
       return <div className="text-5xl text-green-300">✓</div>;
     }
     
+    if ((design as any).hasParseError || (design as any).isInvalid) {
+      return <div className="text-5xl text-red-300">!</div>;
+    }
+    
     return <div className="text-5xl text-gray-300">⌘</div>;
+  };
+
+  // Get status label for design
+  const getStatusLabel = (design: SavedDesign) => {
+    if ((design as any).isSvg) return "SVG";
+    if ((design as any).isJson) return "JSON";
+    if ((design as any).needsFixing) return "Fixed";
+    if ((design as any).hasParseError) return "Error";
+    return design.category || "";
   };
 
   return (
@@ -237,10 +273,8 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign }) 
                   </div>
                   <h3 className="font-medium text-sm truncate">{design.name}</h3>
                   <p className="text-xs text-gray-500 truncate">
-                    {design.category}
-                    {(design as any).isSvg && " (SVG)"}
-                    {(design as any).isObject && " (Object)"}
-                    {(design as any).hasParseError && " (Data Error)"}
+                    {getStatusLabel(design)}
+                    {(design as any).needsFixing && " (Auto-Fixed)"}
                   </p>
                 </Card>
               ))}

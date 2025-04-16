@@ -18,6 +18,21 @@ import { useToast } from '@/hooks/use-toast';
 import { useBezierObjects } from '@/hooks/useBezierObjects';
 import ObjectControlsPanel from '@/components/ObjectControlsPanel';
 
+// Helper function to safely normalize design data
+const normalizeDesignData = (data: any): string => {
+  if (typeof data === 'string') {
+    return data;
+  } else if (typeof data === 'object' && data !== null) {
+    try {
+      return JSON.stringify(data);
+    } catch (err) {
+      console.error('Error stringifying object:', err);
+      return '';
+    }
+  }
+  return '';
+};
+
 const Index = () => {
   const { toast } = useToast();
   
@@ -166,7 +181,7 @@ const Index = () => {
     });
   };
 
-  // Load a design from the library - improved version
+  // Load a design from the library - improved version with better error handling
   const handleSelectDesign = (design: SavedDesign) => {
     try {
       if (!design.shapes_data) {
@@ -178,70 +193,33 @@ const Index = () => {
       const dataLength = dataType === 'string' ? design.shapes_data.length : 1;
       console.log(`Loading design: ${design.name}, data type: ${dataType}, length: ${dataLength}`);
       
-      // Create a variable to hold the string form of shapes_data
-      let shapesDataString: string;
-      // Create a variable to potentially hold parsed data from non-string sources
-      let preParseData: any = null;
+      // Normalize the data to ensure it's a string
+      let shapesDataString = normalizeDesignData(design.shapes_data);
       
-      // Handle different data types
-      if (dataType === 'string') {
-        // If it's already a string, just use it
-        shapesDataString = design.shapes_data as string;
+      // Check if it's an SVG file - SVG takes priority
+      if (shapesDataString.trim().startsWith('<svg') || shapesDataString.includes('<svg ')) {
+        console.log('Processing as SVG data');
+        handleImportSVG(shapesDataString);
+        return;
+      }
+      
+      // If not SVG, try to parse as JSON
+      let parsedData: DesignData | null = null;
+      
+      try {
+        // Try parsing as JSON
+        parsedData = JSON.parse(shapesDataString);
+        console.log('Successfully parsed JSON data');
+      } catch (parseError) {
+        console.error('Error parsing design JSON:', parseError);
         
-        // Show a preview for debugging
-        if (shapesDataString.length > 100) {
-          console.log('Data preview:', shapesDataString.substring(0, 100) + '...');
+        // If it's not valid JSON, check if we have raw object data
+        if (typeof design.shapes_data === 'object' && design.shapes_data !== null) {
+          console.log('Using raw object data instead of parsing');
+          parsedData = design.shapes_data as any;
         } else {
-          console.log('Data preview:', shapesDataString);
+          throw new Error(`Failed to parse design data: ${parseError?.message || 'Unknown format'}`);
         }
-        
-        // First, check if it's an SVG file
-        if (shapesDataString.trim().startsWith('<svg') || shapesDataString.includes('<svg ')) {
-          console.log('Processing as SVG data');
-          handleImportSVG(shapesDataString);
-          return;
-        }
-      } else if (dataType === 'object' && design.shapes_data !== null) {
-        // If it's already an object, keep a reference to the parsed version
-        preParseData = design.shapes_data;
-        
-        // And convert it to a string for operations that expect strings
-        shapesDataString = JSON.stringify(design.shapes_data);
-        console.log('Converted object data to string form for processing');
-      } else {
-        // Handle null, undefined, or unexpected types
-        throw new Error(`Unexpected shapes_data type: ${dataType}`);
-      }
-      
-      // Attempt to parse as JSON if we don't already have a parsed object
-      let parsedData: DesignData | null = preParseData;
-      let parseError = null;
-      
-      if (!parsedData) {
-        try {
-          // Try parsing as JSON
-          parsedData = JSON.parse(shapesDataString);
-          console.log('Successfully parsed JSON data');
-        } catch (error) {
-          parseError = error;
-          console.error('Error parsing design JSON:', error);
-          
-          // If it has SVG tags but didn't pass the initial check, try again as SVG
-          if (shapesDataString.includes('<svg')) {
-            console.log('JSON parse failed but found SVG tags, trying as SVG');
-            try {
-              handleImportSVG(shapesDataString);
-              return;
-            } catch (svgError) {
-              console.error('Secondary SVG import attempt also failed:', svgError);
-            }
-          }
-        }
-      }
-      
-      // If we failed to parse as JSON and SVG import failed or wasn't attempted
-      if (!parsedData) {
-        throw new Error(`Failed to parse design data: ${parseError?.message || 'Unknown format'}`);
       }
       
       console.log('Loaded design data:', parsedData);
@@ -418,7 +396,7 @@ const Index = () => {
     }
   };
   
-  // Save design to Supabase
+  // Save design to Supabase - ensure data is properly stringified
   const handleSaveDesign = async (name: string, category: string) => {
     if (objects.length === 0) {
       toast({
@@ -437,11 +415,14 @@ const Index = () => {
       } : undefined
     };
     
+    // Ensure data is properly stringified
+    const stringifiedData = JSON.stringify(designData);
+    
     // Save design to the designs table (legacy)
     const design: SavedDesign = {
       name,
       category,
-      shapes_data: JSON.stringify(designData)
+      shapes_data: stringifiedData
     };
     
     try {
@@ -455,7 +436,7 @@ const Index = () => {
       const template: Template = {
         name,
         category,
-        design_data: JSON.stringify(designData),
+        design_data: stringifiedData,
         likes: 0
       };
       
