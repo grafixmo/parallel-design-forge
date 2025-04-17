@@ -232,29 +232,33 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
 
     // Create new object in drawing mode
     if (isDrawingMode) {
-      // If we're already drawing, add a point to the current object
       if (currentDrawingObjectId) {
-        const updatedObjects = objects.map(obj => {
-          if (obj.id === currentDrawingObjectId) {
-            // Find the object we're currently drawing
-            const newPoint: ControlPoint = {
-              x,
-              y,
-              handleIn: { x: x - 50, y },
-              handleOut: { x: x + 50, y },
-              id: generateId()
-            };
-            return {
-              ...obj,
-              points: [...obj.points, newPoint]
-            };
-          }
-          return obj;
-        });
-        onObjectsChange(updatedObjects);
+        // Find the current drawing object and its points
+        const drawingObject = objects.find(obj => obj.id === currentDrawingObjectId);
+        if (drawingObject) {
+          const newPoint: ControlPoint = {
+            x,
+            y,
+            handleIn: { x: x - 50, y },
+            handleOut: { x: x + 50, y },
+            id: generateId()
+          };
+          
+          // Create a new points array with the new point
+          const updatedPoints = [...drawingObject.points, newPoint];
+          
+          // Update the object through onObjectsChange
+          const updatedObjects = objects.map(obj =>
+            obj.id === currentDrawingObjectId
+              ? { ...obj, points: updatedPoints }
+              : obj
+          );
+          
+          onObjectsChange(updatedObjects);
+        }
       } else {
-        // Start a new object
-        const newPoint: ControlPoint = {
+        // Create initial point for new object
+        const initialPoint: ControlPoint = {
           x,
           y,
           handleIn: { x: x - 50, y },
@@ -262,8 +266,8 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
           id: generateId()
         };
         
-        // Create the new object with initial point
-        const newObjectId = onCreateObject([newPoint]);
+        // Create new object
+        const newObjectId = onCreateObject([initialPoint]);
         setCurrentDrawingObjectId(newObjectId);
       }
       return;
@@ -554,15 +558,19 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     // Reset transformation matrix to identity matrix
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     
-    // Display mouse position
+    // Display mouse position in a more readable format
     if (isSpacePressed) {
-      ctx.font = '16px sans-serif';
-      ctx.fillStyle = 'black';
-      ctx.fillText(`Pan: ${panOffset.x}, ${panOffset.y}`, 10, 20);
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+      ctx.fillRect(10, 10, 200, 30);
+      ctx.font = '14px sans-serif';
+      ctx.fillStyle = 'white';
+      ctx.fillText(`Pan: (${Math.round(panOffset.x)}, ${Math.round(panOffset.y)})`, 20, 28);
     } else {
-      ctx.font = '16px sans-serif';
-      ctx.fillStyle = 'black';
-      ctx.fillText(`Mouse: ${mousePos.x}, ${mousePos.y}`, 10, 20);
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+      ctx.fillRect(10, 10, 200, 30);
+      ctx.font = '14px sans-serif';
+      ctx.fillStyle = 'white';
+      ctx.fillText(`Mouse: (${Math.round(mousePos.x)}, ${Math.round(mousePos.y)})`, 20, 28);
     }
   }, [
     objects,
