@@ -17,6 +17,7 @@ import { saveDesign, saveTemplate, Template } from '@/services/supabaseClient';
 import { useToast } from '@/hooks/use-toast';
 import { useBezierObjects } from '@/hooks/useBezierObjects';
 import ObjectControlsPanel from '@/components/ObjectControlsPanel';
+import { convertToValidSVG } from '@/utils/svgConverter';
 
 // Helper function to safely normalize design data
 const normalizeDesignData = (data: any): string => {
@@ -181,7 +182,7 @@ const Index = () => {
     });
   };
 
-  // Load a design from the library - improved version with better error handling
+  // Updated handleSelectDesign function
   const handleSelectDesign = (design: SavedDesign) => {
     try {
       if (!design.shapes_data) {
@@ -203,153 +204,45 @@ const Index = () => {
         return;
       }
       
-      // If not SVG, try to parse as JSON
-      let parsedData: DesignData | null = null;
+      // Try to convert to valid SVG
+      const svgData = convertToValidSVG(shapesDataString);
+      if (svgData) {
+        console.log('Successfully converted data to SVG');
+        handleImportSVG(svgData);
+        return;
+      }
       
+      // If not SVG or conversion failed, try to parse as JSON
       try {
         // Try parsing as JSON
-        parsedData = JSON.parse(shapesDataString);
+        const parsedData = JSON.parse(shapesDataString);
         console.log('Successfully parsed JSON data');
+        
+        // Clear current objects
+        objects.forEach(obj => deleteObject(obj.id));
+        
+        // Check if data has objects array (new format) or just points (old format)
+        if (parsedData.objects && Array.isArray(parsedData.objects)) {
+          setAllObjects(parsedData.objects);
+        } else if (parsedData.points && Array.isArray(parsedData.points)) {
+          createObject(parsedData.points, design.name || 'Imported Object');
+        }
+        
+        saveCurrentState();
+        
+        toast({
+          title: 'Design Loaded',
+          description: `Design "${design.name}" has been loaded successfully.`
+        });
       } catch (parseError) {
         console.error('Error parsing design JSON:', parseError);
-        
-        // If it's not valid JSON, check if we have raw object data
-        if (typeof design.shapes_data === 'object' && design.shapes_data !== null) {
-          console.log('Using raw object data instead of parsing');
-          parsedData = design.shapes_data as any;
-        } else {
-          throw new Error(`Failed to parse design data: ${parseError?.message || 'Unknown format'}`);
-        }
+        throw new Error(`Failed to parse design data: ${parseError?.message || 'Unknown format'}`);
       }
-      
-      console.log('Loaded design data:', parsedData);
-      
-      // Clear current objects
-      objects.forEach(obj => deleteObject(obj.id));
-      
-      // Check if data has objects array (new format) or just points (old format)
-      if (parsedData.objects && Array.isArray(parsedData.objects) && parsedData.objects.length > 0) {
-        console.log(`Loading ${parsedData.objects.length} objects from parsed data`);
-        
-        // New format with objects array
-        const validObjects = parsedData.objects.map(obj => {
-          if (!obj) {
-            console.warn('Found null or undefined object in data');
-            return null;
-          }
-          
-          // Validate object has required properties and points
-          if (!obj.points || !Array.isArray(obj.points) || obj.points.length < 2) {
-            console.warn(`Object ${obj.id || 'unknown'} has invalid or insufficient points`);
-            return null;
-          }
-          
-          // Make sure each object has the required properties
-          return {
-            ...obj,
-            id: obj.id || generateId(),
-            name: obj.name || `Object ${objects.length + 1}`,
-            curveConfig: obj.curveConfig || {
-              styles: [{ color: '#000000', width: 2 }],
-              parallelCount: 1,
-              spacing: 5
-            },
-            transform: obj.transform || {
-              rotation: 0,
-              scaleX: 1,
-              scaleY: 1
-            },
-            isSelected: false
-          };
-        }).filter(Boolean) as BezierObject[];
-        
-        console.log(`Found ${validObjects.length} valid objects to add`);
-        setAllObjects(validObjects);
-      } else if (parsedData.points && Array.isArray(parsedData.points) && parsedData.points.length > 0) {
-        console.log('Loading legacy format with single object from points array');
-        
-        // Old format with just points, create a single object
-        const pointsWithIds = parsedData.points.map(point => ({
-          ...point,
-          id: point.id || generateId(),
-          // Ensure handle positions exist
-          handleIn: point.handleIn || { x: point.x - 50, y: point.y },
-          handleOut: point.handleOut || { x: point.x + 50, y: point.y }
-        }));
-        
-        // Create a single object from the points
-        if (pointsWithIds.length >= 2) {
-          console.log(`Creating object with ${pointsWithIds.length} points`);
-          createObject(pointsWithIds, design.name || 'Imported Object');
-        } else {
-          toast({
-            title: 'Invalid Design Data',
-            description: 'The design contains fewer than 2 points, which is not enough to create a curve.',
-            variant: 'destructive'
-          });
-          return;
-        }
-      } else {
-        // Try to interpret data in other possible formats
-        console.log('Attempting to parse non-standard format');
-        
-        // Check if the data itself is an array of objects
-        if (Array.isArray(parsedData) && parsedData.length > 0) {
-          console.log('Data appears to be a direct array of objects');
-          
-          const validObjects = parsedData.filter(obj => 
-            obj && obj.points && Array.isArray(obj.points) && obj.points.length >= 2
-          ).map(obj => ({
-            ...obj,
-            id: obj.id || generateId(),
-            name: obj.name || `Object ${objects.length + 1}`,
-            curveConfig: obj.curveConfig || {
-              styles: [{ color: '#000000', width: 2 }],
-              parallelCount: 1,
-              spacing: 5
-            },
-            transform: obj.transform || {
-              rotation: 0,
-              scaleX: 1,
-              scaleY: 1
-            },
-            isSelected: false
-          }));
-          
-          if (validObjects.length > 0) {
-            console.log(`Adding ${validObjects.length} objects from array format`);
-            setAllObjects(validObjects);
-          } else {
-            throw new Error('No valid objects found in the array data');
-          }
-        } else {
-          toast({
-            title: 'Invalid Design Data',
-            description: 'The selected design does not contain valid control points or objects.',
-            variant: 'destructive'
-          });
-          return;
-        }
-      }
-      
-      // Set background image if present
-      if (parsedData.backgroundImage) {
-        setBackgroundImage(parsedData.backgroundImage.url);
-        setBackgroundOpacity(parsedData.backgroundImage.opacity);
-      }
-      
-      // Save current state to history
-      saveCurrentState();
-      
-      toast({
-        title: 'Design Loaded',
-        description: `Design "${design.name}" has been loaded successfully.`
-      });
-    } catch (err) {
-      console.error('Error loading design:', err);
+    } catch (error) {
+      console.error('Error loading design:', error);
       toast({
         title: 'Load Failed',
-        description: err instanceof Error ? err.message : 'There was an error loading the design.',
+        description: error instanceof Error ? error.message : 'There was an error loading the design.',
         variant: 'destructive'
       });
     }
