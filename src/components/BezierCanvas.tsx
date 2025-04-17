@@ -75,6 +75,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
   
   const POINT_RADIUS = 8;
   const HANDLE_RADIUS = 6;
+  const ZOOM_FACTOR = 0.1; // Added zoom factor constant
   
   // Clear all selections and reset drag states
   const clearSelections = () => {
@@ -909,4 +910,4 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
   };
   
   // Handle mouse wheel for zoom
-  const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
+  const handleWheel
