@@ -898,32 +898,38 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     }
   };
   
-  // Handle mouse wheel for zoom
-  const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
-    e.preventDefault();
-    
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    
-    const rect = canvas.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
-    
-    // Calculate zoom direction
-    const delta = e.deltaY < 0 ? 1 : -1;
-    const newZoom = Math.max(0.1, Math.min(5, zoom * (1 + delta * ZOOM_FACTOR)));
-    
-    // Calculate new offset to zoom centered on mouse position
-    const zoomRatio = newZoom / zoom;
-    
-    // Set new zoom and offset
-    setZoom(newZoom);
-    
-    toast({
-      title: `Zoom: ${Math.round(newZoom * 100)}%`,
-      description: 'Use mouse wheel to zoom in and out'
-    });
-  };
+ // Handle mouse wheel for zoom
+const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
+  e.preventDefault();
+  
+  const canvas = canvasRef.current;
+  if (!canvas) return;
+  
+  const rect = canvas.getBoundingClientRect();
+  const mouseX = e.clientX - rect.left;
+  const mouseY = e.clientY - rect.top;
+  
+  // Calculate zoom direction
+  const delta = e.deltaY < 0 ? 1 : -1;
+  const newZoom = Math.max(0.1, Math.min(5, zoom * (1 + delta * ZOOM_FACTOR)));
+  
+  // Calculate new offset to zoom centered on mouse position
+  const zoomRatio = newZoom / zoom;
+  
+  // Update pan offset to zoom toward mouse position
+  setPanOffset({
+    x: mouseX - (mouseX - panOffset.x) * zoomRatio,
+    y: mouseY - (mouseY - panOffset.y) * zoomRatio
+  });
+  
+  // Set new zoom
+  setZoom(newZoom);
+  
+  toast({
+    title: `Zoom: ${Math.round(newZoom * 100)}%`,
+    description: 'Use mouse wheel to zoom in and out'
+  });
+};
   
   // Add keyboard event handler for shortcuts
   useEffect(() => {

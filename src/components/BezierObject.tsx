@@ -147,9 +147,24 @@ export class BezierObjectRenderer {
     const objectId = this.object.id;
     
     // Ensure points array exists and is not empty before proceeding
-    if (!points || points.length === 0) {
+    if (!points || !Array.isArray(points) || points.length === 0) {
       console.warn(`Object ${objectId} has no points, skipping render`);
       return;
+    }
+    
+    // Validate all points have valid coordinates
+    for (let i = 0; i < points.length; i++) {
+      const point = points[i];
+      if (!point || 
+          typeof point.x !== 'number' || isNaN(point.x) || 
+          typeof point.y !== 'number' || isNaN(point.y) ||
+          !point.handleIn || typeof point.handleIn.x !== 'number' || isNaN(point.handleIn.x) || 
+          typeof point.handleIn.y !== 'number' || isNaN(point.handleIn.y) ||
+          !point.handleOut || typeof point.handleOut.x !== 'number' || isNaN(point.handleOut.x) || 
+          typeof point.handleOut.y !== 'number' || isNaN(point.handleOut.y)) {
+        console.warn(`Object ${objectId} has invalid point at index ${i}, skipping render`);
+        return;
+      }
     }
     
     // Save the context state for transformation
