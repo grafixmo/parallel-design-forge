@@ -308,9 +308,15 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         zoom,
         selectedPoint,
         onPointSelect: setSelectedPoint,
-        onPointMove: () => {}, // This is handled by the parent component
+        onPointMove: (objectId, updatedPoints) => {
+          const updatedObjects = objects.map(obj =>
+            obj.id === objectId ? { ...obj, points: updatedPoints } : obj
+          );
+          onObjectsChange(updatedObjects);
+        },
         onSelect: onObjectSelect
       });
+      
       
       bezierObject.renderObject(ctx);
       
