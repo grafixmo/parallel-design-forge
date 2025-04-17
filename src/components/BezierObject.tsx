@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect } from 'react';
 import { 
   BezierObject as BezierObjectType, 
@@ -145,18 +146,23 @@ export class BezierObjectRenderer {
     const transform = this.object.transform;
     const objectId = this.object.id;
     
+    // Ensure points array exists and is not empty before proceeding
+    if (!points || points.length === 0) {
+      console.warn(`Object ${objectId} has no points, skipping render`);
+      return;
+    }
+    
     // Save the context state for transformation
     ctx.save();
     
     // Calculate center point for transformation
     let centerX = 0, centerY = 0;
     
-    if (points.length > 0) {
-      const sumX = points.reduce((sum, point) => sum + point.x, 0);
-      const sumY = points.reduce((sum, point) => sum + point.y, 0);
-      centerX = sumX / points.length;
-      centerY = sumY / points.length;
-    }
+    // Sum up all x and y values to find center
+    const sumX = points.reduce((sum, point) => sum + point.x, 0);
+    const sumY = points.reduce((sum, point) => sum + point.y, 0);
+    centerX = sumX / points.length;
+    centerY = sumY / points.length;
     
     // Apply transformations
     ctx.translate(centerX, centerY);
@@ -171,8 +177,9 @@ export class BezierObjectRenderer {
         // Draw parallel curves first (behind main curve)
         for (let p = 1; p < curveConfig.parallelCount; p++) {
           const offset = p * curveConfig.spacing;
-          const color = curveConfig.styles[p] ? curveConfig.styles[p].color : curveConfig.styles[0].color;
-          const width = curveConfig.styles[p] ? curveConfig.styles[p].width : curveConfig.styles[0].width;
+          const style = curveConfig.styles[p] || curveConfig.styles[0];
+          const color = style ? style.color : '#000000';
+          const width = style ? style.width : 5;
           
           ctx.strokeStyle = color;
           ctx.lineWidth = width / this.zoom; // Adjust for zoom
@@ -336,9 +343,6 @@ export class BezierObjectRenderer {
       }
     }
   }
-  
-  // Handle mouse interaction on a control point
-  
 }
 
 // The actual React component that now properly returns JSX
