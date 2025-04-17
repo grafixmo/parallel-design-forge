@@ -212,26 +212,204 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       });
     }
   };
-  // Other event handlers (declared but not fully implemented here)
+  // Handle mouse down on canvas
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    // Implementation from your full code
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left - panOffset.x) / zoom;
+    const y = (e.clientY - rect.top - panOffset.y) / zoom;
+
+    // Handle canvas panning when space is pressed
+    if (isSpacePressed) {
+      setIsCanvasDragging(true);
+      setDragStart({ x: e.clientX, y: e.clientY });
+      return;
+    }
+
+    // Create new object in drawing mode
+    if (isDrawingMode) {
+      const points: ControlPoint[] = [{
+        x,
+        y,
+        handleIn: { x: x - 50, y },
+        handleOut: { x: x + 50, y },
+        id: generateId()
+      }];
+
+      const newObjectId = onCreateObject(points);
+      setCurrentDrawingObjectId(newObjectId);
+      return;
+    }
+
+    // Handle selection mode
+    if (!isDrawingMode) {
+      // Start selection rectangle if not clicking on an object
+      let clickedOnObject = false;
+      
+      objects.forEach(obj => {
+        // Find clicked point
+        const clickResult = new BezierObjectRenderer({
+          object: obj,
+          isSelected: selectedObjectIds.includes(obj.id),
+          zoom,
+          selectedPoint,
+          onPointSelect: setSelectedPoint,
+          onPointMove: () => {},
+          onSelect: () => {}
+        }).handlePointInteraction(x, y, POINT_RADIUS);
+
+        if (clickResult.found) {
+          clickedOnObject = true;
+          setSelectedPoint({
+            objectId: obj.id,
+            pointIndex: clickResult.pointIndex,
+            type: clickResult.type
+          });
+          setIsDragging(true);
+          onObjectSelect(obj.id, e.shiftKey);
+        }
+      });
+
+      if (!clickedOnObject) {
+        // Start selection rectangle
+        setIsSelecting(true);
+        setSelectionRect({
+          startX: x,
+          startY: y,
+          width: 0,
+          height: 0
+        });
+        
+        // Clear selection if not holding shift
+        if (!e.shiftKey) {
+          onObjectSelect('', false);
+        }
+      }
+    }
   };
 
+  // Handle mouse move on canvas
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    // Implementation from your full code
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left - panOffset.x) / zoom;
+    const y = (e.clientY - rect.top - panOffset.y) / zoom;
+    
+    setMousePos({ x, y });
+
+    // Handle canvas panning
+    if (isCanvasDragging && dragStart) {
+      const dx = e.clientX - dragStart.x;
+      const dy = e.clientY - dragStart.y;
+      setPanOffset(prev => ({
+        x: prev.x + dx,
+        y: prev.y + dy
+      }));
+      setDragStart({ x: e.clientX, y: e.clientY });
+      return;
+    }
+
+    // Update selection rectangle
+    if (isSelecting && selectionRect) {
+      setSelectionRect({
+        ...selectionRect,
+        width: x - selectionRect.startX,
+        height: y - selectionRect.startY
+      });
+      return;
+    }
+
+    // Handle point dragging
+    if (isDragging && selectedPoint) {
+      const updatedObjects = objects.map(obj => {
+        if (obj.id === selectedPoint.objectId) {
+          const newPoints = [...obj.points];
+          const point = newPoints[selectedPoint.pointIndex];
+
+          switch (selectedPoint.type) {
+            case ControlPointType.MAIN:
+              const dx = x - point.x;
+              const dy = y - point.y;
+              point.x = x;
+              point.y = y;
+              point.handleIn.x += dx;
+              point.handleIn.y += dy;
+              point.handleOut.x += dx;
+              point.handleOut.y += dy;
+              break;
+            case ControlPointType.HANDLE_IN:
+              point.handleIn = { x, y };
+              break;
+            case ControlPointType.HANDLE_OUT:
+              point.handleOut = { x, y };
+              break;
+          }
+          return { ...obj, points: newPoints };
+        }
+        return obj;
+      });
+
+      onObjectsChange(updatedObjects);
+    }
   };
 
+  // Handle mouse up on canvas
   const handleMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    // Implementation from your full code
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    // Clear canvas dragging state
+    if (isCanvasDragging) {
+      setIsCanvasDragging(false);
+      setDragStart(null);
+      return;
+    }
+
+    // Handle selection rectangle
+    if (isSelecting && selectionRect) {
+      const selectedObjects = objects.filter(obj => 
+        obj.points.some(point => 
+          isPointInSelectionRect(point, selectionRect)
+        )
+      );
+
+      if (selectedObjects.length > 0) {
+        selectedObjects.forEach(obj => {
+          onObjectSelect(obj.id, true);
+        });
+      }
+
+      setIsSelecting(false);
+      setSelectionRect(null);
+    }
+
+    // Save state after dragging
+    if (isDragging) {
+      onSaveState();
+    }
+
+    // Clear dragging states
+    setIsDragging(false);
+    setSelectedPoint(null);
   };
 
+  // Handle context menu (right click)
   const handleContextMenu = (e: React.MouseEvent<HTMLCanvasElement>) => {
     e.preventDefault();
-    // Implementation from your full code
+    if (currentDrawingObjectId) {
+      finalizeDrawingObject();
+    }
   };
 
+  // Handle double click
   const handleDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    // Implementation from your full code
+    if (currentDrawingObjectId) {
+      finalizeDrawingObject();
+    }
   };
 
   // Update instruction message based on current state
@@ -300,7 +478,66 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     
-    // Drawing implementation from your full code
+    // Clear canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Apply zoom and pan transformations
+    ctx.setTransform(zoom, 0, 0, zoom, panOffset.x, panOffset.y);
+    
+    // Draw background image if available
+    if (backgroundImageObj) {
+      ctx.globalAlpha = backgroundOpacity;
+      ctx.drawImage(backgroundImageObj, 0, 0, canvas.width / zoom, canvas.height / zoom);
+      ctx.globalAlpha = 1;
+    }
+    
+    // Render each Bezier object
+    objects.forEach(object => {
+      const isSelected = selectedObjectIds.includes(object.id);
+      
+      new BezierObjectRenderer({
+        object: object,
+        isSelected: isSelected,
+        zoom: zoom,
+        selectedPoint: selectedPoint,
+        onPointSelect: setSelectedPoint,
+        onPointMove: onObjectsChange,
+        onSelect: onObjectSelect
+      }).renderObject(ctx);
+    });
+    
+    // Draw selection rectangle
+    if (isSelecting && selectionRect) {
+      ctx.strokeStyle = 'rgba(52, 152, 219, 0.8)';
+      ctx.fillStyle = 'rgba(52, 152, 219, 0.2)';
+      ctx.lineWidth = 1 / zoom;
+      ctx.setLineDash([5 / zoom, 3 / zoom]);
+      
+      ctx.beginPath();
+      ctx.rect(
+        selectionRect.startX,
+        selectionRect.startY,
+        selectionRect.width,
+        selectionRect.height
+      );
+      ctx.fill();
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    
+    // Reset transformation matrix to identity matrix
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    
+    // Display mouse position
+    if (isSpacePressed) {
+      ctx.font = '16px sans-serif';
+      ctx.fillStyle = 'black';
+      ctx.fillText(`Pan: ${panOffset.x}, ${panOffset.y}`, 10, 20);
+    } else {
+      ctx.font = '16px sans-serif';
+      ctx.fillStyle = 'black';
+      ctx.fillText(`Mouse: ${mousePos.x}, ${mousePos.y}`, 10, 20);
+    }
   }, [
     objects,
     selectedObjectIds,
