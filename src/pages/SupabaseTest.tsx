@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { 
   supabase, 
@@ -296,7 +295,7 @@ const SupabaseTest = () => {
             )}
             
             {connectionStatus && !connectionStatus.success && connectionStatus.errorType === 'credentials_error' && (
-              <Alert variant="warning" className="mt-4">
+              <Alert variant="destructive" className="mt-4">
                 <AlertTriangle className="h-4 w-4" />
                 <AlertTitle>Using Default Credentials</AlertTitle>
                 <AlertDescription>
