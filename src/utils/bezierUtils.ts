@@ -129,17 +129,7 @@ export const calculateParallelPoint = (
   p3: Point,
   t: number,
   distance: number
-): Point | null => {
-  // Safety check for valid inputs
-  if (!p0 || !p1 || !p2 || !p3 || 
-      typeof p0.x !== 'number' || typeof p0.y !== 'number' ||
-      typeof p1.x !== 'number' || typeof p1.y !== 'number' ||
-      typeof p2.x !== 'number' || typeof p2.y !== 'number' ||
-      typeof p3.x !== 'number' || typeof p3.y !== 'number') {
-    console.warn('Invalid points passed to calculateParallelPoint', { p0, p1, p2, p3 });
-    return null;
-  }
-  
+): Point => {
   const point = calculateBezierPoint(p0, p1, p2, p3, t);
   
   // Calculate derivative for normal
@@ -203,44 +193,36 @@ export const svgPathToBezierPoints = (pathData: string): ControlPoint[] => {
     const values = cmd.substring(1).trim().split(/[\s,]+/).map(parseFloat);
     
     if (type === 'M') {
-      // Ensure we have valid x,y coordinates
-      if (values.length >= 2 && !isNaN(values[0]) && !isNaN(values[1])) {
-        currentX = values[0];
-        currentY = values[1];
-        
-        points.push({
-          x: currentX,
-          y: currentY,
-          handleIn: { x: currentX - 50, y: currentY },
-          handleOut: { x: currentX + 50, y: currentY },
-          id: generateId()
-        });
-      }
+      currentX = values[0];
+      currentY = values[1];
+      
+      points.push({
+        x: currentX,
+        y: currentY,
+        handleIn: { x: currentX - 50, y: currentY },
+        handleOut: { x: currentX + 50, y: currentY },
+        id: generateId()
+      });
     } 
     else if (type === 'C') {
       // Each cubic bezier command has 6 values: c1x, c1y, c2x, c2y, x, y
       for (let i = 0; i < values.length; i += 6) {
-        // Ensure we have all 6 values and they are valid numbers
-        if (i + 5 < values.length && 
-            !values.slice(i, i + 6).some(isNaN)) {
-          
-          const lastPoint = points[points.length - 1];
-          if (lastPoint) {
-            lastPoint.handleOut = { x: values[i], y: values[i + 1] };
-          }
-          
-          const newPoint = {
-            x: values[i + 4],
-            y: values[i + 5],
-            handleIn: { x: values[i + 2], y: values[i + 3] },
-            handleOut: { x: values[i + 4] + 50, y: values[i + 5] },
-            id: generateId()
-          };
-          
-          points.push(newPoint);
-          currentX = newPoint.x;
-          currentY = newPoint.y;
+        const lastPoint = points[points.length - 1];
+        if (lastPoint) {
+          lastPoint.handleOut = { x: values[i], y: values[i + 1] };
         }
+        
+        const newPoint = {
+          x: values[i + 4],
+          y: values[i + 5],
+          handleIn: { x: values[i + 2], y: values[i + 3] },
+          handleOut: { x: values[i + 4] + 50, y: values[i + 5] },
+          id: generateId()
+        };
+        
+        points.push(newPoint);
+        currentX = newPoint.x;
+        currentY = newPoint.y;
       }
     }
   }
