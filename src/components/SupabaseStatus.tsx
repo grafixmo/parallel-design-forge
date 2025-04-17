@@ -1,10 +1,13 @@
 
 import React, { useEffect, useState } from 'react';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
-import { checkTableAccess, verifyConnection, supabase } from '@/services/supabaseClient';
-import { AlertCircle, CheckCircle, RefreshCw, Settings } from 'lucide-react';
+import { checkTableAccess, verifyConnection, supabase, setSupabaseCredentials } from '@/services/supabaseClient';
+import { AlertCircle, CheckCircle, RefreshCw, Settings, Key } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/components/ui/sonner';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 interface TableStatus {
   name: string;
@@ -26,6 +29,9 @@ const SupabaseStatus = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [showStatus, setShowStatus] = useState(true);
   const [showVerboseDetails, setShowVerboseDetails] = useState(false);
+  const [manualUrl, setManualUrl] = useState('');
+  const [manualKey, setManualKey] = useState('');
+  const [manualDialogOpen, setManualDialogOpen] = useState(false);
 
   const checkConnection = async () => {
     setIsLoading(true);
@@ -97,12 +103,44 @@ const SupabaseStatus = () => {
     checkConnection();
   };
 
-  // Function to open Supabase project settings
+  // Function to open Supabase settings
   const openSupabaseSettings = () => {
     // This is a placeholder - in a real app, this would open the Supabase settings modal or page
     toast.info('Supabase Settings', {
       description: 'Please connect to Supabase using the green button in the top right',
     });
+  };
+
+  // Handle manual connection
+  const handleManualConnect = async () => {
+    if (!manualUrl || !manualKey) {
+      toast.error('Missing credentials', {
+        description: 'Please provide both URL and API key',
+      });
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      await setSupabaseCredentials(manualUrl, manualKey);
+      
+      // Close dialog
+      setManualDialogOpen(false);
+      
+      // Check connection with new credentials
+      await checkConnection();
+      
+      toast.success('Manual connection applied', {
+        description: 'Supabase credentials updated. Testing connection...'
+      });
+    } catch (error) {
+      console.error('Error setting manual credentials:', error);
+      toast.error('Connection failed', {
+        description: 'Could not connect with provided credentials',
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   if (!showStatus) {
@@ -132,15 +170,70 @@ const SupabaseStatus = () => {
               </span>
               <div className="flex gap-2">
                 {!allAccessible && (
-                  <Button 
-                    variant="outline" 
-                    size="icon" 
-                    className="h-5 w-5 rounded-full"
-                    onClick={openSupabaseSettings}
-                    title="Open Supabase Settings"
-                  >
-                    <Settings className="h-3 w-3" />
-                  </Button>
+                  <>
+                    <Dialog open={manualDialogOpen} onOpenChange={setManualDialogOpen}>
+                      <DialogTrigger asChild>
+                        <Button 
+                          variant="outline" 
+                          size="icon" 
+                          className="h-5 w-5 rounded-full"
+                          title="Manual Connection"
+                        >
+                          <Key className="h-3 w-3" />
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="sm:max-w-[425px]">
+                        <DialogHeader>
+                          <DialogTitle>Manual Supabase Connection</DialogTitle>
+                          <DialogDescription>
+                            Enter your Supabase URL and anon key to connect manually.
+                          </DialogDescription>
+                        </DialogHeader>
+                        <div className="grid gap-4 py-4">
+                          <div className="grid grid-cols-4 items-center gap-4">
+                            <Label htmlFor="supabase-url" className="text-right">
+                              URL
+                            </Label>
+                            <Input
+                              id="supabase-url"
+                              value={manualUrl}
+                              onChange={(e) => setManualUrl(e.target.value)}
+                              placeholder="https://your-project.supabase.co"
+                              className="col-span-3"
+                            />
+                          </div>
+                          <div className="grid grid-cols-4 items-center gap-4">
+                            <Label htmlFor="supabase-key" className="text-right">
+                              API Key
+                            </Label>
+                            <Input
+                              id="supabase-key"
+                              value={manualKey}
+                              onChange={(e) => setManualKey(e.target.value)}
+                              type="password"
+                              placeholder="your-anon-key"
+                              className="col-span-3"
+                            />
+                          </div>
+                        </div>
+                        <DialogFooter>
+                          <Button onClick={handleManualConnect} disabled={isLoading}>
+                            {isLoading ? 'Connecting...' : 'Connect'}
+                          </Button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
+                    
+                    <Button 
+                      variant="outline" 
+                      size="icon" 
+                      className="h-5 w-5 rounded-full"
+                      onClick={openSupabaseSettings}
+                      title="Open Supabase Settings"
+                    >
+                      <Settings className="h-3 w-3" />
+                    </Button>
+                  </>
                 )}
                 <Button 
                   variant="ghost" 
@@ -166,7 +259,7 @@ const SupabaseStatus = () => {
                   </div>
                   <div className="text-xs opacity-90 mb-2">
                     {usingPlaceholders 
-                      ? 'Using placeholder Supabase credentials. Please connect to Supabase in project settings.' 
+                      ? 'Using placeholder Supabase credentials. Try using the manual connection option.' 
                       : connectionStatus?.errorType === 'api_error' 
                         ? 'Cannot reach Supabase API' 
                         : connectionStatus?.errorType === 'query_error' 

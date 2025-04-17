@@ -11,54 +11,69 @@ console.log('Supabase environment check:', {
 });
 
 // Check for multiple environment variable naming patterns
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 
-                   import.meta.env.NEXT_PUBLIC_SUPABASE_URL || 
-                   'https://your-project-url.supabase.co';
+let supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 
+                 import.meta.env.NEXT_PUBLIC_SUPABASE_URL || 
+                 'https://your-project-url.supabase.co';
 
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 
-                    import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 
-                    'your-public-anon-key';
+let supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 
+                  import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 
+                  'your-public-anon-key';
+
+// Try to load from localStorage if available
+if (typeof window !== 'undefined') {
+  const storedUrl = localStorage.getItem('supabase_manual_url');
+  const storedKey = localStorage.getItem('supabase_manual_key');
+  
+  if (storedUrl && storedKey) {
+    console.log('Using manually stored Supabase credentials from localStorage');
+    supabaseUrl = storedUrl;
+    supabaseKey = storedKey;
+  }
+}
 
 // Log the actual URL (but not the key for security)
 console.log('Initializing Supabase client with URL:', supabaseUrl);
 console.log('Using placeholder URL?', supabaseUrl === 'https://your-project-url.supabase.co');
 
-// Initialize Supabase client
-export const supabase = createClient(supabaseUrl, supabaseKey);
-
-// Test connection immediately to verify client setup
-(async () => {
-  try {
-    const connectionStatus = await verifyConnection();
-    console.log('Initial connection check result:', connectionStatus);
-    
-    if (!connectionStatus.success) {
-      console.error('Supabase connection failed on initialization:', connectionStatus.error);
-      
-      // Only show toast in browser environment
-      if (typeof window !== 'undefined') {
-        toast.error('Database connection issue', {
-          description: 'Please check Supabase connection in project settings',
-          duration: 5000,
-        });
-      }
-    }
-  } catch (error) {
-    console.error('Error during initial Supabase connection check:', error);
+// Function to update Supabase credentials manually
+export const setSupabaseCredentials = async (url: string, key: string) => {
+  if (!url || !key) {
+    throw new Error('URL and key are required');
   }
-})();
+  
+  // Store in localStorage for persistence
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('supabase_manual_url', url);
+    localStorage.setItem('supabase_manual_key', key);
+  }
+  
+  // Update the globals
+  supabaseUrl = url;
+  supabaseKey = key;
+  
+  // Recreate the client with new credentials
+  reinitializeClient();
+  
+  console.log('Supabase credentials updated manually');
+  console.log('New URL:', url);
+  
+  // Verify the connection with new credentials
+  const result = await verifyConnection();
+  if (!result.success) {
+    throw new Error('Connection failed with new credentials: ' + result.error);
+  }
+  
+  return result;
+};
 
-export interface Template {
-  id?: string;
-  name: string;
-  description?: string;
-  design_data: string;
-  category?: string;
-  thumbnail?: string;
-  created_at?: string;
-  likes?: number;
-  user_id?: string;
-}
+// Initialize Supabase client
+export let supabase = createClient(supabaseUrl, supabaseKey);
+
+// Function to reinitialize the client
+const reinitializeClient = () => {
+  supabase = createClient(supabaseUrl, supabaseKey);
+  console.log('Supabase client reinitialized with new credentials');
+};
 
 // Enhanced connection verification function
 export const verifyConnection = async () => {
@@ -147,6 +162,40 @@ export const checkTableAccess = async (tableName: string) => {
     };
   }
 };
+
+// Test connection immediately to verify client setup
+(async () => {
+  try {
+    const connectionStatus = await verifyConnection();
+    console.log('Initial connection check result:', connectionStatus);
+    
+    if (!connectionStatus.success) {
+      console.error('Supabase connection failed on initialization:', connectionStatus.error);
+      
+      // Only show toast in browser environment
+      if (typeof window !== 'undefined') {
+        toast.error('Database connection issue', {
+          description: 'Please check Supabase connection in project settings',
+          duration: 5000,
+        });
+      }
+    }
+  } catch (error) {
+    console.error('Error during initial Supabase connection check:', error);
+  }
+})();
+
+export interface Template {
+  id?: string;
+  name: string;
+  description?: string;
+  design_data: string;
+  category?: string;
+  thumbnail?: string;
+  created_at?: string;
+  likes?: number;
+  user_id?: string;
+}
 
 // Designs-related functions
 export const getDesigns = async () => {
