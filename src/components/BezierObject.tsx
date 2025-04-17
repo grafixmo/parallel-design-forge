@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect } from 'react';
 import { 
   BezierObject as BezierObjectType, 
@@ -51,22 +52,26 @@ export class BezierObjectRenderer {
   // Check if point is within object to know if we should select
   isPointInObject(x: number, y: number, radius: number): boolean {
     const points = this.object.points;
+    if (!points || !Array.isArray(points) || points.length === 0) {
+      return false;
+    }
     
     // First check all control points
     for (let i = 0; i < points.length; i++) {
       const point = points[i];
+      if (!point) continue;
       
       // Check main point
       if (isPointNear({ x, y }, point, radius)) {
         return true;
       }
       
-      // Check handles
-      if (isPointNear({ x, y }, point.handleIn, radius)) {
+      // Check handles (only if they exist)
+      if (point.handleIn && isPointNear({ x, y }, point.handleIn, radius)) {
         return true;
       }
       
-      if (isPointNear({ x, y }, point.handleOut, radius)) {
+      if (point.handleOut && isPointNear({ x, y }, point.handleOut, radius)) {
         return true;
       }
     }
@@ -79,6 +84,8 @@ export class BezierObjectRenderer {
       for (let i = 0; i < points.length - 1; i++) {
         const current = points[i];
         const next = points[i + 1];
+        
+        if (!current || !next || !current.handleOut || !next.handleIn) continue;
         
         const steps = Math.max(
           Math.abs(next.x - current.x),
@@ -97,7 +104,7 @@ export class BezierObjectRenderer {
             0 // No offset for the main curve
           );
           
-          if (isPointNear({ x, y }, curvePoint, radius + this.object.curveConfig.styles[0].width / 2)) {
+          if (curvePoint && isPointNear({ x, y }, curvePoint, radius + (this.object.curveConfig?.styles[0]?.width || 0) / 2)) {
             return true;
           }
         }
@@ -114,23 +121,27 @@ export class BezierObjectRenderer {
     radius: number
   ): { found: boolean, pointIndex: number, type: ControlPointType } {
     const points = this.object.points;
+    if (!points || !Array.isArray(points) || points.length === 0) {
+      return { found: false, pointIndex: -1, type: ControlPointType.MAIN };
+    }
     
     // Check if mouse is near any control point
     for (let i = 0; i < points.length; i++) {
       const point = points[i];
+      if (!point) continue;
       
       // Check main point
       if (isPointNear({ x, y }, point, radius)) {
         return { found: true, pointIndex: i, type: ControlPointType.MAIN };
       }
       
-      // Check handle in
-      if (isPointNear({ x, y }, point.handleIn, radius)) {
+      // Check handle in (only if it exists)
+      if (point.handleIn && isPointNear({ x, y }, point.handleIn, radius)) {
         return { found: true, pointIndex: i, type: ControlPointType.HANDLE_IN };
       }
       
-      // Check handle out
-      if (isPointNear({ x, y }, point.handleOut, radius)) {
+      // Check handle out (only if it exists)
+      if (point.handleOut && isPointNear({ x, y }, point.handleOut, radius)) {
         return { found: true, pointIndex: i, type: ControlPointType.HANDLE_OUT };
       }
     }
@@ -141,8 +152,25 @@ export class BezierObjectRenderer {
   // Draw the object in a canvas
   renderObject(ctx: CanvasRenderingContext2D) {
     const points = this.object.points;
-    const curveConfig = this.object.curveConfig;
-    const transform = this.object.transform;
+    
+    // Safety check - make sure we have valid data
+    if (!points || !Array.isArray(points) || points.length === 0) {
+      console.warn('Cannot render object - no valid points', this.object.id);
+      return;
+    }
+    
+    const curveConfig = this.object.curveConfig || { 
+      styles: [{ color: '#000000', width: 2 }],
+      parallelCount: 1,
+      spacing: 5 
+    };
+    
+    const transform = this.object.transform || { 
+      rotation: 0, 
+      scaleX: 1, 
+      scaleY: 1 
+    };
+    
     const objectId = this.object.id;
     
     // Save the context state for transformation
@@ -152,10 +180,18 @@ export class BezierObjectRenderer {
     let centerX = 0, centerY = 0;
     
     if (points.length > 0) {
-      const sumX = points.reduce((sum, point) => sum + point.x, 0);
-      const sumY = points.reduce((sum, point) => sum + point.y, 0);
-      centerX = sumX / points.length;
-      centerY = sumY / points.length;
+      // Filter out any undefined points for safety
+      const validPoints = points.filter(p => p && typeof p.x === 'number' && typeof p.y === 'number');
+      if (validPoints.length === 0) {
+        console.warn('Cannot render object - no valid coordinates in points', this.object.id);
+        ctx.restore();
+        return;
+      }
+      
+      const sumX = validPoints.reduce((sum, point) => sum + point.x, 0);
+      const sumY = validPoints.reduce((sum, point) => sum + point.y, 0);
+      centerX = sumX / validPoints.length;
+      centerY = sumY / validPoints.length;
     }
     
     // Apply transformations
@@ -164,15 +200,35 @@ export class BezierObjectRenderer {
     ctx.scale(transform.scaleX, transform.scaleY);
     ctx.translate(-centerX, -centerY);
     
-    // Draw curves if we have enough points
+    // Draw curves if we have enough valid points
     if (points.length >= 2) {
+      // Before drawing, validate all points have the necessary properties
+      let hasValidPoints = true;
+      for (let i = 0; i < points.length; i++) {
+        const point = points[i];
+        if (!point || typeof point.x !== 'number' || typeof point.y !== 'number' ||
+            !point.handleIn || typeof point.handleIn.x !== 'number' || typeof point.handleIn.y !== 'number' ||
+            !point.handleOut || typeof point.handleOut.x !== 'number' || typeof point.handleOut.y !== 'number') {
+          console.warn(`Invalid point at index ${i} in object ${this.object.id}`, point);
+          hasValidPoints = false;
+          break;
+        }
+      }
+      
+      if (!hasValidPoints) {
+        console.warn('Cannot render object - invalid point data', this.object.id);
+        ctx.restore();
+        return;
+      }
+      
       // Only draw parallel curves if parallelCount is greater than 1
       if (curveConfig.parallelCount > 1) {
         // Draw parallel curves first (behind main curve)
         for (let p = 1; p < curveConfig.parallelCount; p++) {
           const offset = p * curveConfig.spacing;
-          const color = curveConfig.styles[p] ? curveConfig.styles[p].color : curveConfig.styles[0].color;
-          const width = curveConfig.styles[p] ? curveConfig.styles[p].width : curveConfig.styles[0].width;
+          const styleIndex = Math.min(p, curveConfig.styles.length - 1);
+          const color = curveConfig.styles[styleIndex]?.color || curveConfig.styles[0]?.color || '#000000';
+          const width = curveConfig.styles[styleIndex]?.width || curveConfig.styles[0]?.width || 2;
           
           ctx.strokeStyle = color;
           ctx.lineWidth = width / this.zoom; // Adjust for zoom
@@ -185,6 +241,8 @@ export class BezierObjectRenderer {
           for (let i = 0; i < points.length - 1; i++) {
             const current = points[i];
             const next = points[i + 1];
+            
+            if (!current || !next || !current.handleOut || !next.handleIn) continue;
             
             // Sample points along the curve and offset them
             const steps = 30; // More steps = smoother curve
@@ -201,6 +259,8 @@ export class BezierObjectRenderer {
                 offset
               );
               
+              if (!offsetPoint) continue;
+              
               if (t === 0) {
                 ctx.moveTo(offsetPoint.x, offsetPoint.y);
               } else {
@@ -215,19 +275,23 @@ export class BezierObjectRenderer {
       
       // Draw main curve
       const mainStyle = curveConfig.styles[0] || { color: '#000000', width: 5 };
-      ctx.strokeStyle = mainStyle.color;
-      ctx.lineWidth = mainStyle.width / this.zoom; // Adjust for zoom
+      ctx.strokeStyle = mainStyle.color || '#000000';
+      ctx.lineWidth = (mainStyle.width || 5) / this.zoom; // Adjust for zoom
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
       
       ctx.beginPath();
       
       // Draw bezier curve through all points
-      ctx.moveTo(points[0].x, points[0].y);
+      if (points[0]) {
+        ctx.moveTo(points[0].x, points[0].y);
+      }
       
       for (let i = 0; i < points.length - 1; i++) {
         const current = points[i];
         const next = points[i + 1];
+        
+        if (!current || !next || !current.handleOut || !next.handleIn) continue;
         
         ctx.bezierCurveTo(
           current.handleOut.x, current.handleOut.y,
@@ -250,6 +314,7 @@ export class BezierObjectRenderer {
       
       for (let i = 0; i < points.length; i++) {
         const point = points[i];
+        if (!point || !point.handleIn || !point.handleOut) continue;
         
         // Draw handle lines
         ctx.beginPath();
@@ -308,9 +373,13 @@ export class BezierObjectRenderer {
     } else {
       // When not selected, just highlight with a bounding box
       if (points.length > 0) {
+        // Filter out any undefined points for safety
+        const validPoints = points.filter(p => p && typeof p.x === 'number' && typeof p.y === 'number');
+        if (validPoints.length === 0) return;
+        
         // Find min/max bounds
-        const xValues = points.map(p => p.x);
-        const yValues = points.map(p => p.y);
+        const xValues = validPoints.map(p => p.x);
+        const yValues = validPoints.map(p => p.y);
         const minX = Math.min(...xValues);
         const minY = Math.min(...yValues);
         const maxX = Math.max(...xValues);
@@ -336,9 +405,6 @@ export class BezierObjectRenderer {
       }
     }
   }
-  
-  // Handle mouse interaction on a control point
-  
 }
 
 // The actual React component that now properly returns JSX
