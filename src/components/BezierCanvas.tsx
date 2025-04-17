@@ -76,6 +76,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
   const POINT_RADIUS = 8;
   const HANDLE_RADIUS = 6;
   const ZOOM_FACTOR = 0.1;
+  
   // Clear all selections and reset drag states
   const clearSelections = () => {
     setSelectedPoint(null);
@@ -212,6 +213,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       });
     }
   };
+  
   // Handle mouse down on canvas
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
@@ -230,16 +232,40 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
 
     // Create new object in drawing mode
     if (isDrawingMode) {
-      const points: ControlPoint[] = [{
-        x,
-        y,
-        handleIn: { x: x - 50, y },
-        handleOut: { x: x + 50, y },
-        id: generateId()
-      }];
-
-      const newObjectId = onCreateObject(points);
-      setCurrentDrawingObjectId(newObjectId);
+      // If we're already drawing, add a point to the current object
+      if (currentDrawingObjectId) {
+        const updatedObjects = objects.map(obj => {
+          if (obj.id === currentDrawingObjectId) {
+            // Find the object we're currently drawing
+            const newPoint: ControlPoint = {
+              x,
+              y,
+              handleIn: { x: x - 50, y },
+              handleOut: { x: x + 50, y },
+              id: generateId()
+            };
+            return {
+              ...obj,
+              points: [...obj.points, newPoint]
+            };
+          }
+          return obj;
+        });
+        onObjectsChange(updatedObjects);
+      } else {
+        // Start a new object
+        const newPoint: ControlPoint = {
+          x,
+          y,
+          handleIn: { x: x - 50, y },
+          handleOut: { x: x + 50, y },
+          id: generateId()
+        };
+        
+        // Create the new object with initial point
+        const newObjectId = onCreateObject([newPoint]);
+        setCurrentDrawingObjectId(newObjectId);
+      }
       return;
     }
 
@@ -599,7 +625,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       window.removeEventListener('keyup', handleKeyUp);
     };
   }, [isSpacePressed, currentDrawingObjectId, selectedObjectIds, onUndo, cancelDrawing]);
-  // Component's return statement
+
   return (
     <div className="relative" ref={wrapperRef}>
       <div className="absolute top-4 left-4 z-10 flex flex-col gap-2">
