@@ -1,8 +1,10 @@
+
 import React, { useEffect, useState } from 'react';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
-import { checkTableAccess, verifyConnection } from '@/services/supabaseClient';
-import { AlertCircle, CheckCircle, RefreshCw } from 'lucide-react';
+import { checkTableAccess, verifyConnection, supabase } from '@/services/supabaseClient';
+import { AlertCircle, CheckCircle, RefreshCw, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { toast } from '@/components/ui/sonner';
 
 interface TableStatus {
   name: string;
@@ -23,6 +25,7 @@ const SupabaseStatus = () => {
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [showStatus, setShowStatus] = useState(true);
+  const [showVerboseDetails, setShowVerboseDetails] = useState(false);
 
   const checkConnection = async () => {
     setIsLoading(true);
@@ -33,7 +36,16 @@ const SupabaseStatus = () => {
       
       if (!connectionResult.success) {
         console.error('Supabase connection failed:', connectionResult);
+        
+        // Show toast notification for credential errors
+        if (connectionResult.errorType === 'credentials_error') {
+          toast.error('Supabase Connection Issue', {
+            description: 'Using placeholder credentials. Please connect to Supabase in project settings.',
+          });
+        }
+        
         setTableStatuses([]);
+        setIsLoading(false);
         return;
       }
       
@@ -55,6 +67,9 @@ const SupabaseStatus = () => {
       setTableStatuses(statuses);
     } catch (error) {
       console.error('Error checking Supabase connection:', error);
+      toast.error('Connection check failed', {
+        description: 'Could not verify Supabase connection status',
+      });
     } finally {
       setIsLoading(false);
       
@@ -78,7 +93,16 @@ const SupabaseStatus = () => {
 
   // Force a refresh of the status
   const refreshStatus = () => {
+    setShowVerboseDetails(false);
     checkConnection();
+  };
+
+  // Function to open Supabase project settings
+  const openSupabaseSettings = () => {
+    // This is a placeholder - in a real app, this would open the Supabase settings modal or page
+    toast.info('Supabase Settings', {
+      description: 'Please connect to Supabase using the green button in the top right',
+    });
   };
 
   if (!showStatus) {
@@ -86,6 +110,7 @@ const SupabaseStatus = () => {
   }
 
   const allAccessible = connectionStatus?.success && tableStatuses.every(status => status.accessible);
+  const usingPlaceholders = connectionStatus?.errorType === 'credentials_error';
   
   return (
     <div className="fixed bottom-4 right-4 z-50 max-w-sm">
@@ -98,8 +123,25 @@ const SupabaseStatus = () => {
           )}
           <div className="flex-1">
             <AlertTitle className="flex items-center justify-between">
-              <span>{connectionStatus?.success ? "Supabase Connected" : "Supabase Connection Issues"}</span>
+              <span>
+                {connectionStatus?.success 
+                  ? "Supabase Connected" 
+                  : usingPlaceholders
+                    ? "Supabase Not Connected"
+                    : "Supabase Connection Issues"}
+              </span>
               <div className="flex gap-2">
+                {!allAccessible && (
+                  <Button 
+                    variant="outline" 
+                    size="icon" 
+                    className="h-5 w-5 rounded-full"
+                    onClick={openSupabaseSettings}
+                    title="Open Supabase Settings"
+                  >
+                    <Settings className="h-3 w-3" />
+                  </Button>
+                )}
                 <Button 
                   variant="ghost" 
                   size="icon" 
@@ -119,17 +161,35 @@ const SupabaseStatus = () => {
                 </div>
               ) : !connectionStatus?.success ? (
                 <div className="text-sm">
-                  <div className="font-medium text-destructive mb-1">Connection Failed</div>
+                  <div className="font-medium text-destructive mb-1">
+                    {usingPlaceholders ? 'Connection Not Established' : 'Connection Failed'}
+                  </div>
                   <div className="text-xs opacity-90 mb-2">
-                    {connectionStatus?.errorType === 'api_error' ? 'Cannot reach Supabase API' : 
-                     connectionStatus?.errorType === 'query_error' ? 'API reachable but query failed' : 
-                     'Unexpected connection error'}
+                    {usingPlaceholders 
+                      ? 'Using placeholder Supabase credentials. Please connect to Supabase in project settings.' 
+                      : connectionStatus?.errorType === 'api_error' 
+                        ? 'Cannot reach Supabase API' 
+                        : connectionStatus?.errorType === 'query_error' 
+                          ? 'API reachable but query failed' 
+                          : 'Unexpected connection error'}
                   </div>
-                  <div className="text-xs bg-gray-100 p-2 rounded overflow-auto max-h-20">
-                    {typeof connectionStatus?.error === 'object' 
-                      ? JSON.stringify(connectionStatus.error, null, 2) 
-                      : String(connectionStatus?.error || 'Unknown error')}
-                  </div>
+                  
+                  {showVerboseDetails && (
+                    <div className="text-xs bg-gray-100 p-2 rounded overflow-auto max-h-20">
+                      {typeof connectionStatus?.error === 'object' 
+                        ? JSON.stringify(connectionStatus.error, null, 2) 
+                        : String(connectionStatus?.error || 'Unknown error')}
+                    </div>
+                  )}
+                  
+                  <Button
+                    variant="link"
+                    size="sm"
+                    className="h-auto p-0 text-xs mt-1"
+                    onClick={() => setShowVerboseDetails(!showVerboseDetails)}
+                  >
+                    {showVerboseDetails ? 'Hide' : 'Show'} details
+                  </Button>
                 </div>
               ) : (
                 <>

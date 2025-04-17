@@ -1,12 +1,52 @@
-
 import { createClient } from '@supabase/supabase-js';
 import { SavedDesign } from '@/types/bezier';
+import { toast } from '@/components/ui/sonner';
+
+// Log environment variables (without exposing the actual key values)
+console.log('Supabase environment check:', { 
+  VITE_SUPABASE_URL: import.meta.env.VITE_SUPABASE_URL ? 'defined' : 'undefined',
+  VITE_SUPABASE_ANON_KEY: import.meta.env.VITE_SUPABASE_ANON_KEY ? 'defined' : 'undefined',
+  NEXT_PUBLIC_SUPABASE_URL: import.meta.env.NEXT_PUBLIC_SUPABASE_URL ? 'defined' : 'undefined',
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? 'defined' : 'undefined'
+});
+
+// Check for multiple environment variable naming patterns
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 
+                   import.meta.env.NEXT_PUBLIC_SUPABASE_URL || 
+                   'https://your-project-url.supabase.co';
+
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 
+                    import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 
+                    'your-public-anon-key';
+
+// Log the actual URL (but not the key for security)
+console.log('Initializing Supabase client with URL:', supabaseUrl);
+console.log('Using placeholder URL?', supabaseUrl === 'https://your-project-url.supabase.co');
 
 // Initialize Supabase client
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://your-project-url.supabase.co';
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'your-public-anon-key';
-
 export const supabase = createClient(supabaseUrl, supabaseKey);
+
+// Test connection immediately to verify client setup
+(async () => {
+  try {
+    const connectionStatus = await verifyConnection();
+    console.log('Initial connection check result:', connectionStatus);
+    
+    if (!connectionStatus.success) {
+      console.error('Supabase connection failed on initialization:', connectionStatus.error);
+      
+      // Only show toast in browser environment
+      if (typeof window !== 'undefined') {
+        toast.error('Database connection issue', {
+          description: 'Please check Supabase connection in project settings',
+          duration: 5000,
+        });
+      }
+    }
+  } catch (error) {
+    console.error('Error during initial Supabase connection check:', error);
+  }
+})();
 
 export interface Template {
   id?: string;
@@ -20,9 +60,23 @@ export interface Template {
   user_id?: string;
 }
 
-// Connection verification functions
+// Enhanced connection verification function
 export const verifyConnection = async () => {
   try {
+    console.log('Verifying Supabase connection...');
+    
+    // Check if we're using default placeholders
+    if (supabaseUrl === 'https://your-project-url.supabase.co' || 
+        supabaseKey === 'your-public-anon-key') {
+      console.warn('Using placeholder Supabase credentials');
+      return {
+        success: false,
+        error: new Error('Using placeholder Supabase credentials'),
+        errorType: 'credentials_error',
+        details: 'Placeholder credentials detected. Please connect to Supabase in project settings.'
+      };
+    }
+    
     // First, try a simple query to check if we can connect at all
     const { data, error: queryError } = await supabase
       .from('_test_connection')
@@ -42,6 +96,7 @@ export const verifyConnection = async () => {
       };
     }
     
+    console.log('Supabase connection verified successfully');
     return {
       success: true,
       details: 'Supabase connection successful'
@@ -58,9 +113,11 @@ export const verifyConnection = async () => {
   }
 };
 
-// Table access check function
+// Table access check function - enhanced with better logging
 export const checkTableAccess = async (tableName: string) => {
   try {
+    console.log(`Checking access to table: ${tableName}`);
+    
     // Attempt to query the table
     const { data, error } = await supabase
       .from(tableName)
@@ -68,6 +125,7 @@ export const checkTableAccess = async (tableName: string) => {
       .limit(1);
     
     if (error) {
+      console.error(`Table access check failed for ${tableName}:`, error);
       return {
         accessible: false,
         error: error.message,
@@ -75,11 +133,13 @@ export const checkTableAccess = async (tableName: string) => {
       };
     }
     
+    console.log(`Access to table ${tableName} verified successfully`);
     return {
       accessible: true,
       details: `Access to ${tableName} successful`
     };
   } catch (error) {
+    console.error(`Table access check error for ${tableName}:`, error);
     return {
       accessible: false,
       error: String(error),
