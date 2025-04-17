@@ -1,13 +1,20 @@
 
 import React, { useEffect, useState } from 'react';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
-import { checkTableAccess, verifyConnection, supabase, setSupabaseCredentials } from '@/services/supabaseClient';
-import { AlertCircle, CheckCircle, RefreshCw, Settings, Key } from 'lucide-react';
+import { 
+  checkTableAccess, 
+  verifyConnection, 
+  setSupabaseCredentials,
+  resetStoredCredentials,
+  getCurrentSupabaseUrl
+} from '@/services/supabaseClient';
+import { AlertCircle, CheckCircle, RefreshCw, Settings, Key, Trash } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/components/ui/sonner';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Link } from 'react-router-dom';
 
 interface TableStatus {
   name: string;
@@ -103,12 +110,9 @@ const SupabaseStatus = () => {
     checkConnection();
   };
 
-  // Function to open Supabase settings
-  const openSupabaseSettings = () => {
-    // This is a placeholder - in a real app, this would open the Supabase settings modal or page
-    toast.info('Supabase Settings', {
-      description: 'Please connect to Supabase using the green button in the top right',
-    });
+  // Function to open Supabase test page
+  const openSupabaseTest = () => {
+    window.location.href = '/supabase-test';
   };
 
   // Handle manual connection
@@ -137,6 +141,31 @@ const SupabaseStatus = () => {
       console.error('Error setting manual credentials:', error);
       toast.error('Connection failed', {
         description: 'Could not connect with provided credentials',
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Handle reset/clear credentials
+  const handleResetCredentials = async () => {
+    try {
+      setIsLoading(true);
+      resetStoredCredentials();
+      
+      // Close dialog
+      setManualDialogOpen(false);
+      
+      // Check connection after reset
+      await checkConnection();
+      
+      toast.success('Credentials reset', {
+        description: 'Using default or environment credentials now.'
+      });
+    } catch (error) {
+      console.error('Error resetting credentials:', error);
+      toast.error('Reset failed', {
+        description: 'Could not reset credentials',
       });
     } finally {
       setIsLoading(false);
@@ -215,6 +244,20 @@ const SupabaseStatus = () => {
                               className="col-span-3"
                             />
                           </div>
+                          <div className="flex justify-between pt-2">
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={handleResetCredentials}
+                              disabled={isLoading}
+                            >
+                              <Trash className="h-3 w-3 mr-1" />
+                              Reset
+                            </Button>
+                            <Link to="/supabase-test" className="text-xs text-blue-500 hover:underline flex items-center">
+                              Advanced testing
+                            </Link>
+                          </div>
                         </div>
                         <DialogFooter>
                           <Button onClick={handleManualConnect} disabled={isLoading}>
@@ -228,8 +271,8 @@ const SupabaseStatus = () => {
                       variant="outline" 
                       size="icon" 
                       className="h-5 w-5 rounded-full"
-                      onClick={openSupabaseSettings}
-                      title="Open Supabase Settings"
+                      onClick={openSupabaseTest}
+                      title="Advanced Supabase Testing"
                     >
                       <Settings className="h-3 w-3" />
                     </Button>
@@ -258,20 +301,22 @@ const SupabaseStatus = () => {
                     {usingPlaceholders ? 'Connection Not Established' : 'Connection Failed'}
                   </div>
                   <div className="text-xs opacity-90 mb-2">
-                    {usingPlaceholders 
-                      ? 'Using placeholder Supabase credentials. Try using the manual connection option.' 
-                      : connectionStatus?.errorType === 'api_error' 
-                        ? 'Cannot reach Supabase API' 
-                        : connectionStatus?.errorType === 'query_error' 
-                          ? 'API reachable but query failed' 
-                          : 'Unexpected connection error'}
+                    {connectionStatus?.details || (
+                      usingPlaceholders 
+                        ? 'Using placeholder Supabase credentials. Try using the manual connection option.' 
+                        : connectionStatus?.errorType === 'api_error' 
+                          ? 'Cannot reach Supabase API' 
+                          : connectionStatus?.errorType === 'auth_error' 
+                            ? 'Auth service unavailable' 
+                            : 'Unexpected connection error'
+                    )}
                   </div>
                   
-                  {showVerboseDetails && (
+                  {showVerboseDetails && connectionStatus?.error && (
                     <div className="text-xs bg-gray-100 p-2 rounded overflow-auto max-h-20">
-                      {typeof connectionStatus?.error === 'object' 
+                      {typeof connectionStatus.error === 'object' 
                         ? JSON.stringify(connectionStatus.error, null, 2) 
-                        : String(connectionStatus?.error || 'Unknown error')}
+                        : String(connectionStatus.error || 'Unknown error')}
                     </div>
                   )}
                   

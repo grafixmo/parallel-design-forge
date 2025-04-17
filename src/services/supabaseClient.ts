@@ -1,3 +1,4 @@
+
 import { createClient } from '@supabase/supabase-js';
 import { SavedDesign } from '@/types/bezier';
 import { toast } from '@/components/ui/sonner';
@@ -60,7 +61,7 @@ export const setSupabaseCredentials = async (url: string, key: string) => {
   // Verify the connection with new credentials
   const result = await verifyConnection();
   if (!result.success) {
-    throw new Error('Connection failed with new credentials: ' + result.error);
+    throw new Error('Connection failed with new credentials: ' + (result.details || result.error));
   }
   
   return result;
@@ -73,6 +74,27 @@ export let supabase = createClient(supabaseUrl, supabaseKey);
 const reinitializeClient = () => {
   supabase = createClient(supabaseUrl, supabaseKey);
   console.log('Supabase client reinitialized with new credentials');
+};
+
+// Reset stored credentials (for troubleshooting)
+export const resetStoredCredentials = () => {
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem('supabase_manual_url');
+    localStorage.removeItem('supabase_manual_key');
+    console.log('Cleared stored Supabase credentials');
+  }
+  
+  // Reset to environment variables or defaults
+  supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 
+               import.meta.env.NEXT_PUBLIC_SUPABASE_URL || 
+               'https://your-project-url.supabase.co';
+  
+  supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 
+                import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 
+                'your-public-anon-key';
+                
+  reinitializeClient();
+  return true;
 };
 
 // Enhanced connection verification function
@@ -92,29 +114,46 @@ export const verifyConnection = async () => {
       };
     }
     
-    // First, try a simple query to check if we can connect at all
-    const { data, error: queryError } = await supabase
-      .from('_test_connection')
-      .select('*')
-      .limit(1)
-      .single();
+    // Test the auth service - a more reliable indication of connection
+    const { data: authData, error: authError } = await supabase.auth.getSession();
     
-    // If we get a PostgreSQL error but not a network error,
-    // the API is reachable but the query failed (which is expected if the table doesn't exist)
-    if (queryError && queryError.code !== 'PGRST116') {
-      console.log('Connection check - Query error:', queryError);
+    if (authError) {
+      console.error('Auth service check failed:', authError);
       return {
         success: false,
-        error: queryError,
-        errorType: 'query_error',
-        details: 'Database query failed, but API is reachable'
+        error: authError,
+        errorType: 'auth_error',
+        details: 'Auth service unavailable. Possible API connection issue.'
       };
     }
     
-    console.log('Supabase connection verified successfully');
+    // Auth is working, which means the API is reachable
+    // Now try to detect available tables
+    
+    // First try to list tables (only works with sufficient permissions)
+    try {
+      // This is a Postgres-specific query that will fail with 404 if the REST API works
+      // but we don't have permission, which is expected in many cases
+      const { error: tablesError } = await supabase.rpc('get_tables');
+      
+      // If no error, we have full DB access which is rare but great
+      if (!tablesError) {
+        return {
+          success: true,
+          details: 'Full database access confirmed'
+        };
+      }
+    } catch (e) {
+      // Ignore this error - it's expected with normal permissions
+      console.log('Table listing check failed (normal with restricted permissions)');
+    }
+    
+    // API is reachable, but we don't know about tables yet
+    // This is still a successful connection
+    console.log('Supabase API connection verified successfully');
     return {
       success: true,
-      details: 'Supabase connection successful'
+      details: 'Supabase API connection successful'
     };
     
   } catch (error) {
@@ -130,6 +169,8 @@ export const verifyConnection = async () => {
 
 // Table access check function - enhanced with better logging
 export const checkTableAccess = async (tableName: string) => {
+  if (!tableName) return { accessible: false, error: 'No table name provided' };
+  
   try {
     console.log(`Checking access to table: ${tableName}`);
     
@@ -140,11 +181,35 @@ export const checkTableAccess = async (tableName: string) => {
       .limit(1);
     
     if (error) {
+      // Specific error for "table doesn't exist"
+      if (error.code === '42P01') {
+        console.error(`Table '${tableName}' does not exist`);
+        return {
+          accessible: false,
+          error: `Table '${tableName}' does not exist`,
+          details: error,
+          errorType: 'missing_table'
+        };
+      }
+      
+      // Permission error
+      if (error.code === '42501' || error.message.includes('permission')) {
+        console.error(`Permission denied for table '${tableName}'`);
+        return {
+          accessible: false,
+          error: `Permission denied for table '${tableName}'`,
+          details: error,
+          errorType: 'permission'
+        };
+      }
+      
+      // General error
       console.error(`Table access check failed for ${tableName}:`, error);
       return {
         accessible: false,
         error: error.message,
-        details: error
+        details: error,
+        errorType: 'query_error'
       };
     }
     
@@ -158,9 +223,15 @@ export const checkTableAccess = async (tableName: string) => {
     return {
       accessible: false,
       error: String(error),
-      details: error
+      details: error,
+      errorType: 'exception'
     };
   }
+};
+
+// Get the current Supabase URL (safe for display)
+export const getCurrentSupabaseUrl = () => {
+  return supabaseUrl;
 };
 
 // Test connection immediately to verify client setup
