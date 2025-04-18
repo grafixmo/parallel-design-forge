@@ -58,7 +58,11 @@ interface ObjectControlsPanelProps {
   onRemoveImage: () => void;
 }
 
-const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
+interface ObjectControlsPanelProps {
+  selectedObjects?: BezierObject[];
+}
+
+const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({ selectedObjects = [] }) => React.FC<ObjectControlsPanelProps> = ({
   selectedObjects,
   allObjects,
   selectedObjectIds,
