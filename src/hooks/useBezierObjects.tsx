@@ -1,4 +1,3 @@
-
 import { useState, useCallback } from 'react';
 import { 
   BezierObject, 
@@ -34,7 +33,7 @@ export function useBezierObjects() {
   const [history, setHistory] = useState<HistoryState[]>([]);
   const [currentHistoryIndex, setCurrentHistoryIndex] = useState<number>(-1);
   
-  // Add current state to history - define this function earlier in the file
+  // Define addToHistory before it's used
   const addToHistory = useCallback((updatedObjects: BezierObject[]) => {
     const newHistoryState: HistoryState = {
       objects: JSON.parse(JSON.stringify(updatedObjects)), // Deep clone
