@@ -39,7 +39,8 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { parseTemplateData } from '@/utils/svgExporter';
-import { MergeToggle } from './MergeToggle';
+import MergeToggle from './MergeToggle'; // Change from named import to default import
+
 
 interface TemplateGalleryProps {
   open: boolean;
