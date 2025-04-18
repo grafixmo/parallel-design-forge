@@ -910,4 +910,155 @@ const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
   const mouseY = e.clientY - rect.top;
   
   // Calculate zoom direction
-  const delta =
+  const delta = e.deltaY < 0 ? 1 : -1;
+  const newZoom = Math.max(0.1, Math.min(5, zoom * (1 + delta * ZOOM_FACTOR)));
+  
+  // Calculate new offset to zoom centered on mouse position
+  const zoomRatio = newZoom / zoom;
+  
+  // Update pan offset to zoom toward mouse position
+  setPanOffset({
+    x: mouseX - (mouseX - panOffset.x) * zoomRatio,
+    y: mouseY - (mouseY - panOffset.y) * zoomRatio
+  });
+  
+  // Set new zoom
+  setZoom(newZoom);
+  
+  toast({
+    title: `Zoom: ${Math.round(newZoom * 100)}%`,
+    description: 'Use mouse wheel to zoom in and out'
+  });
+};
+  
+  // Add keyboard event handler for shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // ESC key to exit drawing mode or clear selections
+      if (e.key === 'Escape') {
+        if (currentDrawingObjectId) {
+          // Cancel the current drawing
+          cancelDrawing();
+        } else {
+          clearSelections();
+          // Also clear object selection when pressing ESC
+          onObjectSelect('', false);
+        }
+      }
+      
+      // Delete key to delete selected objects
+      if (e.key === 'Delete' && !isDrawingMode && selectedObjectIds.length > 0) {
+        // This would be handled by the parent component
+        toast({
+          title: `${selectedObjectIds.length} objects deleted`,
+          description: 'Selected objects have been removed'
+        });
+      }
+      
+      // Enter key to finalize drawing
+      if (e.key === 'Enter' && currentDrawingObjectId) {
+        finalizeDrawingObject();
+      }
+      
+      // Ctrl+Z for undo
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        e.preventDefault();
+        onUndo();
+      }
+      
+      // Space to enable panning
+      if (e.key === ' ' && !e.repeat) {
+        e.preventDefault();
+        setIsSpacePressed(true);
+      }
+    };
+    
+    const handleKeyUp = (e: KeyboardEvent) => {
+      // Space to disable panning
+      if (e.key === ' ') {
+        setIsSpacePressed(false);
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [selectedObjectIds, isDrawingMode, onUndo, currentDrawingObjectId, objects, onObjectSelect]);
+  
+  return (
+    <div ref={wrapperRef} className="relative w-full h-full overflow-hidden">
+      <canvas
+        ref={canvasRef}
+        width={width}
+        height={height}
+        className="w-full h-full bg-white"
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onDoubleClick={handleDoubleClick}
+        onWheel={handleWheel}
+        onContextMenu={handleContextMenu}
+      />
+      
+      <div className="absolute bottom-4 left-4 text-sm text-gray-500 bg-white/80 px-3 py-1 rounded shadow">
+        {instructionMessage}
+      </div>
+      
+      <div className="absolute top-4 right-4 flex space-x-2">
+        <button 
+          className="bg-white/80 p-2 rounded shadow hover:bg-white transition-colors"
+          onClick={onUndo}
+          title="Undo (Ctrl+Z)"
+        >
+          <Undo className="w-5 h-5" />
+        </button>
+        <button 
+          className="bg-white/80 p-2 rounded shadow hover:bg-white transition-colors"
+          onClick={handleZoomIn}
+          title="Zoom In"
+        >
+          <ZoomIn className="w-5 h-5" />
+        </button>
+        <button 
+          className="bg-white/80 p-2 rounded shadow hover:bg-white transition-colors"
+          onClick={handleZoomOut}
+          title="Zoom Out"
+        >
+          <ZoomOut className="w-5 h-5" />
+        </button>
+        <button 
+          className="bg-white/80 p-2 rounded shadow hover:bg-white transition-colors"
+          onClick={handleResetView}
+          title="Reset View"
+        >
+          <RotateCcw className="w-5 h-5" />
+        </button>
+      </div>
+      
+      {currentDrawingObjectId && (
+        <div className="absolute bottom-4 right-4 flex space-x-2">
+          <button
+            className="bg-red-500 text-white px-3 py-1 rounded shadow hover:bg-red-600 transition-colors"
+            onClick={cancelDrawing}
+            title="Cancel Drawing (ESC)"
+          >
+            Cancel
+          </button>
+          <button
+            className="bg-green-500 text-white px-3 py-1 rounded shadow hover:bg-green-600 transition-colors"
+            onClick={finalizeDrawingObject}
+            title="Finish Drawing (Enter or Right-click)"
+          >
+            Finish
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default BezierCanvas;
