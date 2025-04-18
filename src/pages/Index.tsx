@@ -315,7 +315,8 @@ const Index = () => {
     const design: SavedDesign = {
       name,
       category,
-      shapes_data: stringifiedData
+      shapes_data: stringifiedData,
+      svg_content
     };
     
     try {
