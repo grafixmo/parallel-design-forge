@@ -1,4 +1,3 @@
-
 /**
  * Converts various data formats to valid SVG
  */
@@ -47,7 +46,7 @@ export function convertToValidSVG(data: string): string | null {
         const rawSvg = first.d;
 
         const cleanedSvg = rawSvg
-          .replace(/\"/g, '"') // unescape quotes
+          .replace(/\\"/g, '"') // unescape quotes
           .replace(/^"|"$/g, '') // strip outer quotes
           .trim();
 
@@ -82,8 +81,7 @@ export function generateSVGFromShapes(shapes: Shape[]): string {
 
   const svg = `
 <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
-  ${shapeElements.join('
-  ')}
+  ${shapeElements.join('\n  ')}
 </svg>
 `.trim();
 
