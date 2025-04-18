@@ -20,18 +20,19 @@ function extractSVGDimensions(svgString: string): { width: number; height: numbe
   const doc = parser.parseFromString(svgString, 'image/svg+xml');
   const svg = doc.documentElement;
 
+  // Get dimensions from viewBox first
+  const viewBox = svg.getAttribute('viewBox');
+  let [vbX, vbY, vbWidth, vbHeight] = (viewBox || '0 0 0 0').split(/[\s,]+/).map(parseFloat);
+
+  // Get explicit width/height
   let width = parseFloat(svg.getAttribute('width') || '0');
   let height = parseFloat(svg.getAttribute('height') || '0');
-  const viewBox = svg.getAttribute('viewBox');
 
-  // If viewBox exists, use it for dimensions when width/height are missing
-  if (viewBox) {
-    const [, , vbWidth, vbHeight] = viewBox.split(/[\s,]+/).map(parseFloat);
-    if (!width && vbWidth) width = vbWidth;
-    if (!height && vbHeight) height = vbHeight;
-  }
+  // Use viewBox dimensions if width/height not specified
+  if (!width && vbWidth) width = vbWidth;
+  if (!height && vbHeight) height = vbHeight;
 
-  // Fallback dimensions if neither width/height nor viewBox are present
+  // Fallback dimensions
   if (!width || !height) {
     width = 800;
     height = 600;
@@ -212,76 +213,72 @@ function processSVGPaths(paths: SVGPathElement[], existingCurveConfig?: CurveCon
 
   console.log(`Processing ${paths.length} SVG paths`);
 
-  // Extract path data and ensure proper positioning
+  // Extract path data and calculate bounds
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+
   const pathElements = paths.map(path => {
     const d = path.getAttribute('d') || '';
     
-    // Get transform matrix if any
-    const transform = path.getAttribute('transform');
-    let matrix: DOMMatrix | null = null;
-    
-    if (transform) {
-      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      const tempPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      tempPath.setAttribute('transform', transform);
-      svg.appendChild(tempPath);
-      matrix = tempPath.getCTM();
-    }
+    // Calculate bounds from path coordinates
+    const points = approximateControlPointsFromPath(d);
+    points.forEach(point => {
+      minX = Math.min(minX, point.x);
+      minY = Math.min(minY, point.y);
+      maxX = Math.max(maxX, point.x);
+      maxY = Math.max(maxY, point.y);
+    });
 
     return {
-      d: d,
-      matrix: matrix,
+      d,
       stroke: path.getAttribute('stroke') || '#000000',
       strokeWidth: parseFloat(path.getAttribute('stroke-width') || '2'),
-      fill: path.getAttribute('fill') || 'none',
-      opacity: parseFloat(path.getAttribute('stroke-opacity') || '1'),
-      lineCap: path.getAttribute('stroke-linecap') || 'round',
-      lineJoin: path.getAttribute('stroke-linejoin') || 'round',
-      dashArray: path.getAttribute('stroke-dasharray') || ''
+      fill: path.getAttribute('fill') || 'none'
     };
   }).filter(p => p.d);
 
-  if (pathElements.length === 0) {
-    console.log('No valid path data found');
-    return null;
-  }
+  if (pathElements.length === 0) return null;
 
-  // Create control points from the first path
-  const mainPath = pathElements[0];
-  console.log('Generating control points from path:', mainPath.d.substring(0, 50) + '...');
+  // Calculate center and scale
+  const width = maxX - minX;
+  const height = maxY - minY;
+  const centerX = (minX + maxX) / 2;
+  const centerY = (minY + maxY) / 2;
 
-  // Apply matrix transformation if exists
-  const points = approximateControlPointsFromPath(mainPath.d, mainPath.matrix);
-  console.log(`Generated ${points.length} control points`);
-
-  if (points.length < 2) {
-    console.log('Not enough control points generated (minimum 2 required)');
-    return null;
-  }
-
-  // Create styles for each path
-  const styles: CurveStyle[] = pathElements.map(p => ({
-    color: p.stroke,
-    width: p.strokeWidth,
-    fill: p.fill,
-    opacity: p.opacity,
-    lineCap: p.lineCap as string,
-    lineJoin: p.lineJoin as string,
-    dashArray: p.dashArray
+  // Generate scaled and centered points
+  const points = approximateControlPointsFromPath(pathElements[0].d);
+  const scaledPoints = points.map(point => ({
+    ...point,
+    x: (point.x - centerX) + 400, // Center in 800x600 canvas
+    y: (point.y - centerY) + 300,
+    handleIn: {
+      x: (point.handleIn.x - centerX) + 400,
+      y: (point.handleIn.y - centerY) + 300
+    },
+    handleOut: {
+      x: (point.handleOut.x - centerX) + 400,
+      y: (point.handleOut.y - centerY) + 300
+    }
   }));
 
-  // Use existing curve config if provided, otherwise create one from styles
-  const curveConfig: CurveConfig = existingCurveConfig || {
-    styles,
-    parallelCount: styles.length,
-    spacing: 5
-  };
+  // Create styles for each path
+  const styles = pathElements.map(p => ({
+    color: p.stroke,
+    width: p.strokeWidth,
+    fill: p.fill
+  }));
 
   return {
     id: generateId(),
-    name: 'Imported Path',
-    points,
-    curveConfig,
+    name: 'Imported SVG',
+    points: scaledPoints,
+    curveConfig: existingCurveConfig || {
+      styles,
+      parallelCount: styles.length,
+      spacing: 5
+    },
     transform: {
       rotation: 0,
       scaleX: 1,
