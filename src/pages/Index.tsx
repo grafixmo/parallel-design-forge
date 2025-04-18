@@ -182,17 +182,16 @@ const Index = () => {
     });
   };
 
-  // Updated handleSelectDesign function
-  const handleSelectDesign = (design: SavedDesign) => {
+  // Updated handleSelectDesign function to support merging
+  const handleSelectDesign = (design: SavedDesign, merge: boolean = false) => {
     try {
       if (!design.shapes_data) {
         throw new Error('Design data is empty');
       }
       
-      // Log information about the data type
+      // Log information about the data type and merge mode
       const dataType = typeof design.shapes_data;
-      const dataLength = dataType === 'string' ? design.shapes_data.length : 1;
-      console.log(`Loading design: ${design.name}, data type: ${dataType}, length: ${dataLength}`);
+      console.log(`Loading design: ${design.name}, data type: ${dataType}, merge: ${merge}`);
       
       // Normalize the data to ensure it's a string
       let shapesDataString = normalizeDesignData(design.shapes_data);
@@ -200,7 +199,7 @@ const Index = () => {
       // Check if it's an SVG file - SVG takes priority
       if (shapesDataString.trim().startsWith('<svg') || shapesDataString.includes('<svg ')) {
         console.log('Processing as SVG data');
-        handleImportSVG(shapesDataString);
+        handleImportSVG(shapesDataString, merge);
         return;
       }
       
@@ -208,22 +207,27 @@ const Index = () => {
       const svgData = convertToValidSVG(shapesDataString);
       if (svgData) {
         console.log('Successfully converted data to SVG');
-        handleImportSVG(svgData);
+        handleImportSVG(svgData, merge);
         return;
       }
       
       // If not SVG or conversion failed, try to parse as JSON
       try {
-        // Try parsing as JSON
         const parsedData = JSON.parse(shapesDataString);
         console.log('Successfully parsed JSON data');
         
-        // Clear current objects
-        objects.forEach(obj => deleteObject(obj.id));
+        if (!merge) {
+          // Clear current objects if not in merge mode
+          objects.forEach(obj => deleteObject(obj.id));
+        }
         
-        // Check if data has objects array (new format) or just points (old format)
+        // Add new objects
         if (parsedData.objects && Array.isArray(parsedData.objects)) {
-          setAllObjects(parsedData.objects);
+          const newObjects = parsedData.objects.map((obj: BezierObject) => ({
+            ...obj,
+            id: generateId() // Generate new IDs to avoid conflicts
+          }));
+          setAllObjects(merge ? [...objects, ...newObjects] : newObjects);
         } else if (parsedData.points && Array.isArray(parsedData.points)) {
           createObject(parsedData.points, design.name || 'Imported Object');
         }
@@ -231,15 +235,14 @@ const Index = () => {
         saveCurrentState();
         
         toast({
-          title: 'Design Loaded',
-          description: `Design "${design.name}" has been loaded successfully.`
+          title: merge ? 'Design Merged' : 'Design Loaded',
+          description: `Design "${design.name}" has been ${merge ? 'merged' : 'loaded'} successfully.`
         });
       } catch (parseError) {
         console.error('Error parsing design JSON:', parseError);
         throw new Error(`Failed to parse design data: ${parseError?.message || 'Unknown format'}`);
       }
     } catch (error: any) {
-      console.error('❌ Error saving design:', error);
       console.error('Error loading design:', error);
       toast({
         title: 'Load Failed',
@@ -248,9 +251,9 @@ const Index = () => {
       });
     }
   };
-  
-  // Import SVG from a string - improved version
-  const handleImportSVG = (svgString: string) => {
+
+  // Update handleImportSVG to support merging
+  const handleImportSVG = (svgString: string, merge: boolean = false) => {
     try {
       if (!svgString || typeof svgString !== 'string') {
         throw new Error('Invalid SVG: Empty or not a string');
@@ -267,21 +270,27 @@ const Index = () => {
       
       console.log(`Successfully imported ${importedObjects.length} objects with ${importedObjects.reduce((sum, obj) => sum + obj.points.length, 0)} points`);
       
-      // Clear existing objects
-      objects.forEach(obj => deleteObject(obj.id));
+      if (!merge) {
+        // Clear existing objects if not in merge mode
+        objects.forEach(obj => deleteObject(obj.id));
+      }
       
-      // Add all imported objects to the canvas
-      setAllObjects(importedObjects);
+      // Add imported objects with new IDs
+      const newObjects = importedObjects.map(obj => ({
+        ...obj,
+        id: generateId() // Generate new IDs to avoid conflicts
+      }));
+      
+      setAllObjects(merge ? [...objects, ...newObjects] : newObjects);
       
       // Save the new state
       saveCurrentState();
       
       toast({
-        title: 'SVG Imported',
-        description: `Imported ${importedObjects.length} object(s) from SVG file.`
+        title: merge ? 'SVG Merged' : 'SVG Imported',
+        description: `${merge ? 'Merged' : 'Imported'} ${importedObjects.length} object(s) from SVG file.`
       });
     } catch (error: any) {
-      console.error('❌ Error saving design:', error);
       console.error('Error importing SVG:', error);
       toast({
         title: 'Import Failed',

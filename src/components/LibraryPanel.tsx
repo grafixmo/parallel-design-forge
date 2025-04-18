@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -15,10 +14,11 @@ import { getDesigns, getDesignsByCategory, updateDesign } from '@/services/supab
 import { X, AlertTriangle, FileJson, FileText } from 'lucide-react';
 import { importSVGFromString } from '@/utils/svgExporter';
 import { useToast } from '@/hooks/use-toast';
+import MergeToggle from './MergeToggle';
 
 interface LibraryPanelProps {
   onClose: () => void;
-  onSelectDesign: (design: SavedDesign) => void;
+  onSelectDesign: (design: SavedDesign, merge: boolean) => void;
 }
 
 const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign }) => {
@@ -28,6 +28,7 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign }) 
   const [error, setError] = useState<string | null>(null);
   const [fixedCount, setFixedCount] = useState<number>(0);
   const { toast } = useToast();
+  const [mergeMode, setMergeMode] = useState(false);
 
   useEffect(() => {
     fetchDesigns();
@@ -189,7 +190,7 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign }) 
       console.log(`Note: Design ${design.name} was auto-fixed during loading`);
     }
     
-    onSelectDesign(design);
+    onSelectDesign(design, mergeMode);
     onClose();
   };
 
@@ -271,9 +272,12 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign }) 
       <Card className="w-full max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
         <div className="flex items-center justify-between p-4 border-b">
           <h2 className="text-xl font-semibold">Design Library</h2>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            <X className="h-4 w-4" />
-          </Button>
+          <div className="flex items-center space-x-4">
+            <MergeToggle enabled={mergeMode} onToggle={setMergeMode} />
+            <Button variant="ghost" size="sm" onClick={onClose}>
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
         
         <div className="p-4 border-b">
