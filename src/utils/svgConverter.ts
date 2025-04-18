@@ -14,7 +14,6 @@ type Shape = {
 
 export function convertToValidSVG(data: string): string | null {
   try {
-    // First, normalize the data to ensure it's a string
     if (typeof data !== 'string') {
       try {
         data = JSON.stringify(data);
@@ -24,12 +23,10 @@ export function convertToValidSVG(data: string): string | null {
       }
     }
 
-    // Case 1: Direct SVG string (plain XML)
     if (data.trim().startsWith('<svg') || data.includes('<?xml')) {
       return data;
     }
 
-    // Case 2: JSON array wrapper with a field containing SVG string
     let parsedData;
     try {
       parsedData = JSON.parse(data);
@@ -38,17 +35,15 @@ export function convertToValidSVG(data: string): string | null {
       return null;
     }
 
-    // Case 2a: Data is an array with at least one item having "d" field as SVG string
     if (Array.isArray(parsedData) && parsedData.length > 0) {
       const first = parsedData[0];
 
-      // Case: SVG XML is wrapped in the "d" field
       if (typeof first.d === 'string' && first.d.trim().startsWith('<svg')) {
         const rawSvg = first.d;
 
         const cleanedSvg = rawSvg
-          .replace(/\"/g, '"') // unescape quotes
-          .replace(/^"|"$/g, '') // strip outer quotes
+          .replace(/\"/g, '"')
+          .replace(/^"|"$/g, '')
           .trim();
 
         if (cleanedSvg.startsWith('<svg')) {
@@ -56,7 +51,6 @@ export function convertToValidSVG(data: string): string | null {
         }
       }
 
-      // Case: generate SVG from custom shape data
       return generateSVGFromShapes(parsedData);
     }
 
@@ -82,11 +76,7 @@ export function generateSVGFromShapes(shapes: Shape[]): string {
 
   const joinedElements = shapeElements.join('\n  ');
 
-  const svg = `
-<svg xmlns="http://www.w3.org/2000/svg" width="\${width}" height="\${height}" viewBox="0 0 \${width} \${height}">
-  \${joinedElements}
-</svg>
-`.trim();
-
-  return svg;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+  ${joinedElements}
+</svg>`.trim();
 }
