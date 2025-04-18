@@ -314,7 +314,9 @@ const Index = () => {
     const stringifiedData = JSON.stringify(designData);
     
     // Save design to the designs table (legacy)
-    const design: SavedDesign = {
+    const svg_content = exportAsSVG(objects, canvasWidth, canvasHeight);
+
+const design: SavedDesign = {
       name,
       category,
       shapes_data: stringifiedData,
@@ -330,7 +332,6 @@ const Index = () => {
       }
       
       // Also save as a template to the new templates table
-      const svg_content = exportAsSVG(objects, canvasWidth, canvasHeight);
 
       const template: Template = {
         name,
