@@ -1,4 +1,3 @@
-
 import { useState, useCallback } from 'react';
 import { 
   BezierObject, 
@@ -137,22 +136,78 @@ export function useBezierObjects() {
     addToHistory(updatedObjects);
   }, [objects]);
   
-  // Update transform settings for a specific object
+  // Update transform settings with proper point transformation
   const updateObjectTransform = useCallback((objectId: string, transform: TransformSettings) => {
     setObjects(prevObjects => 
-      prevObjects.map(obj => 
-        obj.id === objectId 
-          ? { ...obj, transform }
-          : obj
-      )
+      prevObjects.map(obj => {
+        if (obj.id !== objectId) return obj;
+        
+        // Get the center of the object for rotation
+        const points = obj.points;
+        let centerX = 0;
+        let centerY = 0;
+        points.forEach(p => {
+          centerX += p.x;
+          centerY += p.y;
+        });
+        centerX /= points.length;
+        centerY /= points.length;
+
+        // Transform all points and handles
+        const transformedPoints = points.map(point => {
+          // Scale relative to center
+          const scaledX = centerX + (point.x - centerX) * transform.scaleX;
+          const scaledY = centerY + (point.y - centerY) * transform.scaleY;
+          
+          // Rotate around center
+          const angle = (transform.rotation * Math.PI) / 180;
+          const rotatedX = centerX + (scaledX - centerX) * Math.cos(angle) - (scaledY - centerY) * Math.sin(angle);
+          const rotatedY = centerY + (scaledX - centerX) * Math.sin(angle) + (scaledY - centerY) * Math.cos(angle);
+
+          // Apply same transformation to handles
+          const handleIn = transformPoint(point.handleIn, centerX, centerY, transform);
+          const handleOut = transformPoint(point.handleOut, centerX, centerY, transform);
+
+          return {
+            ...point,
+            x: rotatedX,
+            y: rotatedY,
+            handleIn,
+            handleOut,
+          };
+        });
+
+        return {
+          ...obj,
+          points: transformedPoints,
+          transform
+        };
+      })
     );
     
     // Add to history after transform change
     const updatedObjects = objects.map(obj => 
-      obj.id === objectId ? { ...obj, transform } : obj
+      obj.id === objectId ? {
+        ...obj,
+        transform
+      } : obj
     );
     addToHistory(updatedObjects);
-  }, [objects]);
+  }, [objects, addToHistory]);
+
+  // Helper function to transform a single point
+  const transformPoint = (point: {x: number, y: number}, centerX: number, centerY: number, transform: TransformSettings) => {
+    // Scale
+    const scaledX = centerX + (point.x - centerX) * transform.scaleX;
+    const scaledY = centerY + (point.y - centerY) * transform.scaleY;
+    
+    // Rotate
+    const angle = (transform.rotation * Math.PI) / 180;
+    const rotatedX = centerX + (scaledX - centerX) * Math.cos(angle) - (scaledY - centerY) * Math.sin(angle);
+    const rotatedY = centerY + (scaledX - centerX) * Math.sin(angle) + (scaledY - centerY) * Math.cos(angle);
+    
+    return { x: rotatedX, y: rotatedY };
+  };
   
   // Delete an object
   const deleteObject = useCallback((objectId: string) => {
@@ -309,4 +364,3 @@ export function useBezierObjects() {
     saveCurrentState
   };
 }
-

@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef } from 'react';
 import { 
   ControlPoint, 
@@ -90,6 +89,7 @@ const Index = () => {
   // Background image
   const [backgroundImage, setBackgroundImage] = useState<string | undefined>(undefined);
   const [backgroundOpacity, setBackgroundOpacity] = useState<number>(0.3);
+  const [backgroundScale, setBackgroundScale] = useState<number>(0.5); // Default 50% scale
   
   // UI state
   const [showLibrary, setShowLibrary] = useState<boolean>(false);
@@ -151,17 +151,41 @@ const Index = () => {
     });
   };
   
-  // Handle background image upload
-  const handleUploadImage = (event: React.ChangeEvent<HTMLInputElement>) => {
+  // Enhanced handler for background image upload
+  const handleUploadImage = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onload = (e) => {
-        setBackgroundImage(e.target?.result as string);
-        toast({
-          title: 'Image Uploaded',
-          description: 'Background reference image has been added.'
-        });
+      reader.onload = async (e) => {
+        const imageData = e.target?.result as string;
+        setBackgroundImage(imageData);
+        setBackgroundOpacity(0.3);
+        setBackgroundScale(0.5); // Set default scale to 50%
+
+        // Save to Paper(JPG) category
+        try {
+          const design = {
+            name: `Background - ${file.name}`,
+            category: 'Paper(JPG)',
+            shapes_data: JSON.stringify({ backgroundImage: imageData }),
+            svg_content: '' // Empty since this is just a background image
+          };
+          
+          const { error } = await saveDesign(design);
+          if (error) throw error;
+
+          toast({
+            title: 'Background Saved',
+            description: 'Background image has been saved to Paper(JPG) category'
+          });
+        } catch (err) {
+          console.error('Error saving background:', err);
+          toast({
+            title: 'Save Failed',
+            description: 'Failed to save background to gallery',
+            variant: 'destructive'
+          });
+        }
       };
       reader.readAsDataURL(file);
     }
@@ -720,6 +744,7 @@ const Index = () => {
             onUndo={undo}
             backgroundImage={backgroundImage}
             backgroundOpacity={backgroundOpacity}
+            backgroundScale={backgroundScale}
             isDrawingMode={isDrawingMode}
           />
         </div>
@@ -737,7 +762,9 @@ const Index = () => {
             onUpdateTransform={updateObjectTransform}
             backgroundImage={backgroundImage}
             backgroundOpacity={backgroundOpacity}
+            backgroundScale={backgroundScale}
             onBackgroundOpacityChange={setBackgroundOpacity}
+            onBackgroundScaleChange={setBackgroundScale}
             onUploadImage={handleUploadImage}
             onRemoveImage={handleRemoveImage}
           />
