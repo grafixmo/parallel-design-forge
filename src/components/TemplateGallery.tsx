@@ -1,397 +1,408 @@
-// src/components/TemplateGallery.tsx
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
+import React, { useState, useEffect } from 'react';
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader, 
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import {
+import { 
   AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
+  AlertDialogAction, 
+  AlertDialogCancel, 
+  AlertDialogContent, 
+  AlertDialogDescription, 
+  AlertDialogFooter, 
+  AlertDialogHeader, 
   AlertDialogTitle
 } from '@/components/ui/alert-dialog';
-import {
+import { 
   Popover,
   PopoverContent,
   PopoverTrigger
 } from '@/components/ui/popover';
-import { Trash2, Heart, Edit, Loader2, Search, X, ExternalLink, Eye } from 'lucide-react'; // Añadido Eye
-import {
-  getTemplates,
-  getTemplatesByCategory,
-  // updateTemplate, // Parece no usarse aquí directamente (se usa en handleRename)
+import { Trash2, Heart, Edit, Loader2, Search, X, ExternalLink } from 'lucide-react';
+import { 
+  getTemplates, 
+  getTemplatesByCategory, 
+  updateTemplate, 
   deleteTemplate,
-  likeTemplate, // La función que interactúa con la columna is_liked
-  saveTemplate, // Necesario para renombrar/actualizar
-  Template // El tipo actualizado con is_liked
-} from '@/services/supabaseClient'; // Asegúrate que la ruta sea correcta
+  likeTemplate,
+  Template 
+} from '@/services/supabaseClient';
 import { useToast } from '@/hooks/use-toast';
-import { format, formatDistanceToNow } from 'date-fns'; // formatDistanceToNow es útil
-import { parseTemplateData } from '@/utils/svgExporter'; // Para previsualización o selección
-// import { useAuth } from '@clerk/clerk-react'; // Eliminado ya que no hay usuarios
+import { format } from 'date-fns';
+import { parseTemplateData } from '@/utils/svgExporter';
 
 interface TemplateGalleryProps {
   open: boolean;
   onClose: () => void;
-  onSelectTemplate: (templateData: string) => void; // Cambiado para pasar design_data directamente
+  onSelectTemplate: (templateData: string) => void;
 }
 
 const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSelectTemplate }) => {
   const { toast } = useToast();
   const [templates, setTemplates] = useState<Template[]>([]);
-  const [categories, setCategories] = useState<string[]>(['All']);
-  const [selectedCategory, setSelectedCategory] = useState<string>('All');
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [searchTerm, setSearchTerm] = useState<string>('');
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState<boolean>(false);
-  const [renameDialogOpen, setRenameDialogOpen] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [activeCategory, setActiveCategory] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
-  const [newName, setNewName] = useState<string>('');
-  const [newDescription, setNewDescription] = useState<string>('');
-  const [isLiking, setIsLiking] = useState<Record<string, boolean>>({}); // Para feedback visual de carga en el botón like
-  const [likedTemplates, setLikedTemplates] = useState<Record<string, boolean>>({}); // Estado local para UI de likes
-
-  // Eliminado: No necesitamos user si es app personal
-  // const { userId } = useAuth(); // O tu hook de autenticación
-
-  // --- Función para Cargar Plantillas ---
-  const fetchTemplates = useCallback(async (category = 'All') => {
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newDescription, setNewDescription] = useState('');
+  
+  // Fetch templates when the gallery is opened or category changes
+  useEffect(() => {
+    if (open) {
+      fetchTemplates();
+    }
+  }, [open, activeCategory]);
+  
+  const fetchTemplates = async () => {
     setIsLoading(true);
     try {
-      let fetchedTemplates: Template[];
-      if (category === 'All') {
-        fetchedTemplates = await getTemplates();
-      } else {
-        fetchedTemplates = await getTemplatesByCategory(category);
+      const response = activeCategory === 'all' 
+        ? await getTemplates() 
+        : await getTemplatesByCategory(activeCategory);
+        
+      if (response.error) {
+        throw new Error(response.error.message);
       }
-      setTemplates(fetchedTemplates);
-
-      // --- CAMBIO AQUÍ: Inicializar estado likedTemplates ---
-      const initialLikedState: Record<string, boolean> = {};
-      const uniqueCategories = new Set<string>(['All']);
-      fetchedTemplates.forEach(template => {
-        // Usar el valor de la BD (o false si es null/undefined)
-        initialLikedState[template.id] = template.is_liked ?? false;
-        if (template.category) {
-          uniqueCategories.add(template.category);
-        }
-      });
-      setLikedTemplates(initialLikedState);
-      // --- FIN CAMBIO ---
-
-      // Actualizar categorías solo si estamos cargando 'All' para evitar bucles
-      if (category === 'All') {
-        setCategories(Array.from(uniqueCategories));
-      }
-
-    } catch (error: any) {
-      console.error("Error fetching templates:", error);
+      
+      setTemplates(response.data || []);
+    } catch (error) {
+      console.error('Error fetching templates:', error);
       toast({
-        title: "Error Loading Templates",
-        description: error.message || "Could not fetch templates from the database.",
-        variant: "destructive",
+        title: 'Error',
+        description: 'Failed to load templates',
+        variant: 'destructive'
       });
     } finally {
       setIsLoading(false);
     }
-  }, [toast]); // Dependencia del toast
-
-  // Cargar plantillas al montar y cuando cambia la categoría seleccionada
-  useEffect(() => {
-    if (open) { // Solo cargar si el diálogo está abierto
-      fetchTemplates(selectedCategory);
-    }
-  }, [open, selectedCategory, fetchTemplates]); // fetchTemplates como dependencia
-
-  // Filtrar plantillas según el término de búsqueda
-  const filteredTemplates = useMemo(() => {
-    if (!searchTerm) {
-      return templates;
-    }
-    return templates.filter(template =>
-      template.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      template.description?.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-  }, [templates, searchTerm]);
-
-  // --- Manejadores de Acciones ---
-
-  // Seleccionar una plantilla para usarla
-  const handleSelect = (template: Template) => {
-    console.log("Selected template:", template.name);
-    // Pasamos directamente design_data que es el JSON stringified
-    onSelectTemplate(template.design_data);
-    onClose(); // Cerrar galería después de seleccionar
   };
-
-  // Abrir diálogo de confirmación para borrar
-  const openDeleteDialog = (template: Template) => {
-    setSelectedTemplate(template);
-    setDeleteDialogOpen(true);
+  
+  const handleCategoryChange = (category: string) => {
+    setActiveCategory(category);
   };
-
-  // Borrar plantilla
+  
+  const handleSelectTemplate = (template: Template) => {
+    try {
+      // Parse and normalize the template data before using it
+      const normalizedData = parseTemplateData(template.design_data);
+      
+      if (!normalizedData) {
+        toast({
+          title: 'Error',
+          description: 'Unable to load template - invalid format',
+          variant: 'destructive'
+        });
+        return;
+      }
+      
+      // Pass the normalized data to the parent component
+      onSelectTemplate(JSON.stringify(normalizedData));
+      onClose();
+      
+      toast({
+        title: 'Template Loaded',
+        description: `"${template.name}" has been loaded to the canvas`
+      });
+    } catch (error) {
+      console.error('Error loading template:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to load template data',
+        variant: 'destructive'
+      });
+    }
+  };
+  
   const handleDeleteTemplate = async () => {
     if (!selectedTemplate) return;
-    setIsLoading(true); // Indicar carga durante borrado
+    
     try {
-      await deleteTemplate(selectedTemplate.id);
+      const { error } = await deleteTemplate(selectedTemplate.id!);
+      
+      if (error) {
+        throw new Error(error.message);
+      }
+      
+      setTemplates((prev) => prev.filter(t => t.id !== selectedTemplate.id));
       toast({
-        title: "Template Deleted",
-        description: `"${selectedTemplate.name}" was successfully deleted.`,
+        title: 'Template Deleted',
+        description: `"${selectedTemplate.name}" has been removed`
       });
-      // Volver a cargar plantillas de la categoría actual
-      fetchTemplates(selectedCategory);
-    } catch (error: any) {
-      console.error("Error deleting template:", error);
+    } catch (error) {
+      console.error('Error deleting template:', error);
       toast({
-        title: "Error Deleting Template",
-        description: error.message || "Could not delete the template.",
-        variant: "destructive",
+        title: 'Error',
+        description: 'Failed to delete the template',
+        variant: 'destructive'
       });
     } finally {
       setDeleteDialogOpen(false);
       setSelectedTemplate(null);
-      setIsLoading(false);
     }
   };
-
-  // Abrir diálogo para renombrar/editar
-  const openRenameDialog = (template: Template) => {
+  
+  const handleRenameTemplate = async () => {
+    if (!selectedTemplate || !newName.trim()) return;
+    
+    try {
+      const { error } = await updateTemplate(selectedTemplate.id!, { 
+        name: newName,
+        description: newDescription
+      });
+      
+      if (error) {
+        throw new Error(error.message);
+      }
+      
+      setTemplates((prev) => prev.map(t => 
+        t.id === selectedTemplate.id 
+          ? { ...t, name: newName, description: newDescription } 
+          : t
+      ));
+      
+      toast({
+        title: 'Template Updated',
+        description: `Template has been renamed to "${newName}"`
+      });
+    } catch (error) {
+      console.error('Error updating template:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to update the template',
+        variant: 'destructive'
+      });
+    } finally {
+      setRenameDialogOpen(false);
+      setSelectedTemplate(null);
+      setNewName('');
+      setNewDescription('');
+    }
+  };
+  
+  const handleLikeTemplate = async (template: Template, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent template selection
+    
+    try {
+      const { error } = await likeTemplate(template.id!);
+      
+      if (error) {
+        throw new Error(error.message);
+      }
+      
+      setTemplates((prev) => prev.map(t => 
+        t.id === template.id 
+          ? { ...t, likes: (t.likes || 0) + 1 } 
+          : t
+      ));
+    } catch (error) {
+      console.error('Error liking template:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to like the template',
+        variant: 'destructive'
+      });
+    }
+  };
+  
+  const handleOpenDeleteDialog = (template: Template, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent template selection
+    setSelectedTemplate(template);
+    setDeleteDialogOpen(true);
+  };
+  
+  const handleOpenRenameDialog = (template: Template, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent template selection
     setSelectedTemplate(template);
     setNewName(template.name);
     setNewDescription(template.description || '');
     setRenameDialogOpen(true);
   };
-
-  // Renombrar/Actualizar descripción de plantilla
-  const handleRenameTemplate = async () => {
-    if (!selectedTemplate || !newName.trim()) return;
-    setIsLoading(true);
+  
+  // Filter templates by search query
+  const filteredTemplates = templates.filter(template => 
+    template.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (template.description && template.description.toLowerCase().includes(searchQuery.toLowerCase()))
+  );
+  
+  // Format date for display
+  const formatDate = (dateString?: string) => {
+    if (!dateString) return 'Unknown date';
     try {
-      // Llama a saveTemplate que maneja la actualización si el ID existe
-      await saveTemplate({
-        id: selectedTemplate.id,
-        name: newName.trim(),
-        description: newDescription.trim() || null, // Guardar null si está vacío
-      });
-      toast({
-        title: "Template Updated",
-        description: `Template "${newName}" updated successfully.`,
-      });
-      fetchTemplates(selectedCategory); // Recargar
-    } catch (error: any) {
-      console.error("Error updating template:", error);
-      toast({
-        title: "Error Updating Template",
-        description: error.message || "Could not update the template.",
-        variant: "destructive",
-      });
-    } finally {
-      setRenameDialogOpen(false);
-      setSelectedTemplate(null);
-       setIsLoading(false);
+      return format(new Date(dateString), 'MMM d, yyyy');
+    } catch (error) {
+      return 'Invalid date';
     }
   };
-
-  // Marcar/Desmarcar como "like" (MODIFICADO)
-  const handleLike = async (template: Template) => {
-    const templateId = template.id;
-    setIsLiking(prev => ({ ...prev, [templateId]: true })); // Feedback visual
-
-    // Estado previo para revertir si falla
-    const previousLikedState = likedTemplates[templateId];
-    // Actualización optimista de la UI
-    setLikedTemplates(prev => ({ ...prev, [templateId]: !prev[templateId] }));
-
-    try {
-      // --- CAMBIO AQUÍ: Llamar a likeTemplate solo con templateId ---
-      const result = await likeTemplate(templateId);
-      // --- FIN CAMBIO ---
-
-      if (!result.success) {
-        // Si falla, revertir el estado local y mostrar error
-        toast({
-          title: "Error",
-          description: "Could not update like status.",
-          variant: "destructive",
-        });
-        setLikedTemplates(prev => ({ ...prev, [templateId]: previousLikedState }));
-      } else {
-        // --- CAMBIO AQUÍ: Usar newState para confirmar el estado ---
-        // Si tiene éxito, confirma el estado local con el valor devuelto por la API
-        console.log(`Like status for ${templateId} updated to ${result.newState}`);
-        setLikedTemplates(prev => ({ ...prev, [templateId]: result.newState ?? false }));
-        // Opcional: Mostrar toast de éxito
-         toast({
-           title: result.newState ? "Template Liked" : "Template Unliked",
-           description: `"${template.name}" ${result.newState ? 'added to' : 'removed from'} favorites.`,
-         });
-        // --- FIN CAMBIO ---
-      }
-    } catch (error: any) {
-      console.error("Error liking template:", error);
-      // Revertir en caso de error inesperado
-      setLikedTemplates(prev => ({ ...prev, [templateId]: previousLikedState }));
-      toast({
-        title: "Error",
-        description: error.message || "An unexpected error occurred.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsLiking(prev => ({ ...prev, [templateId]: false })); // Quitar feedback visual
-    }
-  };
-
+  
   return (
     <>
-      <Dialog open={open} onOpenChange={(isOpen) => { if (!isOpen) onClose(); }}>
-        <DialogContent className="max-w-4xl h-[80vh] flex flex-col p-0">
-          <DialogHeader className="p-6 pb-4 border-b">
-            <DialogTitle>Template Gallery</DialogTitle>
+      <Dialog open={open} onOpenChange={(open) => !open && onClose()}>
+        <DialogContent className="w-full max-w-5xl max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="text-xl">Design Gallery</DialogTitle>
           </DialogHeader>
-
-          <div className="flex items-center px-6 py-4 border-b">
+          
+          <div className="flex items-center space-x-4 mb-4">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Search templates..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 w-full"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9"
               />
-              {searchTerm && (
-                <Button variant="ghost" size="icon" className="absolute right-1 top-1/2 transform -translate-y-1/2 h-7 w-7" onClick={() => setSearchTerm('')}>
-                  <X className="h-4 w-4" />
-                </Button>
+              {searchQuery && (
+                <button 
+                  className="absolute right-2.5 top-2.5"
+                  onClick={() => setSearchQuery('')}
+                >
+                  <X className="h-4 w-4 text-muted-foreground" />
+                </button>
               )}
             </div>
+            <Button variant="outline" onClick={fetchTemplates}>
+              Refresh
+            </Button>
           </div>
-
-          <div className="flex flex-1 overflow-hidden">
-            {/* Sidebar de Categorías */}
-            <aside className="w-48 border-r overflow-y-auto p-4">
-              <h3 className="text-sm font-semibold mb-3 px-2">Categories</h3>
-              <nav className="flex flex-col space-y-1">
-                {categories.map(category => (
-                  <Button
-                    key={category}
-                    variant={selectedCategory === category ? "secondary" : "ghost"}
-                    className={`w-full justify-start text-sm h-8 ${selectedCategory === category ? 'font-semibold' : ''}`}
-                    onClick={() => setSelectedCategory(category)}
-                  >
-                    {category}
-                  </Button>
-                ))}
-              </nav>
-            </aside>
-
-            {/* Grid de Plantillas */}
-            <main className="flex-1 overflow-y-auto p-6">
+          
+          <Tabs value={activeCategory} onValueChange={handleCategoryChange} className="flex-1 flex flex-col">
+            <TabsList className="mb-4">
+              <TabsTrigger value="all">All</TabsTrigger>
+              <TabsTrigger value="Earrings">Earrings</TabsTrigger>
+              <TabsTrigger value="Rings">Rings</TabsTrigger>
+              <TabsTrigger value="Necklaces">Necklaces</TabsTrigger>
+              <TabsTrigger value="Prototypes">Prototypes</TabsTrigger>
+              <TabsTrigger value="Paper">Paper (JPG)</TabsTrigger>
+            </TabsList>
+            
+            <div className="flex-1 overflow-auto">
               {isLoading ? (
-                <div className="flex justify-center items-center h-full">
-                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                <div className="flex flex-col items-center justify-center h-64">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
+                  <p className="text-muted-foreground">Loading templates...</p>
                 </div>
               ) : filteredTemplates.length === 0 ? (
-                <div className="text-center text-muted-foreground py-10">
-                  No templates found {searchTerm ? 'matching your search' : `in the "${selectedCategory}" category`}.
+                <div className="flex flex-col items-center justify-center h-64 text-center">
+                  <p className="text-muted-foreground mb-2">No templates found</p>
+                  <p className="text-sm text-muted-foreground max-w-md">
+                    {searchQuery 
+                      ? 'Try a different search term or category' 
+                      : 'Start by saving designs to your gallery'}
+                  </p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 p-1">
                   {filteredTemplates.map((template) => (
-                    <div key={template.id} className="border rounded-lg overflow-hidden group relative flex flex-col bg-card text-card-foreground shadow-sm">
-                      {/* Imagen o Previsualización */}
-                      <div className="aspect-video bg-muted flex items-center justify-center overflow-hidden">
-                         {template.thumbnail ? (
-                            <img src={template.thumbnail} alt={template.name} className="object-contain h-full w-full" />
-                         ) : (
-                           <Eye className="h-12 w-12 text-muted-foreground opacity-50" /> // Icono placeholder
-                         )}
+                    <div 
+                      key={template.id}
+                      onClick={() => handleSelectTemplate(template)}
+                      className="group border rounded-md p-3 hover:shadow-md transition-all cursor-pointer bg-white flex flex-col"
+                    >
+                      <div className="aspect-video mb-2 bg-gray-100 rounded flex items-center justify-center overflow-hidden relative">
+                        {template.thumbnail ? (
+                          <img 
+                            src={template.thumbnail} 
+                            alt={template.name}
+                            className="w-full h-full object-contain"
+                          />
+                        ) : (
+                          <ExternalLink className="h-8 w-8 text-gray-300" />
+                        )}
+                        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-all flex items-center justify-center opacity-0 group-hover:opacity-100">
+                          <span className="text-xs font-medium text-white bg-black bg-opacity-70 px-2 py-1 rounded">
+                            Click to load
+                          </span>
+                        </div>
                       </div>
-                       {/* Contenido de Texto */}
-                      <div className="p-3 flex flex-col flex-grow">
-                        <h4 className="font-semibold text-sm truncate mb-1">{template.name}</h4>
-                        <p className="text-xs text-muted-foreground line-clamp-2 mb-2 flex-grow">{template.description || 'No description'}</p>
-                        <p className="text-xs text-muted-foreground">
-                          Updated {formatDistanceToNow(new Date(template.created_at || Date.now()), { addSuffix: true })}
-                        </p>
+                      
+                      <div className="flex-1">
+                        <h3 className="font-medium text-sm truncate" title={template.name}>{template.name}</h3>
+                        {template.description && (
+                          <p className="text-xs text-gray-500 truncate mt-1" title={template.description}>
+                            {template.description}
+                          </p>
+                        )}
                       </div>
-                      {/* Acciones Hover */}
-                       <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 p-4 space-y-2">
-                         <Button size="sm" className="w-full" onClick={() => handleSelect(template)}>
-                           Use Template
-                         </Button>
-                         <div className="flex w-full justify-center space-x-2">
-                           <Button variant="secondary" size="icon" className="h-8 w-8" onClick={() => openRenameDialog(template)} title="Edit Name/Description">
-                             <Edit className="h-4 w-4" />
-                           </Button>
-                           <Button
-                             variant="secondary"
-                             size="icon"
-                             className="h-8 w-8"
-                             onClick={() => handleLike(template)}
-                             disabled={isLiking[template.id]}
-                             title={likedTemplates[template.id] ? "Unlike" : "Like"} // --- CAMBIO AQUÍ: Usar estado likedTemplates ---
-                           >
-                             {isLiking[template.id] ? (
-                               <Loader2 className="h-4 w-4 animate-spin" />
-                             ) : (
-                               <Heart
-                                 className="h-4 w-4"
-                                 // --- CAMBIO AQUÍ: Usar estado likedTemplates ---
-                                 fill={likedTemplates[template.id] ? 'currentColor' : 'none'}
-                                 stroke={likedTemplates[template.id] ? 'currentColor' : 'currentColor'}
-                               />
-                             )}
-                           </Button>
-                           <Button variant="destructive" size="icon" className="h-8 w-8" onClick={() => openDeleteDialog(template)} title="Delete Template">
-                             <Trash2 className="h-4 w-4" />
-                           </Button>
-                         </div>
-                       </div>
+                      
+                      <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100">
+                        <div className="flex items-center space-x-1 text-xs text-muted-foreground">
+                          <button 
+                            onClick={(e) => handleLikeTemplate(template, e)}
+                            className="text-muted-foreground hover:text-red-500 transition-colors"
+                            title="Like this template"
+                          >
+                            <Heart className="h-3.5 w-3.5" fill={template.likes && template.likes > 0 ? "currentColor" : "none"} />
+                          </button>
+                          <span>{template.likes || 0}</span>
+                        </div>
+                        
+                        <div className="flex items-center space-x-1">
+                          <button 
+                            onClick={(e) => handleOpenRenameDialog(template, e)} 
+                            className="text-muted-foreground hover:text-primary transition-colors"
+                            title="Edit template"
+                          >
+                            <Edit className="h-3.5 w-3.5" />
+                          </button>
+                          <button 
+                            onClick={(e) => handleOpenDeleteDialog(template, e)}
+                            className="text-muted-foreground hover:text-destructive transition-colors"
+                            title="Delete template"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                      
+                      <div className="mt-1">
+                        <span className="text-[10px] text-muted-foreground">
+                          {formatDate(template.created_at)}
+                        </span>
+                      </div>
                     </div>
                   ))}
                 </div>
               )}
-            </main>
-          </div>
+            </div>
+          </Tabs>
+          
+          <DialogFooter className="mt-4">
+            <Button variant="outline" onClick={onClose}>Close</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Diálogo de Confirmación para Borrar */}
+      
+      {/* Delete confirmation dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+            <AlertDialogTitle>Delete Template</AlertDialogTitle>
             <AlertDialogDescription>
-              This action cannot be undone. This will permanently delete the template
-              "{selectedTemplate?.name}".
+              Are you sure you want to delete "{selectedTemplate?.name}"? This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setSelectedTemplate(null)}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteTemplate} disabled={isLoading}>
-              {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              Continue
+            <AlertDialogAction onClick={handleDeleteTemplate} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Delete
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      {/* Diálogo para Renombrar/Editar */}
-       <Dialog open={renameDialogOpen} onOpenChange={(isOpen) => { if(!isOpen) { setRenameDialogOpen(false); setSelectedTemplate(null); } }}>
-        <DialogContent>
+      
+      {/* Rename/edit dialog */}
+      <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle>Edit Template</DialogTitle>
           </DialogHeader>
@@ -405,7 +416,6 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
                 className="col-span-3"
-                maxLength={50} // Limitar longitud del nombre
               />
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
@@ -417,20 +427,7 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
                 value={newDescription}
                 onChange={(e) => setNewDescription(e.target.value)}
                 className="col-span-3"
-                placeholder="Add a short description (optional)"
-                maxLength={100} // Limitar longitud descripción
-              />
-            </div>
-             <div className="grid grid-cols-4 items-center gap-4">
-              <label htmlFor="category" className="text-right text-sm font-medium">
-                Category
-              </label>
-              {/* Aquí podrías poner un <Select> si tienes categorías predefinidas */}
-               <Input
-                id="category"
-                value={selectedTemplate?.category || ''}
-                className="col-span-3"
-                disabled // Por ahora no editable aquí, se podría añadir si se requiere
+                placeholder="Add a short description"
               />
             </div>
           </div>
@@ -441,8 +438,7 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
             }}>
               Cancel
             </Button>
-            <Button onClick={handleRenameTemplate} disabled={!newName.trim() || isLoading}>
-              {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            <Button onClick={handleRenameTemplate} disabled={!newName.trim()}>
               Save changes
             </Button>
           </DialogFooter>

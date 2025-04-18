@@ -1,431 +1,508 @@
-import { useState, useEffect, useCallback } from 'react'; // Añadido useCallback si se usa
-import {
-  BezierObject,
+import { useState, useEffect } from 'react';
+import { 
+  ControlPoint, 
+  CurveStyle, 
+  DesignData, 
+  TransformSettings,
   SavedDesign,
-  DesignData,
-  BackgroundImage, // Asegúrate que esté definido en bezier.ts
-  // ...otros tipos necesarios de bezier.ts
-} from '@/types/bezier'; // Ajusta la ruta si es necesario
+  CurveConfig,
+  BezierObject
+} from '@/types/bezier';
 import BezierCanvas from '@/components/BezierCanvas';
 import Header from '@/components/Header';
 import LibraryPanel from '@/components/LibraryPanel';
+import { generateId } from '@/utils/bezierUtils';
+import { exportAsSVG, downloadSVG, importSVGFromString, parseTemplateData } from '@/utils/svgExporter';
+import { saveDesign, saveTemplate, Template } from '@/services/supabaseClient';
+import { useToast } from '@/hooks/use-toast';
+import { useBezierObjects } from '@/hooks/useBezierObjects';
 import ObjectControlsPanel from '@/components/ObjectControlsPanel';
-import { useBezierObjects } from '@/hooks/useBezierObjects'; // Hook principal para manejar objetos
-import { useToast } from '@/hooks/use-toast'; // Hook para notificaciones
-import { saveDesign, saveTemplate, Template } from '@/services/supabaseClient'; // Servicios de Supabase
-import { exportAsSVG, downloadSVG, importSVGFromString, parseTemplateData } from '@/utils/svgExporter'; // Utilidades SVG
-// Importa helpers necesarios para cargar/validar objetos
-import { generateId, validateAndRepairPoint, defaultCurveConfig, defaultTransform } from '@/utils/bezierUtils'; // Ajusta ruta si es necesario
+import { convertToValidSVG } from '@/utils/svgConverter';
 
-// ELIMINADO: normalizeDesignData ya no es necesario con la nueva lógica de handleSelectDesign
-// const normalizeDesignData = (data: any): string => { ... };
-
-// ELIMINADO: convertToValidSVG ya no se usa en la lógica de carga de handleSelectDesign
-// import { convertToValidSVG } from '@/utils/svgConverter';
-
+// Helper function to safely normalize design data
+const normalizeDesignData = (data: any): string => {
+  if (typeof data === 'string') {
+    return data;
+  } else if (typeof data === 'object' && data !== null) {
+    try {
+      return JSON.stringify(data);
+    } catch (err) {
+      console.error('Error stringifying object:', err);
+      return '';
+    }
+  }
+  return '';
+};
 
 const Index = () => {
   const { toast } = useToast();
-
-  // --- State Hooks ---
+  
+  // Canvas state
   const [canvasWidth, setCanvasWidth] = useState<number>(800);
   const [canvasHeight, setCanvasHeight] = useState<number>(600);
-  const [backgroundImage, setBackgroundImage] = useState<BackgroundImage | null>(null);
-  const [backgroundOpacity, setBackgroundOpacity] = useState<number>(1); // Opacidad del fondo
+  
+  // Background image
+  const [backgroundImage, setBackgroundImage] = useState<string | undefined>(undefined);
+  const [backgroundOpacity, setBackgroundOpacity] = useState<number>(0.3);
+  
+  // UI state
   const [showLibrary, setShowLibrary] = useState<boolean>(false);
-  const [currentDesignId, setCurrentDesignId] = useState<string | null>(null); // ID del diseño actual
-  const [loading, setLoading] = useState<boolean>(false); // Estado de carga general
-  const [isDrawingMode, setIsDrawingMode] = useState<boolean>(true); // Modo dibujo vs selección
-
-  // Hook personalizado para manejar la lógica de los objetos Bézier (estado, historial, etc.)
+  const [isDrawingMode, setIsDrawingMode] = useState<boolean>(true);
+  
+  // Use our custom hook for bezier objects
   const {
     objects,
-    setObjects,
     selectedObjectIds,
-    setSelectedObjectIds,
-    selectedObjects,
-    handleCreateObject,
-    handleSelectObject,
-    handleObjectsChange, // Para actualizar puntos/manejadores desde BezierCanvas
+    createObject,
+    selectObject,
+    deselectAllObjects,
+    updateObjects,
+    setAllObjects,
     updateObjectCurveConfig,
     updateObjectTransform,
-    deleteObjects: handleDeleteObject, // Renombrado para claridad si es necesario
+    deleteObject,
     renameObject,
-    resetHistory,
-    saveCurrentState,
     undo,
     redo,
-    canUndo,
-    canRedo
-  } = useBezierObjects(); // Inicialización del hook
-
-  // --- Effects ---
-
-  // Efecto para ajustar dimensiones del canvas al tamaño de la ventana (opcional)
+    saveCurrentState
+  } = useBezierObjects();
+  
+  // Get selected objects
+  const selectedObjects = objects.filter(obj => selectedObjectIds.includes(obj.id));
+  
+  // Resize canvas based on window size
   useEffect(() => {
     const handleResize = () => {
-      // Ajusta esto si quieres que el canvas sea dinámico
-      // setCanvasWidth(window.innerWidth);
-      // setCanvasHeight(window.innerHeight - 50); // Ejemplo: altura ventana menos altura header
-      console.log(`Canvas dimensions set to ${window.innerWidth}x${window.innerHeight}`); // O usa tus dimensiones fijas
+      const container = document.getElementById('canvas-container');
+      if (container) {
+        const padding = 40; // account for container padding
+        setCanvasWidth(container.clientWidth - padding);
+        setCanvasHeight(container.clientHeight - padding);
+      }
     };
+    
+    handleResize();
     window.addEventListener('resize', handleResize);
-    handleResize(); // Llamada inicial
+    console.info(`Canvas dimensions set to ${canvasWidth}x${canvasHeight}`);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
-
-  // --- Handlers ---
-
-  // Guardar Diseño Actual en Supabase
-  const handleSaveDesign = async (designName: string) => {
-    if (!objects || objects.length === 0) {
-      toast({ title: "Cannot Save", description: "Canvas is empty.", variant: "destructive" });
-      return;
-    }
-    setLoading(true);
-    console.log(`Saving design: ${designName}, ID: ${currentDesignId || '(new)'}`);
-
-    // 1. Crear el objeto con la estructura interna de la app { objects: [...], backgroundImage: ... }
-    const designData: DesignData = {
-      objects: objects, // El array actual de BezierObjects del estado
-      backgroundImage: backgroundImage // Incluir info de imagen de fondo
-    };
-
-    // 2. Convertir a cadena JSON para guardar en 'shapes_data'
-    const shapesDataString = JSON.stringify(designData);
-
-    // 3. Llamar al servicio para guardar en Supabase
-    try {
-      const dataToSave: Partial<SavedDesign> = {
-        name: designName,
-        shapes_data: shapesDataString,
-        // 'original_svg' NO se establece aquí, se deja NULL/sin definir.
-        // El ID se pasa solo si estamos actualizando un diseño existente
-        ...(currentDesignId && { id: currentDesignId }),
+  
+  // Reset everything to default
+  const handleReset = () => {
+    // Clear all objects
+    objects.forEach(obj => deleteObject(obj.id));
+    setBackgroundImage(undefined);
+    setBackgroundOpacity(0.3);
+    
+    toast({
+      title: 'Canvas Reset',
+      description: 'All design elements have been reset to default.'
+    });
+  };
+  
+  // Handle background image upload
+  const handleUploadImage = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setBackgroundImage(e.target?.result as string);
+        toast({
+          title: 'Image Uploaded',
+          description: 'Background reference image has been added.'
+        });
       };
-
-      console.log("Data being sent to saveDesign:", dataToSave);
-      const saved = await saveDesign(dataToSave); // saveDesign debe aceptar Partial<SavedDesign>
-
-      if (saved && saved.id) {
-        setCurrentDesignId(saved.id); // Actualizar ID si era un diseño nuevo
-        toast({ title: "Design Saved", description: `"${designName}" saved successfully.` });
-        console.log("Design saved successfully with ID:", saved.id);
-      } else {
-          throw new Error('Failed to save design to database or received invalid response.');
-      }
-    } catch (error: any) {
-      console.error("Error saving design:", error);
-      toast({ title: "Save Failed", description: error.message || "Could not save design.", variant: "destructive" });
-    } finally {
-       setLoading(false);
+      reader.readAsDataURL(file);
     }
   };
-
-  // Exportar Diseño Actual como SVG
+  
+  // Remove background image
+  const handleRemoveImage = () => {
+    setBackgroundImage(undefined);
+    toast({
+      title: 'Image Removed',
+      description: 'Background reference image has been removed.'
+    });
+  };
+  
+  // Toggle drawing mode
+  const handleToggleDrawingMode = () => {
+    setIsDrawingMode(!isDrawingMode);
+    toast({
+      title: `${!isDrawingMode ? 'Drawing' : 'Selection'} Mode Activated`,
+      description: !isDrawingMode 
+        ? 'You can now add and modify curve points.' 
+        : 'You can now select and move existing points.'
+    });
+  };
+  
+  // Handler for creating new objects from the canvas
+  const handleCreateObject = (points: ControlPoint[]) => {
+    const objectName = `Object ${objects.length + 1}`;
+    return createObject(points, objectName);
+  };
+  
+  // Handler for object selection
+  const handleSelectObject = (objectId: string, multiSelect: boolean = false) => {
+    if (objectId === '') {
+      deselectAllObjects();
+    } else {
+      selectObject(objectId, multiSelect);
+    }
+  };
+  
+  // Handler for updating all objects
+  const handleObjectsChange = (updatedObjects: BezierObject[]) => {
+    updateObjects(updatedObjects);
+  };
+  
+  // Export design as SVG
   const handleExportSVG = () => {
-    console.log("Exporting as SVG...");
     if (objects.length === 0) {
-      toast({ title: "Cannot Export", description: "Canvas is empty.", variant: "destructive" });
+      toast({
+        title: 'Cannot Export',
+        description: 'Please create at least one object with points.',
+        variant: 'destructive'
+      });
       return;
     }
-    try {
-      // Usar dimensiones actuales del canvas para viewBox y tamaño
-      const svgContent = exportAsSVG(objects, canvasWidth, canvasHeight, !!backgroundImage); // Decide si incluir fondo blanco
-      downloadSVG(svgContent, 'my-bezier-design'); // Inicia la descarga
-      toast({ title: "Exporting SVG", description: "Download should start shortly." });
-    } catch (error: any) {
-      console.error("Error exporting SVG:", error);
-      toast({ title: "Export Failed", description: error.message || "Could not export SVG.", variant: "destructive" });
-    }
+    
+    // Generate SVG content
+    const svgContent = exportAsSVG(
+      objects,
+      canvasWidth,
+      canvasHeight
+    );
+    
+    downloadSVG(svgContent, 'soutache-design.svg');
+    
+    toast({
+      title: 'Design Exported',
+      description: 'Your design has been exported as an SVG file.'
+    });
   };
 
-  // Cargar Diseño desde la Librería (FUNCIÓN MODIFICADA)
-  const handleSelectDesign = async (design: SavedDesign) => {
-    // Log inicial para depuración
-    // Asegúrate que 'design' incluye 'original_svg' y 'shapes_data' del fetch
-    console.log(`Selected design: ${design.name} (ID: ${design.id}), has original_svg: ${!!design.original_svg}, has shapes_data: ${!!design.shapes_data}`);
-    setLoading(true); // Activar indicador de carga
-
+  // Updated handleSelectDesign function
+  const handleSelectDesign = (design: SavedDesign) => {
     try {
-      let loadedObjects: BezierObject[] = [];
-      let loadedBackgroundImage: BackgroundImage | null = null;
-      let source: string = ''; // Para saber de dónde se cargó
-
-      // --- LÓGICA DE CARGA PRIORIZANDO original_svg ---
-      if (design.original_svg && design.original_svg.trim() !== '') {
-        // ===== Prioridad 1: Cargar desde la columna original_svg =====
-        source = 'original_svg';
-        console.log(`Loading design '${design.name}' from original_svg...`);
-        // Llama a la función que parsea la cadena SVG a objetos BezierObject
-        loadedObjects = importSVGFromString(design.original_svg);
-
-        if (!loadedObjects || loadedObjects.length === 0) {
-          // Error si importSVGFromString no devuelve objetos válidos
-          throw new Error('Failed to import any objects from original_svg content.');
-        }
-        // Al importar desde SVG, normalmente no hay info de imagen de fondo guardada explícitamente
-        loadedBackgroundImage = null;
-        console.log(`Successfully imported ${loadedObjects.length} objects from original_svg.`);
-
-      } else if (design.shapes_data) {
-        // ===== Prioridad 2: Cargar desde shapes_data (esperando JSON) =====
-        source = 'shapes_data (JSON)';
-        console.log(`Loading design '${design.name}' from shapes_data (expecting JSON)...`);
-        let parsedData: any;
-
-        try {
-          // Intenta parsear la cadena shapes_data como JSON
-          parsedData = JSON.parse(design.shapes_data);
-          console.log('Successfully parsed shapes_data as JSON.');
-        } catch (e) {
-          console.error(`Failed to parse shapes_data as JSON for design '${design.name}'. Content:`, design.shapes_data, e);
-           throw new Error('Could not parse shapes_data as JSON.'); // Lanzar error si falla el parseo JSON
-        }
-
-        // Una vez parseado, busca la estructura { objects: [...] }
-        if (parsedData && parsedData.objects && Array.isArray(parsedData.objects)) {
-          source += ' - {objects} format';
-          console.log('Found "objects" array in parsed shapes_data.');
-          // Mapea los objetos cargados, validando/reparando puntos y aplicando defaults si faltan
-          loadedObjects = parsedData.objects.map((obj: any) => ({
-            ...obj, // Copia propiedades existentes
-            id: obj.id || generateId(), // Asegura ID
-            // Valida/repara cada punto en el array de puntos del objeto
-            points: Array.isArray(obj.points) ? obj.points.map((p: any) => validateAndRepairPoint(p)) : [],
-            curveConfig: obj.curveConfig || defaultCurveConfig(), // Aplica config por defecto si falta
-            transform: obj.transform || defaultTransform(), // Aplica transform por defecto si falta
-            isSelected: false // Asegura que no esté seleccionado al cargar
-          })).filter((obj: BezierObject) => obj.points.length > 0); // Filtra objetos que queden sin puntos válidos
-
-          // Carga la imagen de fondo si existe en los datos JSON
-          loadedBackgroundImage = parsedData.backgroundImage || null;
-          console.log(`Loaded ${loadedObjects.length} objects from shapes_data {objects} format. Background image ${loadedBackgroundImage ? 'found' : 'not found'}.`);
-
-        }
-        // Fallback para estructura antigua { points: [...] } (si aún quieres soportarla)
-        else if (parsedData && parsedData.points && Array.isArray(parsedData.points)) {
-           source += ' - legacy {points} format';
-           console.warn('Found legacy format { points: [...] } in parsed shapes_data. Wrapping into a single object.');
-           // Crea un único objeto BezierObject a partir de los puntos legacy
-           const singleObject: BezierObject = {
-               id: parsedData.id || generateId(), // Usa ID si existe, sino genera uno
-               name: design.name || 'Imported Legacy Object', // Usa nombre del diseño
-               points: parsedData.points.map((p: any) => validateAndRepairPoint(p)), // Valida los puntos
-               curveConfig: parsedData.curveConfig || defaultCurveConfig(), // Aplica defaults
-               transform: parsedData.transform || defaultTransform(), // Aplica defaults
-               isSelected: false // No seleccionado
-           };
-           loadedObjects = [singleObject]; // El diseño cargado es este único objeto
-           // Asumimos que este formato antiguo no guardaba imagen de fondo
-           loadedBackgroundImage = null;
-           console.log(`Loaded 1 object wrapped from legacy {points} format.`);
-
-        } else {
-          // El JSON parseado no tiene ninguna estructura reconocida
-          console.error('Parsed shapes_data JSON does not contain "objects" array or recognizable legacy format. Parsed data:', parsedData);
-          throw new Error('Invalid JSON structure in shapes_data.');
-        }
-
-      } else {
-        // ===== Caso Error: No hay datos para cargar =====
-        console.error(`Design '${design.name}' has no original_svg and no shapes_data.`);
-        throw new Error('No data available to load this design.');
+      if (!design.shapes_data) {
+        throw new Error('Design data is empty');
       }
-      // --- FIN LÓGICA DE CARGA ---
-
-      // --- Actualizar Estado de la Aplicación ---
-      setObjects(loadedObjects); // Actualiza los objetos en el canvas
-      setBackgroundImage(loadedBackgroundImage); // Actualiza la imagen de fondo
-      setCurrentDesignId(design.id); // Guarda el ID del diseño actualmente cargado
-      setSelectedObjectIds([]); // Limpia la selección al cargar un nuevo diseño
-      resetHistory(); // Limpia el historial de deshacer/rehacer
-      saveCurrentState(); // Guarda este estado inicial cargado como primer paso en el historial
-
-      // Notificación de éxito
+      
+      // Log information about the data type
+      const dataType = typeof design.shapes_data;
+      const dataLength = dataType === 'string' ? design.shapes_data.length : 1;
+      console.log(`Loading design: ${design.name}, data type: ${dataType}, length: ${dataLength}`);
+      
+      // Normalize the data to ensure it's a string
+      let shapesDataString = normalizeDesignData(design.shapes_data);
+      
+      // Check if it's an SVG file - SVG takes priority
+      if (shapesDataString.trim().startsWith('<svg') || shapesDataString.includes('<svg ')) {
+        console.log('Processing as SVG data');
+        handleImportSVG(shapesDataString);
+        return;
+      }
+      
+      // Try to convert to valid SVG
+      const svgData = convertToValidSVG(shapesDataString);
+      if (svgData) {
+        console.log('Successfully converted data to SVG');
+        handleImportSVG(svgData);
+        return;
+      }
+      
+      // If not SVG or conversion failed, try to parse as JSON
+      try {
+        // Try parsing as JSON
+        const parsedData = JSON.parse(shapesDataString);
+        console.log('Successfully parsed JSON data');
+        
+        // Clear current objects
+        objects.forEach(obj => deleteObject(obj.id));
+        
+        // Check if data has objects array (new format) or just points (old format)
+        if (parsedData.objects && Array.isArray(parsedData.objects)) {
+          setAllObjects(parsedData.objects);
+        } else if (parsedData.points && Array.isArray(parsedData.points)) {
+          createObject(parsedData.points, design.name || 'Imported Object');
+        }
+        
+        saveCurrentState();
+        
+        toast({
+          title: 'Design Loaded',
+          description: `Design "${design.name}" has been loaded successfully.`
+        });
+      } catch (parseError) {
+        console.error('Error parsing design JSON:', parseError);
+        throw new Error(`Failed to parse design data: ${parseError?.message || 'Unknown format'}`);
+      }
+    } catch (error) {
+      console.error('Error loading design:', error);
       toast({
-        title: "Design Loaded",
-        description: `Successfully loaded "${design.name}" from ${source}.`,
+        title: 'Load Failed',
+        description: error instanceof Error ? error.message : 'There was an error loading the design.',
+        variant: 'destructive'
       });
-
-    } catch (error: any) {
-      // --- Manejo de Errores ---
-      console.error(`Error loading design '${design.name}':`, error);
-      toast({
-        title: "Error Loading Design",
-        description: error.message || `Failed to load "${design.name}".`,
-        variant: "destructive",
-      });
-    } finally {
-      // --- Finalizar Carga ---
-      setLoading(false); // Desactivar indicador de carga
-      setShowLibrary(false); // Ocultar el panel de la librería (si está abierto)
     }
   };
-
-
-  // Cargar Plantilla (ejemplo, puede necesitar ajustes similares a handleSelectDesign)
-  const handleLoadTemplate = async (template: Template) => {
-     console.log("Loading template:", template.name);
-     setLoading(true);
-     try {
-       // parseTemplateData intenta manejar JSON o SVG string
-       const parsedTemplate = parseTemplateData(template.design_data);
-
-       if (parsedTemplate && parsedTemplate.objects) {
-         // Asume que parseTemplateData devuelve { objects: [...] }
-         // Necesitaría validar/reparar puntos como en handleSelectDesign
-         const validatedObjects = parsedTemplate.objects.map((obj: any) => ({
-            ...obj,
-            id: generateId(), // Generar nuevos IDs para objetos de plantilla
-            points: Array.isArray(obj.points) ? obj.points.map((p: any) => validateAndRepairPoint(p)) : [],
-            curveConfig: obj.curveConfig || defaultCurveConfig(),
-            transform: obj.transform || defaultTransform(),
-            isSelected: false,
-         })).filter((obj: BezierObject) => obj.points.length > 0);
-
-         setObjects(validatedObjects); // Reemplaza objetos actuales con los de la plantilla
-         setBackgroundImage(parsedTemplate.backgroundImage || null); // Carga fondo si existe
-         setCurrentDesignId(null); // Es un diseño nuevo basado en plantilla, sin ID guardado
-         setSelectedObjectIds([]);
-         resetHistory();
-         saveCurrentState();
-         toast({ title: "Template Loaded", description: `Loaded template "${template.name}".` });
-       } else {
-         throw new Error("Failed to parse or process template data.");
-       }
-     } catch (error: any) {
-       console.error("Error loading template:", error);
-       toast({ title: "Template Load Failed", description: error.message || "Could not load template.", variant: "destructive" });
-     } finally {
-       setLoading(false);
-     }
+  
+  // Import SVG from a string - improved version
+  const handleImportSVG = (svgString: string) => {
+    try {
+      if (!svgString || typeof svgString !== 'string') {
+        throw new Error('Invalid SVG: Empty or not a string');
+      }
+      
+      console.log('Importing SVG string (first 100 chars):', svgString.substring(0, 100) + '...');
+      
+      // Import SVG and convert to BezierObjects
+      const importedObjects = importSVGFromString(svgString);
+      
+      if (!importedObjects || importedObjects.length === 0) {
+        throw new Error('No valid objects found in the SVG file');
+      }
+      
+      console.log(`Successfully imported ${importedObjects.length} objects with ${importedObjects.reduce((sum, obj) => sum + obj.points.length, 0)} points`);
+      
+      // Clear existing objects
+      objects.forEach(obj => deleteObject(obj.id));
+      
+      // Add all imported objects to the canvas
+      setAllObjects(importedObjects);
+      
+      // Save the new state
+      saveCurrentState();
+      
+      toast({
+        title: 'SVG Imported',
+        description: `Imported ${importedObjects.length} object(s) from SVG file.`
+      });
+    } catch (error) {
+      console.error('Error importing SVG:', error);
+      toast({
+        title: 'Import Failed',
+        description: error instanceof Error ? error.message : 'Failed to import SVG file',
+        variant: 'destructive'
+      });
+    }
   };
-
-  // Guardar como Plantilla
-  const handleSaveAsTemplate = async (templateName: string) => {
-    if (!objects || objects.length === 0) {
-      toast({ title: "Cannot Save", description: "Canvas is empty.", variant: "destructive" });
+  
+  // Save design to Supabase - ensure data is properly stringified
+  const handleSaveDesign = async (name: string, category: string) => {
+    if (objects.length === 0) {
+      toast({
+        title: 'Cannot Save',
+        description: 'Please create at least one object with points.',
+        variant: 'destructive'
+      });
       return;
     }
-     setLoading(true);
-     try {
-       const designData: DesignData = { objects: objects, backgroundImage: backgroundImage };
-       const designDataString = JSON.stringify(designData);
-       await saveTemplate({ name: templateName, design_data: designDataString });
-       toast({ title: "Template Saved", description: `"${templateName}" saved successfully.` });
-     } catch (error: any) {
-       console.error("Error saving template:", error);
-       toast({ title: "Template Save Failed", description: error.message || "Could not save template.", variant: "destructive" });
-     } finally {
-        setLoading(false);
-     }
+    
+    const designData: DesignData = {
+      objects: objects,
+      backgroundImage: backgroundImage ? {
+        url: backgroundImage,
+        opacity: backgroundOpacity
+      } : undefined
+    };
+    
+    // Ensure data is properly stringified
+    const stringifiedData = JSON.stringify(designData);
+    
+    // Save design to the designs table (legacy)
+    const design: SavedDesign = {
+      name,
+      category,
+      shapes_data: stringifiedData
+    };
+    
+    try {
+      const { data, error } = await saveDesign(design);
+      
+      if (error) {
+        throw new Error(error.message);
+      }
+      
+      // Also save as a template to the new templates table
+      const template: Template = {
+        name,
+        category,
+        design_data: stringifiedData,
+        likes: 0
+      };
+      
+      await saveTemplate(template);
+      
+      toast({
+        title: 'Design Saved',
+        description: `Your design "${name}" has been saved to the database.`
+      });
+    } catch (err) {
+      console.error('Error saving design:', err);
+      toast({
+        title: 'Save Failed',
+        description: 'There was an error saving your design. Please try again.',
+        variant: 'destructive'
+      });
+    }
   };
-
-  // Manejador para subida de imagen de fondo
-   const handleUploadImage = (file: File) => {
-     if (!file) return;
-     const reader = new FileReader();
-     reader.onload = (e) => {
-       setBackgroundImage({ url: e.target?.result as string, opacity: backgroundOpacity, name: file.name });
-       saveCurrentState(); // Guarda estado después de cambiar fondo
-     };
-     reader.readAsDataURL(file);
-     toast({ title: "Background Image", description: `Set background to ${file.name}` });
-   };
-
-   // Manejador para quitar imagen de fondo
-   const handleRemoveImage = () => {
-     setBackgroundImage(null);
-     saveCurrentState();
-     toast({ title: "Background Image", description: "Background image removed." });
-   };
-
-   // Crear objeto vacío
-   const handleCreateEmptyObject = () => {
-     // Define puntos iniciales para un objeto simple (ej. una línea corta)
-     const startX = canvasWidth / 2 - 50;
-     const startY = canvasHeight / 2;
-     const initialPoints: ControlPoint[] = [
-       // Necesitas createControlPoint o definir la estructura completa
-       { x: startX, y: startY, handleIn: { x: startX - 30, y: startY }, handleOut: { x: startX + 30, y: startY }, id: generateId() },
-       { x: startX + 100, y: startY, handleIn: { x: startX + 100 - 30, y: startY }, handleOut: { x: startX + 100 + 30, y: startY }, id: generateId() }
-     ];
-     handleCreateObject(initialPoints); // Llama a la función del hook
-     toast({ title: "Object Created", description: "Added a new empty object." });
-   };
-
-
-  // --- Renderizado del Componente ---
+  
+  // Load a template from the gallery
+  const handleLoadTemplate = (templateData: string) => {
+    try {
+      console.log('Loading template data:', templateData);
+      
+      // Try to parse data, could be a stringified DesignData or DesignData.objects array
+      let parsedData: DesignData | null = null;
+      
+      try {
+        // Attempt to parse as regular JSON
+        const parsed = JSON.parse(templateData);
+        
+        // Check what kind of data we got
+        if (parsed.objects) {
+          // It's a DesignData object with objects array
+          parsedData = parsed as DesignData;
+        } else if (Array.isArray(parsed)) {
+          // It's just an array of objects
+          parsedData = { objects: parsed };
+        } else {
+          // Unknown format
+          throw new Error('Template data is in an unknown format');
+        }
+      } catch (parseError) {
+        console.error('Error parsing template JSON:', parseError);
+        
+        // If it's not valid JSON, try using it as SVG
+        const importedObjects = importSVGFromString(templateData);
+        if (importedObjects && importedObjects.length > 0) {
+          parsedData = { objects: importedObjects };
+        } else {
+          throw new Error('Template data is neither valid JSON nor SVG');
+        }
+      }
+      
+      if (!parsedData) {
+        throw new Error('Failed to parse template data');
+      }
+      
+      // Clear current objects
+      objects.forEach(obj => deleteObject(obj.id));
+      
+      // Add objects from template
+      if (parsedData.objects && parsedData.objects.length > 0) {
+        // Format with objects array
+        parsedData.objects.forEach(obj => {
+          // Make sure each object has the required properties
+          const validObject = {
+            ...obj,
+            curveConfig: obj.curveConfig || {
+              styles: [{ color: '#000000', width: 2 }],
+              parallelCount: 1,
+              spacing: 5
+            },
+            transform: obj.transform || {
+              rotation: 0,
+              scaleX: 1,
+              scaleY: 1
+            }
+          };
+          createObject(validObject.points, validObject.name);
+        });
+        
+        // Set background image if present
+        if (parsedData.backgroundImage) {
+          setBackgroundImage(parsedData.backgroundImage.url);
+          setBackgroundOpacity(parsedData.backgroundImage.opacity);
+        }
+        
+        toast({
+          title: 'Template Loaded',
+          description: 'Template has been loaded successfully.'
+        });
+      } else {
+        toast({
+          title: 'Invalid Template Data',
+          description: 'The selected template does not contain valid objects.',
+          variant: 'destructive'
+        });
+      }
+    } catch (err) {
+      console.error('Error loading template:', err);
+      toast({
+        title: 'Load Failed',
+        description: 'There was an error loading the template. The format may be invalid.',
+        variant: 'destructive'
+      });
+    }
+  };
+  
+  // Handle object deletion
+  const handleDeleteObject = (objectId: string) => {
+    deleteObject(objectId);
+    toast({
+      title: 'Object Deleted',
+      description: 'The selected object has been removed.'
+    });
+  };
+  
   return (
-    <div className="flex flex-col h-screen bg-gray-100">
+    <div className="flex flex-col h-screen">
       <Header
-        onSave={handleSaveDesign}
+        onClearCanvas={handleReset}
+        onSaveDesign={handleSaveDesign}
+        onLoadDesigns={() => setShowLibrary(true)}
         onExportSVG={handleExportSVG}
-        onLoadDesign={() => setShowLibrary(true)} // Abre el panel de librería
-        onLoadTemplate={handleLoadTemplate} // Asumiendo que Header tiene un botón para plantillas
-        onSaveAsTemplate={handleSaveAsTemplate} // Asumiendo que Header tiene botón para guardar plantilla
-        onUndo={undo}
-        onRedo={redo}
-        canUndo={canUndo}
-        canRedo={canRedo}
+        onImportSVG={handleImportSVG}
+        onLoadTemplate={handleLoadTemplate}
         isDrawingMode={isDrawingMode}
-        onToggleDrawingMode={() => setIsDrawingMode(!isDrawingMode)}
-        onCreateObject={handleCreateEmptyObject} // Botón para añadir objeto nuevo
-        isLoading={loading} // Pasar estado de carga al Header
+        onToggleDrawingMode={handleToggleDrawingMode}
       />
+      
       <div className="flex flex-1 overflow-hidden">
-        {/* Canvas Principal */}
-        <div className="flex-1 relative bg-white">
-          {loading && (
-            <div className="absolute inset-0 bg-gray-400 bg-opacity-50 flex items-center justify-center z-50">
-              <p className="text-white text-lg">Loading...</p> {/* Indicador de carga simple */}
-            </div>
-          )}
+        <div id="canvas-container" className="flex-1 bg-gray-50 p-4 overflow-hidden">
           <BezierCanvas
             width={canvasWidth}
             height={canvasHeight}
             objects={objects}
             selectedObjectIds={selectedObjectIds}
-            onObjectSelect={handleSelectObject} // Permite seleccionar haciendo clic en el canvas
-            onObjectsChange={handleObjectsChange} // Permite mover puntos/manejadores
-            onCreateObject={(points) => handleCreateObject(points)} // Permite crear al dibujar (si aplica)
-            onSaveState={saveCurrentState} // Guarda estado después de cambios en canvas
+            onObjectSelect={handleSelectObject}
+            onObjectsChange={handleObjectsChange}
+            onCreateObject={handleCreateObject}
+            onSaveState={saveCurrentState}
+            onUndo={undo}
             backgroundImage={backgroundImage}
             backgroundOpacity={backgroundOpacity}
             isDrawingMode={isDrawingMode}
-            // Pasar undo/redo aquí si el canvas los maneja directamente
-            // onUndo={undo}
-            // onRedo={redo}
           />
         </div>
-
-        {/* Panel de Controles Laterales */}
-        <div className="w-80 border-l overflow-y-auto bg-gray-50 p-4"> {/* Ancho fijo y estilos */}
+        
+        <div className="w-80 border-l overflow-y-auto">
           <ObjectControlsPanel
-            selectedObjects={selectedObjects} // Objetos seleccionados para editar
-            // allObjects={objects} // No siempre necesario pasar todos los objetos aquí
-            // selectedObjectIds={selectedObjectIds} // Ya se derivan los selectedObjects
-            onCreateObject={handleCreateEmptyObject} // Botón para crear objeto
-            onSelectObject={handleSelectObject} // Para seleccionar desde el panel (si aplica)
-            onDeleteObject={handleDeleteObject} // Botón para borrar selección
-            onRenameObject={renameObject} // Para renombrar objeto seleccionado
-            onUpdateCurveConfig={updateObjectCurveConfig} // Para cambiar estilos, paralelas, etc.
-            onUpdateTransform={updateObjectTransform} // Para cambiar rotación, escala
+            selectedObjects={selectedObjects}
+            allObjects={objects}
+            selectedObjectIds={selectedObjectIds}
+            onCreateObject={() => handleCreateObject([])}
+            onSelectObject={handleSelectObject}
+            onDeleteObject={handleDeleteObject}
+            onRenameObject={renameObject}
+            onUpdateCurveConfig={updateObjectCurveConfig}
+            onUpdateTransform={updateObjectTransform}
             backgroundImage={backgroundImage}
             backgroundOpacity={backgroundOpacity}
-            onBackgroundOpacityChange={setBackgroundOpacity} // Slider de opacidad
-            onUploadImage={handleUploadImage} // Botón para subir imagen
-            onRemoveImage={handleRemoveImage} // Botón para quitar imagen
+            onBackgroundOpacityChange={setBackgroundOpacity}
+            onUploadImage={handleUploadImage}
+            onRemoveImage={handleRemoveImage}
           />
         </div>
       </div>
-
-      {/* Panel Modal de Librería */}
+      
       {showLibrary && (
         <LibraryPanel
           onClose={() => setShowLibrary(false)}
-          onSelectDesign={handleSelectDesign} // Pasa la función de carga modificada
+          onSelectDesign={handleSelectDesign}
         />
       )}
     </div>
