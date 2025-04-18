@@ -75,7 +75,7 @@ export const parseTemplateData = (templateData: string): any => {
  * @param includeBackground Whether to include a white background
  * @returns SVG string representation of the designs
  */
-export const exportAsSVG = (
+export const export const exportAsSVG = (
   objects: BezierObject[],
   canvasWidth: number,
   canvasHeight: number,
