@@ -1,6 +1,6 @@
 // src/pages/SupabaseTest.tsx
 
-import React, { useState, useEffect, useCallback } from 'react'; // useCallback añadido
+import React, { useState, useEffect, useCallback } from 'react';
 // --- CAMBIO AQUÍ: Importar funciones correctas ---
 import {
   supabase, // Se mantiene por si se usa directamente en otro lugar
@@ -19,12 +19,12 @@ import {
 // --- FIN ELIMINADO ---
 
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input'; // Importar Input
+import { Label } from '@/components/ui/label'; // Importar Label
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 // import { toast } from '@/components/ui/sonner'; // toast no se usa aquí directamente
-import { RefreshCw, CheckCircle, XCircle, Trash2, AlertTriangle, Loader2 } from 'lucide-react'; // Loader2 añadido
+import { RefreshCw, CheckCircle, XCircle, Trash2, AlertTriangle, Loader2, Database } from 'lucide-react'; // Loader2, Database añadidos
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Link } from 'react-router-dom'; // Link se usa al final
 
@@ -40,7 +40,7 @@ type ConnectionStatus = {
   message: string; // Mensaje de la verificación
 };
 
-const SupabaseTest = () => {
+const SupabaseTest: React.FC = () => { // Añadido ': React.FC' para tipado explícito
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus | null>(null);
   const [tableStatuses, setTableStatuses] = useState<TableStatus[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -196,52 +196,7 @@ const SupabaseTest = () => {
       {/*
       <div className="mt-6 max-w-2xl mx-auto">
         <Card>
-          <CardHeader>
-            <CardTitle>Manual Configuration (Optional)</CardTitle>
-            <CardDescription>
-              If auto-detection fails, you can manually enter and store credentials locally.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid w-full items-center gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="supabase-url">Supabase URL</Label>
-                <Input
-                  id="supabase-url"
-                  placeholder="https://your-project.supabase.co"
-                  value={manualUrl}
-                  onChange={(e) => setManualUrl(e.target.value)}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="supabase-key">Supabase Anon Key</Label>
-                <Input
-                  id="supabase-key"
-                  placeholder="your-anon-key"
-                  type="password"
-                  value={manualKey}
-                  onChange={(e) => setManualKey(e.target.value)}
-                />
-              </div>
-            </div>
-          </CardContent>
-          <CardFooter className="flex justify-between">
-            <Button
-              variant="outline"
-              onClick={handleResetCredentials}
-              disabled={isLoading}
-            >
-              <Trash2 className="h-4 w-4 mr-2" />
-              Reset Credentials
-            </Button>
-
-            <Button
-              onClick={handleManualConnect}
-              disabled={isLoading || !manualUrl || !manualKey}
-            >
-              Connect & Test
-            </Button>
-          </CardFooter>
+           // ... JSX para configuración manual comentado ...
         </Card>
       </div>
       */}
