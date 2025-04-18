@@ -1,3 +1,4 @@
+
 import { useState, useCallback } from 'react';
 import { 
   BezierObject, 
@@ -32,25 +33,6 @@ export function useBezierObjects() {
   const [selectedObjectIds, setSelectedObjectIds] = useState<string[]>([]);
   const [history, setHistory] = useState<HistoryState[]>([]);
   const [currentHistoryIndex, setCurrentHistoryIndex] = useState<number>(-1);
-  
-  // Define addToHistory before it's used
-  const addToHistory = useCallback((updatedObjects: BezierObject[]) => {
-    const newHistoryState: HistoryState = {
-      objects: JSON.parse(JSON.stringify(updatedObjects)), // Deep clone
-      timestamp: Date.now()
-    };
-    
-    // If we're not at the end of history, truncate it
-    const newHistory = currentHistoryIndex === history.length - 1 || currentHistoryIndex === -1
-      ? [...history, newHistoryState]
-      : [...history.slice(0, currentHistoryIndex + 1), newHistoryState];
-    
-    // Limit history size to 50 entries
-    const limitedHistory = newHistory.slice(-50);
-    
-    setHistory(limitedHistory);
-    setCurrentHistoryIndex(limitedHistory.length - 1);
-  }, [history, currentHistoryIndex]);
   
   // Create a new bezier object
   const createObject = useCallback((points: ControlPoint[] = [], name: string = 'Untitled Object') => {
@@ -153,80 +135,24 @@ export function useBezierObjects() {
       obj.id === objectId ? { ...obj, curveConfig } : obj
     );
     addToHistory(updatedObjects);
-  }, [objects, addToHistory]);
+  }, [objects]);
   
-  // Update transform settings with proper point transformation
+  // Update transform settings for a specific object
   const updateObjectTransform = useCallback((objectId: string, transform: TransformSettings) => {
     setObjects(prevObjects => 
-      prevObjects.map(obj => {
-        if (obj.id !== objectId) return obj;
-        
-        // Get the center of the object for rotation
-        const points = obj.points;
-        let centerX = 0;
-        let centerY = 0;
-        points.forEach(p => {
-          centerX += p.x;
-          centerY += p.y;
-        });
-        centerX /= points.length;
-        centerY /= points.length;
-
-        // Transform all points and handles
-        const transformedPoints = points.map(point => {
-          // Scale relative to center
-          const scaledX = centerX + (point.x - centerX) * transform.scaleX;
-          const scaledY = centerY + (point.y - centerY) * transform.scaleY;
-          
-          // Rotate around center
-          const angle = (transform.rotation * Math.PI) / 180;
-          const rotatedX = centerX + (scaledX - centerX) * Math.cos(angle) - (scaledY - centerY) * Math.sin(angle);
-          const rotatedY = centerY + (scaledX - centerX) * Math.sin(angle) + (scaledY - centerY) * Math.cos(angle);
-
-          // Apply same transformation to handles
-          const handleIn = transformPoint(point.handleIn, centerX, centerY, transform);
-          const handleOut = transformPoint(point.handleOut, centerX, centerY, transform);
-
-          return {
-            ...point,
-            x: rotatedX,
-            y: rotatedY,
-            handleIn,
-            handleOut,
-          };
-        });
-
-        return {
-          ...obj,
-          points: transformedPoints,
-          transform
-        };
-      })
+      prevObjects.map(obj => 
+        obj.id === objectId 
+          ? { ...obj, transform }
+          : obj
+      )
     );
     
     // Add to history after transform change
     const updatedObjects = objects.map(obj => 
-      obj.id === objectId ? {
-        ...obj,
-        transform
-      } : obj
+      obj.id === objectId ? { ...obj, transform } : obj
     );
     addToHistory(updatedObjects);
-  }, [objects, addToHistory]);
-
-  // Helper function to transform a single point
-  const transformPoint = (point: {x: number, y: number}, centerX: number, centerY: number, transform: TransformSettings) => {
-    // Scale
-    const scaledX = centerX + (point.x - centerX) * transform.scaleX;
-    const scaledY = centerY + (point.y - centerY) * transform.scaleY;
-    
-    // Rotate
-    const angle = (transform.rotation * Math.PI) / 180;
-    const rotatedX = centerX + (scaledX - centerX) * Math.cos(angle) - (scaledY - centerY) * Math.sin(angle);
-    const rotatedY = centerY + (scaledX - centerX) * Math.sin(angle) + (scaledY - centerY) * Math.cos(angle);
-    
-    return { x: rotatedX, y: rotatedY };
-  };
+  }, [objects]);
   
   // Delete an object
   const deleteObject = useCallback((objectId: string) => {
@@ -246,7 +172,7 @@ export function useBezierObjects() {
       title: "Object Deleted",
       description: "The selected object has been removed"
     });
-  }, [objects, addToHistory]);
+  }, [objects]);
   
   // Delete all selected objects
   const deleteSelectedObjects = useCallback(() => {
@@ -266,7 +192,7 @@ export function useBezierObjects() {
     });
     
     setSelectedObjectIds([]);
-  }, [selectedObjectIds, objects, addToHistory]);
+  }, [selectedObjectIds, objects]);
   
   // Rename an object
   const renameObject = useCallback((objectId: string, name: string) => {
@@ -283,7 +209,26 @@ export function useBezierObjects() {
       obj.id === objectId ? { ...obj, name } : obj
     );
     addToHistory(updatedObjects);
-  }, [objects, addToHistory]);
+  }, [objects]);
+  
+  // Add current state to history
+  const addToHistory = useCallback((updatedObjects: BezierObject[]) => {
+    const newHistoryState: HistoryState = {
+      objects: JSON.parse(JSON.stringify(updatedObjects)), // Deep clone
+      timestamp: Date.now()
+    };
+    
+    // If we're not at the end of history, truncate it
+    const newHistory = currentHistoryIndex === history.length - 1 || currentHistoryIndex === -1
+      ? [...history, newHistoryState]
+      : [...history.slice(0, currentHistoryIndex + 1), newHistoryState];
+    
+    // Limit history size to 50 entries
+    const limitedHistory = newHistory.slice(-50);
+    
+    setHistory(limitedHistory);
+    setCurrentHistoryIndex(limitedHistory.length - 1);
+  }, [history, currentHistoryIndex]);
   
   // Undo the last action
   const undo = useCallback(() => {
@@ -364,3 +309,4 @@ export function useBezierObjects() {
     saveCurrentState
   };
 }
+

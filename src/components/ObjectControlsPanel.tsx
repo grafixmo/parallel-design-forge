@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Slider } from '@/components/ui/slider';
 import { Input } from '@/components/ui/input';
@@ -53,8 +54,6 @@ interface ObjectControlsPanelProps {
   backgroundImage?: string;
   backgroundOpacity: number;
   onBackgroundOpacityChange: (opacity: number) => void;
-  backgroundScale: number;
-  onBackgroundScaleChange: (scale: number) => void;
   onUploadImage: (event: React.ChangeEvent<HTMLInputElement>) => void;
   onRemoveImage: () => void;
 }
@@ -72,8 +71,6 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
   backgroundImage,
   backgroundOpacity,
   onBackgroundOpacityChange,
-  backgroundScale,
-  onBackgroundScaleChange,
   onUploadImage,
   onRemoveImage
 }) => {
@@ -470,7 +467,7 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
                 </div>
                 
                 {backgroundImage && (
-                  <div className="space-y-3">
+                  <div>
                     <div className="flex justify-between mb-1">
                       <Label htmlFor="bg-opacity" className="text-xs">Opacity</Label>
                       <span className="text-xs text-gray-500">{Math.round(backgroundOpacity * 100)}%</span>
@@ -482,20 +479,6 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
                       max={100}
                       step={5}
                       onValueChange={(values) => onBackgroundOpacityChange(values[0] / 100)}
-                      className="flex-1"
-                    />
-                    
-                    <div className="flex justify-between mb-1">
-                      <Label htmlFor="bg-scale" className="text-xs">Scale</Label>
-                      <span className="text-xs text-gray-500">{Math.round(backgroundScale * 100)}%</span>
-                    </div>
-                    <Slider
-                      id="bg-scale"
-                      value={[backgroundScale * 100]}
-                      min={10}
-                      max={100}
-                      step={5}
-                      onValueChange={(values) => onBackgroundScaleChange(values[0] / 100)}
                       className="flex-1"
                     />
                   </div>
