@@ -73,11 +73,11 @@ export function generateSVGFromShapes(shapes: Shape[]): string {
     return `<path d="${shape.d}" stroke="${stroke}" stroke-width="${strokeWidth}" fill="${fill}" />`;
   });
 
-  const svg = `
-<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
-  ${shapeElements.join("\n  ")}
-</svg>
-`.trim();
+  const svgContent = shapeElements.join("\n  ");
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+  ${svgContent}
+</svg>`.trim();
 
   return svg;
 }
