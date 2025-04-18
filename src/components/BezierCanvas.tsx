@@ -231,56 +231,6 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     });
   };
 
-  // New function to center imported objects
-  const centerObjects = (objects: BezierObject[]) => {
-    if (!objects.length) return objects;
-
-    // Calculate bounds of all objects
-    let minX = Infinity;
-    let minY = Infinity;
-    let maxX = -Infinity;
-    let maxY = -Infinity;
-
-    objects.forEach(obj => {
-      obj.points.forEach(point => {
-        minX = Math.min(minX, point.x);
-        minY = Math.min(minY, point.y);
-        maxX = Math.max(maxX, point.x);
-        maxY = Math.max(maxY, point.y);
-      });
-    });
-
-    // Calculate center offset
-    const centerX = (maxX + minX) / 2;
-    const centerY = (maxY + minY) / 2;
-    
-    // Calculate canvas center
-    const canvasX = width / 2;
-    const canvasY = height / 2;
-    
-    // Calculate translation
-    const dx = canvasX - centerX;
-    const dy = canvasY - centerY;
-
-    // Apply translation to all objects
-    return objects.map(obj => ({
-      ...obj,
-      points: obj.points.map(point => ({
-        ...point,
-        x: point.x + dx,
-        y: point.y + dy,
-        handleIn: {
-          x: point.handleIn.x + dx,
-          y: point.handleIn.y + dy
-        },
-        handleOut: {
-          x: point.handleOut.x + dx,
-          y: point.handleOut.y + dy
-        }
-      }))
-    }));
-  };
-
   // Draw the canvas
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -500,7 +450,6 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     
     // Handle canvas dragging with middle mouse button or when space is pressed
     if (e.button === 1 || isSpacePressed) {
-      e.preventDefault(); // Prevent middle click from triggering paste
       setIsCanvasDragging(true);
       setDragStart({ x: screenX, y: screenY });
       return;
@@ -913,3 +862,203 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     // If we didn't delete a point and we're in drawing mode, handle adding a point to selected object
     if (!pointDeleted && isDrawingMode && selectedObjectIds.length === 1) {
       const objectId = selectedObjectIds[0];
+      const objectIndex = objects.findIndex(obj => obj.id === objectId);
+      if (objectIndex === -1) return;
+      
+      const object = objects[objectIndex];
+      
+      // Don't add another point if we're too close to an existing point
+      const tooCloseToExisting = object.points.some(point => 
+        isPointNear({ x, y }, point, POINT_RADIUS * 2 / zoom)
+      );
+      
+      if (!tooCloseToExisting) {
+        // Create a new point
+        const newPoint: ControlPoint = {
+          x,
+          y,
+          handleIn: { x: x - 50, y },
+          handleOut: { x: x + 50, y },
+          id: generateId()
+        };
+        
+        // Add the point to the object
+        const updatedPoints = [...object.points, newPoint];
+        const updatedObjects = [...objects];
+        updatedObjects[objectIndex] = { ...object, points: updatedPoints };
+        
+        onObjectsChange(updatedObjects);
+        onSaveState();
+        
+        toast({
+          title: "Point Added",
+          description: `Added a new point to ${object.name}`
+        });
+      }
+    }
+  };
+  
+ // Handle mouse wheel for zoom
+const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
+  e.preventDefault();
+  
+  const canvas = canvasRef.current;
+  if (!canvas) return;
+  
+  const rect = canvas.getBoundingClientRect();
+  const mouseX = e.clientX - rect.left;
+  const mouseY = e.clientY - rect.top;
+  
+  // Calculate zoom direction
+  const delta = e.deltaY < 0 ? 1 : -1;
+  const newZoom = Math.max(0.1, Math.min(5, zoom * (1 + delta * ZOOM_FACTOR)));
+  
+  // Calculate new offset to zoom centered on mouse position
+  const zoomRatio = newZoom / zoom;
+  
+  // Update pan offset to zoom toward mouse position
+  setPanOffset({
+    x: mouseX - (mouseX - panOffset.x) * zoomRatio,
+    y: mouseY - (mouseY - panOffset.y) * zoomRatio
+  });
+  
+  // Set new zoom
+  setZoom(newZoom);
+  
+  toast({
+    title: `Zoom: ${Math.round(newZoom * 100)}%`,
+    description: 'Use mouse wheel to zoom in and out'
+  });
+};
+  
+  // Add keyboard event handler for shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // ESC key to exit drawing mode or clear selections
+      if (e.key === 'Escape') {
+        if (currentDrawingObjectId) {
+          // Cancel the current drawing
+          cancelDrawing();
+        } else {
+          clearSelections();
+          // Also clear object selection when pressing ESC
+          onObjectSelect('', false);
+        }
+      }
+      
+      // Delete key to delete selected objects
+      if (e.key === 'Delete' && !isDrawingMode && selectedObjectIds.length > 0) {
+        // This would be handled by the parent component
+        toast({
+          title: `${selectedObjectIds.length} objects deleted`,
+          description: 'Selected objects have been removed'
+        });
+      }
+      
+      // Enter key to finalize drawing
+      if (e.key === 'Enter' && currentDrawingObjectId) {
+        finalizeDrawingObject();
+      }
+      
+      // Ctrl+Z for undo
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        e.preventDefault();
+        onUndo();
+      }
+      
+      // Space to enable panning
+      if (e.key === ' ' && !e.repeat) {
+        e.preventDefault();
+        setIsSpacePressed(true);
+      }
+    };
+    
+    const handleKeyUp = (e: KeyboardEvent) => {
+      // Space to disable panning
+      if (e.key === ' ') {
+        setIsSpacePressed(false);
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [selectedObjectIds, isDrawingMode, onUndo, currentDrawingObjectId, objects, onObjectSelect]);
+  
+  return (
+    <div ref={wrapperRef} className="relative w-full h-full overflow-hidden">
+      <canvas
+        ref={canvasRef}
+        width={width}
+        height={height}
+        className="w-full h-full bg-white"
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onDoubleClick={handleDoubleClick}
+        onWheel={handleWheel}
+        onContextMenu={handleContextMenu}
+      />
+      
+      <div className="absolute bottom-4 left-4 text-sm text-gray-500 bg-white/80 px-3 py-1 rounded shadow">
+        {instructionMessage}
+      </div>
+      
+      <div className="absolute top-4 right-4 flex space-x-2">
+        <button 
+          className="bg-white/80 p-2 rounded shadow hover:bg-white transition-colors"
+          onClick={onUndo}
+          title="Undo (Ctrl+Z)"
+        >
+          <Undo className="w-5 h-5" />
+        </button>
+        <button 
+          className="bg-white/80 p-2 rounded shadow hover:bg-white transition-colors"
+          onClick={handleZoomIn}
+          title="Zoom In"
+        >
+          <ZoomIn className="w-5 h-5" />
+        </button>
+        <button 
+          className="bg-white/80 p-2 rounded shadow hover:bg-white transition-colors"
+          onClick={handleZoomOut}
+          title="Zoom Out"
+        >
+          <ZoomOut className="w-5 h-5" />
+        </button>
+        <button 
+          className="bg-white/80 p-2 rounded shadow hover:bg-white transition-colors"
+          onClick={handleResetView}
+          title="Reset View"
+        >
+          <RotateCcw className="w-5 h-5" />
+        </button>
+      </div>
+      
+      {currentDrawingObjectId && (
+        <div className="absolute bottom-4 right-4 flex space-x-2">
+          <button
+            className="bg-red-500 text-white px-3 py-1 rounded shadow hover:bg-red-600 transition-colors"
+            onClick={cancelDrawing}
+            title="Cancel Drawing (ESC)"
+          >
+            Cancel
+          </button>
+          <button
+            className="bg-green-500 text-white px-3 py-1 rounded shadow hover:bg-green-600 transition-colors"
+            onClick={finalizeDrawingObject}
+            title="Finish Drawing (Enter or Right-click)"
+          >
+            Finish
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default BezierCanvas;
