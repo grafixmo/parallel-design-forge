@@ -25,21 +25,13 @@ import {
   PopoverContent,
   PopoverTrigger
 } from '@/components/ui/popover';
-import { Trash2, Heart, Edit, Loader2, Search, X, ExternalLink } from 'lucide-react';
-import {
-  getTemplates,
-  getTemplatesByCategory,
-  updateTemplate,
-  deleteTemplate,
-  likeTemplate,
-  Template
-} from '@/services/supabaseClient';
+import { Trash2, Heart, Edit, Loader2, Search, X, ExternalLink, AlertTriangle, FileJson, FileText } from 'lucide-react';
+import { getTemplates, getTemplatesByCategory, updateTemplate, deleteTemplate, likeTemplate, Template } from '@/services/supabaseClient';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { parseTemplateData } from '@/utils/svgExporter';
-import MergeToggle from './MergeToggle'; // Change from named import to default import
+import MergeToggle from './MergeToggle';
 import { generateThumbnail } from '@/utils/thumbnailGenerator';
-
 
 interface TemplateGalleryProps {
   open: boolean;
@@ -59,37 +51,20 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
   const [newName, setNewName] = useState('');
   const [newDescription, setNewDescription] = useState('');
   const [mergeEnabled, setMergeEnabled] = useState(false);
+  const [fixedCount, setFixedCount] = useState(0);
+  const [error, setError] = useState<string | null>(null);
 
-  // Fetch templates when the gallery is opened or category changes
   useEffect(() => {
     if (open) {
-      fetchTemplates().then(async () => {
-        try {
-          // Generate thumbnails for each template that doesn't have one
-          const templatesWithThumbnails = await Promise.all(
-            templates.map(async (template) => {
-              if (!template.thumbnail && template.design_data) {
-                try {
-                  const thumbnail = await generateThumbnail(template.design_data);
-                  return { ...template, thumbnail };
-                } catch (error) {
-                  console.error(`Error generating thumbnail for template ${template.id}:`, error);
-                  return template;
-                }
-              }
-              return template;
-            })
-          );
-          setTemplates(templatesWithThumbnails);
-        } catch (error) {
-          console.error('Error processing templates:', error);
-        }
-      });
+      fetchTemplates();
     }
   }, [open, activeCategory]);
 
   const fetchTemplates = async () => {
     setIsLoading(true);
+    setError(null);
+    setFixedCount(0);
+    
     try {
       const response = activeCategory === 'all'
         ? await getTemplates()
@@ -99,13 +74,117 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
         throw new Error(response.error.message);
       }
 
-      setTemplates(response.data || []);
-    } catch (error) {
-      console.error('Error fetching templates:', error);
+      console.log(`Fetched ${response.data?.length || 0} templates`);
+      
+      const processedTemplates = await Promise.all((response.data || []).map(async (template) => {
+        try {
+          console.log(`Processing template: ${template.name}, ID: ${template.id || 'unknown'}`);
+          
+          let normalizedData: string = '';
+          let dataFormat: 'json' | 'svg' | 'invalid' = 'invalid';
+          let needsUpdate = false;
+          
+          // Validate and normalize template data
+          if (typeof template.design_data === 'string') {
+            normalizedData = template.design_data;
+            
+            if (normalizedData.trim().startsWith('<svg') || normalizedData.includes('<svg ')) {
+              console.log(`Template ${template.name} contains SVG data`);
+              dataFormat = 'svg';
+            } else {
+              try {
+                JSON.parse(normalizedData);
+                dataFormat = 'json';
+                console.log(`Template ${template.name} contains valid JSON data`);
+              } catch (parseError) {
+                console.warn(`Template ${template.name} has invalid JSON data:`, parseError);
+                
+                normalizedData = JSON.stringify({ objects: [] });
+                dataFormat = 'json';
+                needsUpdate = true;
+              }
+            }
+          } else if (typeof template.design_data === 'object' && template.design_data !== null) {
+            try {
+              normalizedData = JSON.stringify(template.design_data);
+              dataFormat = 'json';
+              needsUpdate = true;
+            } catch (stringifyError) {
+              console.error(`Error stringifying object for template ${template.name}:`, stringifyError);
+              normalizedData = JSON.stringify({ objects: [] });
+              dataFormat = 'json';
+              needsUpdate = true;
+            }
+          } else {
+            console.warn(`Template ${template.name} has invalid design_data`);
+            normalizedData = JSON.stringify({ objects: [] });
+            dataFormat = 'json';
+            needsUpdate = true;
+          }
+
+          // Update template if needed
+          if (template.id && needsUpdate) {
+            try {
+              const updateResult = await updateTemplate(template.id, {
+                design_data: normalizedData
+              });
+              
+              if (updateResult.error) {
+                console.error(`Failed to fix template ${template.name}:`, updateResult.error);
+              } else {
+                console.log(`Successfully fixed template ${template.name}`);
+                setFixedCount(prev => prev + 1);
+              }
+            } catch (updateError) {
+              console.error(`Error updating template ${template.name}:`, updateError);
+            }
+          }
+
+          // Generate thumbnail
+          let thumbnail = '';
+          try {
+            if (normalizedData) {
+              thumbnail = await generateThumbnail(normalizedData);
+            }
+          } catch (thumbnailError) {
+            console.error(`Error generating thumbnail for template ${template.name}:`, thumbnailError);
+          }
+
+          return {
+            ...template,
+            design_data: normalizedData,
+            isSvg: dataFormat === 'svg',
+            isJson: dataFormat === 'json',
+            isInvalid: dataFormat === 'invalid',
+            wasFixed: needsUpdate,
+            thumbnail
+          };
+        } catch (processError) {
+          console.error(`Error processing template ${template.name}:`, processError);
+          return {
+            ...template,
+            design_data: JSON.stringify({ objects: [] }),
+            hasParseError: true,
+            isInvalid: true
+          };
+        }
+      }));
+
+      console.log(`Processed ${processedTemplates.length} templates`);
+      setTemplates(processedTemplates);
+      
+      if (fixedCount > 0) {
+        toast({
+          title: "Templates Updated",
+          description: `Fixed ${fixedCount} templates with incorrect data format`
+        });
+      }
+    } catch (err) {
+      console.error('Error fetching templates:', err);
       toast({
-        title: 'Error',
-        description: 'Failed to load templates',
-        variant: 'destructive'
+        title: "Error",
+        description: "Failed to load templates. Please try again.",
+        variant: "destructive"
       });
     } finally {
       setIsLoading(false);
@@ -251,6 +330,58 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
     setNewName(template.name);
     setNewDescription(template.description || '');
     setRenameDialogOpen(true);
+  };
+
+  const getPreviewContent = (template: Template) => {
+    if ((template as any).thumbnail) {
+      return (
+        <div className="w-full h-full flex items-center justify-center">
+          <img 
+            src={(template as any).thumbnail} 
+            alt={template.name} 
+            className="max-w-full max-h-full object-contain"
+          />
+        </div>
+      );
+    }
+    
+    if ((template as any).isSvg) {
+      return (
+        <div className="flex items-center justify-center text-blue-300">
+          <FileText className="h-8 w-8" />
+        </div>
+      );
+    }
+    
+    if ((template as any).isJson) {
+      return (
+        <div className="flex items-center justify-center text-green-300">
+          <FileJson className="h-8 w-8" />
+        </div>
+      );
+    }
+    
+    return (
+      <div className="flex items-center justify-center text-red-300">
+        <AlertTriangle className="h-8 w-8" />
+      </div>
+    );
+  };
+
+  const getStatusLabel = (template: Template) => {
+    if ((template as any).isSvg) return "SVG";
+    if ((template as any).isJson) return "JSON";
+    if ((template as any).wasFixed) return "Fixed";
+    if ((template as any).hasParseError) return "Error (Fixed)";
+    return template.category || "";
+  };
+
+  const getStatusBadgeClass = (template: Template) => {
+    if ((template as any).wasFixed) return "bg-amber-100 text-amber-800";
+    if ((template as any).hasParseError) return "bg-red-100 text-red-800";
+    if ((template as any).isSvg) return "bg-blue-100 text-blue-800";
+    if ((template as any).isJson) return "bg-green-100 text-green-800";
+    return "bg-gray-100 text-gray-800";
   };
 
   // Filter templates by search query
