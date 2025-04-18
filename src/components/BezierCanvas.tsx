@@ -1008,35 +1008,39 @@ const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
         {instructionMessage}
       </div>
       
-      <div className="absolute top-4 right-4 flex space-x-2">
-        <button 
+       <div className="absolute top-4 right-4 flex space-x-2">
+        {/* Botón Undo */}
+        <button
           className="bg-white/80 p-2 rounded shadow hover:bg-white transition-colors"
           onClick={onUndo}
           title="Undo (Ctrl+Z)"
         >
           <Undo className="w-5 h-5" />
         </button>
-        <button 
+        {/* Botón Zoom In */}
+        <button
           className="bg-white/80 p-2 rounded shadow hover:bg-white transition-colors"
           onClick={handleZoomIn}
           title="Zoom In"
         >
           <ZoomIn className="w-5 h-5" />
         </button>
-        <button 
+        {/* Botón Zoom Out */}
+        <button
           className="bg-white/80 p-2 rounded shadow hover:bg-white transition-colors"
           onClick={handleZoomOut}
           title="Zoom Out"
         >
           <ZoomOut className="w-5 h-5" />
         </button>
-       <button 
-  className="bg-white/80 p-2 rounded shadow hover:bg-white transition-colors"
-  onClick={handleResetView}
-  title="Reset View"
->
-  <RotateCcw className="w-5 h-5" />
-</button>
+        {/* Botón Reset View (ya con formato consistente) */}
+        <button
+          className="bg-white/80 p-2 rounded shadow hover:bg-white transition-colors"
+          onClick={handleResetView}
+          title="Reset View"
+        >
+          <RotateCcw className="w-5 h-5" />
+        </button>
       </div>
       
       {currentDrawingObjectId && (
