@@ -1,3 +1,4 @@
+
 /**
  * Converts various data formats to valid SVG
  */
@@ -18,18 +19,36 @@ type Shape = {
  */
 function extractSVGDimensions(svgString: string): { width: number; height: number; viewBox: string | null } {
   const parser = new DOMParser();
-  const doc = parser.parseFromString(svgString, 'image/svg+xml');
+  let doc;
+  
+  try {
+    doc = parser.parseFromString(svgString, 'image/svg+xml');
+  } catch (e) {
+    console.error('Error parsing SVG:', e);
+    return { width: 800, height: 600, viewBox: null };
+  }
+  
   const svg = doc.documentElement;
 
+  // Log SVG parsing info for debugging
   console.log('Extracting dimensions from SVG element:', svg.outerHTML.substring(0, 100) + '...');
 
   // Get dimensions from viewBox first
   const viewBox = svg.getAttribute('viewBox');
-  let [vbX, vbY, vbWidth, vbHeight] = (viewBox || '0 0 0 0').split(/[\s,]+/).map(parseFloat);
+  let [vbX, vbY, vbWidth, vbHeight] = (viewBox || '0 0 800 600').split(/[\s,]+/).map(parseFloat);
 
-  // Get explicit width/height
-  let width = parseFloat(svg.getAttribute('width') || '0');
-  let height = parseFloat(svg.getAttribute('height') || '0');
+  // Handle invalid viewBox values
+  if (isNaN(vbX) || isNaN(vbY) || isNaN(vbWidth) || isNaN(vbHeight)) {
+    console.warn('Invalid viewBox values, using defaults');
+    vbX = 0;
+    vbY = 0;
+    vbWidth = 800;
+    vbHeight = 600;
+  }
+
+  // Get explicit width/height with fallbacks
+  let width = parseFloat(svg.getAttribute('width') || '0') || vbWidth || 800;
+  let height = parseFloat(svg.getAttribute('height') || '0') || vbHeight || 600;
 
   // Handle percentage dimensions
   if (svg.getAttribute('width')?.includes('%')) {
@@ -43,7 +62,8 @@ function extractSVGDimensions(svgString: string): { width: number; height: numbe
   // If width/height have units (like "100pt" or "50mm"), convert to pixels
   if (svg.getAttribute('width')?.match(/[a-z]+$/i)) {
     // Better unit conversion
-    const unit = svg.getAttribute('width')?.match(/[a-z]+$/i)?.[0] || '';
+    const unitMatch = svg.getAttribute('width')?.match(/[a-z]+$/i);
+    const unit = unitMatch ? unitMatch[0] : '';
     const value = parseFloat(svg.getAttribute('width') || '0');
     
     // Convert common units to pixels
@@ -59,7 +79,8 @@ function extractSVGDimensions(svgString: string): { width: number; height: numbe
   }
   
   if (svg.getAttribute('height')?.match(/[a-z]+$/i)) {
-    const unit = svg.getAttribute('height')?.match(/[a-z]+$/i)?.[0] || '';
+    const unitMatch = svg.getAttribute('height')?.match(/[a-z]+$/i);
+    const unit = unitMatch ? unitMatch[0] : '';
     const value = parseFloat(svg.getAttribute('height') || '0');
     
     if (unit === 'pt') {
@@ -73,9 +94,9 @@ function extractSVGDimensions(svgString: string): { width: number; height: numbe
     }
   }
 
-  // Use viewBox dimensions if width/height not specified
-  if (!width && vbWidth) width = vbWidth;
-  if (!height && vbHeight) height = vbHeight;
+  // Fix potential issues with extracted dimensions
+  width = Math.max(10, width);
+  height = Math.max(10, height);
 
   // If viewBox is missing but we have width/height, create a viewBox
   if (!viewBox && width && height) {
@@ -179,7 +200,7 @@ export function convertToValidSVG(data: string): string | null {
     }
 
     // Handle existing SVG
-    if (data.trim().startsWith('<svg') || data.includes('<?xml')) {
+    if (data.trim().startsWith('<svg') || data.includes('<?xml') || data.includes('<svg ')) {
       // Log incoming SVG for debugging
       console.log('Processing SVG input (first 100 chars):', data.substring(0, 100));
       
@@ -187,81 +208,77 @@ export function convertToValidSVG(data: string): string | null {
       const { width, height, viewBox } = extractSVGDimensions(data);
       console.log(`Extracted dimensions: ${width}x${height}, viewBox: ${viewBox}`);
 
-      // Process SVG to normalize paths and preserve dimensions
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(data, 'image/svg+xml');
-      
-      // Check for parsing errors
-      const parserError = doc.querySelector('parsererror');
-      if (parserError) {
-        console.error('SVG parsing error:', parserError.textContent);
-        return null;
-      }
-      
-      // Process all path elements
-      doc.querySelectorAll('path').forEach(path => {
-        const originalD = path.getAttribute('d');
-        if (originalD) {
-          // Normalize path data
-          const normalized = normalizeSVGPath(originalD);
-          path.setAttribute('d', normalized);
+      try {
+        // Process SVG to normalize paths and preserve dimensions
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(data, 'image/svg+xml');
+        
+        // Check for parsing errors
+        const parserError = doc.querySelector('parsererror');
+        if (parserError) {
+          console.error('SVG parsing error:', parserError.textContent);
+          return null;
         }
-      });
+        
+        // Process all path elements
+        doc.querySelectorAll('path').forEach(path => {
+          const originalD = path.getAttribute('d');
+          if (originalD) {
+            // Normalize path data
+            const normalized = normalizeSVGPath(originalD);
+            path.setAttribute('d', normalized);
+          }
+        });
 
-      // Ensure SVG has proper dimensions and viewBox
-      const svg = doc.documentElement;
-      
-      // Force consistent size for the canvas display
-      svg.setAttribute('width', '800');
-      svg.setAttribute('height', '600');
-      
-      // Improved viewBox calculation for proper centering and scaling
-      if (viewBox) {
-        // Keep original viewBox with correct proportions
-        let [vbX, vbY, vbWidth, vbHeight] = viewBox.split(/[\s,]+/).map(parseFloat);
+        // Ensure SVG has proper dimensions and viewBox
+        const svg = doc.documentElement;
         
-        // Calculate aspect ratios to maintain proportions
-        const svgRatio = vbWidth / vbHeight;
-        const canvasRatio = 800 / 600;
+        // Force consistent size for the canvas display
+        svg.setAttribute('width', '800');
+        svg.setAttribute('height', '600');
         
-        // Scale and center the content
-        if (svgRatio > canvasRatio) {
-          // Content is wider than canvas
-          const newHeight = vbWidth / canvasRatio;
-          const yOffset = (newHeight - vbHeight) / 2;
-          svg.setAttribute('viewBox', `${vbX} ${vbY - yOffset} ${vbWidth} ${newHeight}`);
-        } else {
-          // Content is taller than canvas
-          const newWidth = vbHeight * canvasRatio;
-          const xOffset = (newWidth - vbWidth) / 2;
-          svg.setAttribute('viewBox', `${vbX - xOffset} ${vbY} ${newWidth} ${vbHeight}`);
-        }
-        
-        console.log(`Adjusted viewBox: ${svg.getAttribute('viewBox')}`);
-      } else if (width > 0 && height > 0) {
-        // Create a viewBox based on original dimensions, centered in our canvas
-        // Using a 60% scaling factor (reduced from 80%) to make content more visible
-        const scaleFactor = Math.min(800 / width, 600 / height) * 0.6;
-        const scaledWidth = width * scaleFactor;
-        const scaledHeight = height * scaleFactor;
-        
-        // Calculate centering offsets - ensure content is truly centered
-        const xOffset = (800 - scaledWidth) / 2;
-        const yOffset = (600 - scaledHeight) / 2;
-        
-        // Set viewBox to original content size but position it centered
-        // Using a more accurate computation to ensure proper centering
-        svg.setAttribute('viewBox', `${-xOffset/scaleFactor} ${-yOffset/scaleFactor} ${800/scaleFactor} ${600/scaleFactor}`);
-        console.log(`Created centered viewBox for content: ${svg.getAttribute('viewBox')}`);
-      } else {
-        // Fallback to standard viewBox
+        // Set a uniform, well-scaled viewBox - much more aggressive centering
         svg.setAttribute('viewBox', '0 0 800 600');
-      }
+        
+        console.log(`Set uniform viewBox: 0 0 800 600`);
+        
+        // Add a transformation to center and scale the content appropriately
+        // Get all top-level shapes
+        const allTopLevelShapes = Array.from(svg.children);
+        
+        // If there are elements, wrap them in a group to apply a single transform
+        if (allTopLevelShapes.length > 0) {
+          // Create a group element
+          const g = doc.createElementNS('http://www.w3.org/2000/svg', 'g');
+          
+          // Calculate scaling factor (use 70% of canvas)
+          const scaleFactor = Math.min(800 / width, 600 / height) * 0.7;
+          
+          // Set transform that centers and scales content
+          g.setAttribute('transform', 
+            `translate(${800/2}, ${600/2}) scale(${scaleFactor}) translate(${-width/2}, ${-height/2})`
+          );
+          
+          console.log(`Applied centering transform with scale ${scaleFactor}`);
+          
+          // Move all children to the group
+          while (svg.children.length > 0) {
+            g.appendChild(svg.children[0]);
+          }
+          
+          // Add the group to the SVG
+          svg.appendChild(g);
+        }
 
-      // Modify the generated SVG to ensure it's compatible with our application
-      const result = new XMLSerializer().serializeToString(doc);
-      console.log('Processed SVG (first 100 chars):', result.substring(0, 100));
-      return result;
+        // Modify the generated SVG to ensure it's compatible with our application
+        const result = new XMLSerializer().serializeToString(doc);
+        console.log('Processed SVG (first 100 chars):', result.substring(0, 100));
+        return result;
+      } catch (e) {
+        console.error('Error processing SVG:', e);
+        // Return the original SVG as fallback
+        return data;
+      }
     }
 
     // Handle JSON data
@@ -340,10 +357,10 @@ export function generateSVGFromShapes(shapes: Shape[]): string {
   const contentWidth = Math.max(10, maxX - minX);
   const contentHeight = Math.max(10, maxY - minY);
   
-  // Calculate scale factor to fit the content within 60% of the canvas (reduced from 80%)
+  // Calculate scale factor to fit the content within 70% of the canvas (increased from 60%)
   // and don't scale up small content too much
-  const scaleX = Math.min(1.5, (width * 0.6) / contentWidth);
-  const scaleY = Math.min(1.5, (height * 0.6) / contentHeight);
+  const scaleX = Math.min(2.0, (width * 0.7) / contentWidth);
+  const scaleY = Math.min(2.0, (height * 0.7) / contentHeight);
   const scale = Math.min(scaleX, scaleY);
   
   // Calculate proper centering offsets based on scaled content
@@ -363,7 +380,7 @@ export function generateSVGFromShapes(shapes: Shape[]): string {
     const strokeWidth = shape.strokeWidth || 1;
     const fill = shape.fill || 'none';
     
-    // Apply transform for centering and scaling
+    // Apply transform for centering and scaling directly in the SVG
     return `<path d="${processedPathData}" stroke="${stroke}" stroke-width="${strokeWidth}" fill="${fill}" transform="translate(${offsetX}, ${offsetY}) scale(${scale})" />`;
   }).filter(Boolean);
 
@@ -416,14 +433,19 @@ export function processSVGPaths(paths: SVGPathElement[], existingCurveConfig?: C
 
   if (pathElements.length === 0) return null;
 
-  // Calculate content dimensions
+  // Calculate content dimensions - ensure we have valid bounds
+  minX = isFinite(minX) ? minX : 0;
+  minY = isFinite(minY) ? minY : 0;
+  maxX = isFinite(maxX) ? maxX : 800;
+  maxY = isFinite(maxY) ? maxY : 600;
+  
   const contentWidth = Math.max(10, maxX - minX);
   const contentHeight = Math.max(10, maxY - minY);
   
-  // Calculate scale to fit the content within 60% of the canvas (800x600) - reduced from 80%
-  // but don't scale up small content too much
-  const scaleX = Math.min(1.5, (800 * 0.6) / contentWidth);
-  const scaleY = Math.min(1.5, (600 * 0.6) / contentHeight);
+  // Calculate scale to fit the content within 70% of the canvas (800x600) - increased from 60%
+  // Scale more aggressively to fix tiny SVG issue
+  const scaleX = Math.min(2.0, (800 * 0.7) / contentWidth);
+  const scaleY = Math.min(2.0, (600 * 0.7) / contentHeight);
   const scale = Math.min(scaleX, scaleY);
   
   // Calculate canvas center and content center for proper centering
@@ -437,21 +459,37 @@ export function processSVGPaths(paths: SVGPathElement[], existingCurveConfig?: C
 
   // Generate scaled and centered points
   const points = approximateControlPointsFromPath(pathElements[0].d);
-  const scaledPoints = points.map(point => ({
-    ...point,
-    x: (point.x - contentCenterX) * scale + canvasCenterX,
-    y: (point.y - contentCenterY) * scale + canvasCenterY,
-    handleIn: {
-      x: (point.handleIn.x - contentCenterX) * scale + canvasCenterX,
-      y: (point.handleIn.y - contentCenterY) * scale + canvasCenterY
-    },
-    handleOut: {
-      x: (point.handleOut.x - contentCenterX) * scale + canvasCenterX,
-      y: (point.handleOut.y - contentCenterY) * scale + canvasCenterY
-    }
-  }));
+  
+  // Apply additional safety checks before scaling
+  if (points.length === 0) {
+    console.error('No points could be extracted from the path');
+    return null;
+  }
+  
+  // Scale more conservatively if we have extreme values
+  const effectiveScale = isFinite(scale) && scale > 0 ? scale : 1.0;
+  
+  const scaledPoints = points.map(point => {
+    // Ensure all values are valid numbers
+    const ensureValidNumber = (value: number) => isFinite(value) ? value : 0;
+    
+    // Apply scaling and centering with safety checks
+    return {
+      ...point,
+      x: ensureValidNumber((point.x - contentCenterX) * effectiveScale + canvasCenterX),
+      y: ensureValidNumber((point.y - contentCenterY) * effectiveScale + canvasCenterY),
+      handleIn: {
+        x: ensureValidNumber((point.handleIn.x - contentCenterX) * effectiveScale + canvasCenterX),
+        y: ensureValidNumber((point.handleIn.y - contentCenterY) * effectiveScale + canvasCenterY)
+      },
+      handleOut: {
+        x: ensureValidNumber((point.handleOut.x - contentCenterX) * effectiveScale + canvasCenterX),
+        y: ensureValidNumber((point.handleOut.y - contentCenterY) * effectiveScale + canvasCenterY)
+      }
+    };
+  });
 
-  console.log(`Scaled ${points.length} points with scale ${scale}, centered at (${canvasCenterX}, ${canvasCenterY})`);
+  console.log(`Scaled ${points.length} points with scale ${effectiveScale}, centered at (${canvasCenterX}, ${canvasCenterY})`);
 
   // Create styles for each path
   const styles = pathElements.map(p => ({
@@ -495,6 +533,8 @@ const approximateControlPointsFromPath = (pathData: string, matrix: DOMMatrix | 
     let firstX = 0;
     let firstY = 0;
     let lastCommand = '';
+    let lastControlX = 0;
+    let lastControlY = 0;
     
     commands.forEach(({ command, params }) => {
       switch (command.toUpperCase()) {
@@ -586,6 +626,10 @@ const approximateControlPointsFromPath = (pathData: string, matrix: DOMMatrix | 
               id: generateId()
             });
             
+            // Save last control point for S command
+            lastControlX = absX2;
+            lastControlY = absY2;
+            
             currentX = absX;
             currentY = absY;
             console.log(`Added C point at ${absX},${absY}`);
@@ -607,10 +651,9 @@ const approximateControlPointsFromPath = (pathData: string, matrix: DOMMatrix | 
             let absX1 = currentX;
             let absY1 = currentY;
             
-            if (points.length > 0 && (lastCommand === 'C' || lastCommand === 'c' || lastCommand === 'S' || lastCommand === 's')) {
-              const lastPoint = points[points.length - 1];
-              absX1 = currentX + (currentX - lastPoint.handleIn.x);
-              absY1 = currentY + (currentY - lastPoint.handleIn.y);
+            if (points.length > 0 && (lastCommand.toUpperCase() === 'C' || lastCommand.toUpperCase() === 'S')) {
+              absX1 = currentX + (currentX - lastControlX);
+              absY1 = currentY + (currentY - lastControlY);
             }
             
             // Update last point's handle out
@@ -628,31 +671,170 @@ const approximateControlPointsFromPath = (pathData: string, matrix: DOMMatrix | 
               id: generateId()
             });
             
+            // Save last control point for next S command
+            lastControlX = absX2;
+            lastControlY = absY2;
+            
+            currentX = absX;
+            currentY = absY;
+          }
+          break;
+        }
+        case 'Q': {
+          // Quadratic bezier curve
+          if (params.length >= 4) {
+            const [x1, y1, x, y] = params;
+            
+            // Convert to absolute coordinates
+            const absX1 = command === 'q' ? currentX + x1 : x1;
+            const absY1 = command === 'q' ? currentY + y1 : y1;
+            const absX = command === 'q' ? currentX + x : x;
+            const absY = command === 'q' ? currentY + y : y;
+            
+            // For quadratic curves, we need to convert to cubic control points
+            const cp1x = currentX + 2/3 * (absX1 - currentX);
+            const cp1y = currentY + 2/3 * (absY1 - currentY);
+            const cp2x = absX + 2/3 * (absX1 - absX);
+            const cp2y = absY + 2/3 * (absY1 - absY);
+            
+            // Update last point's handle out
+            if (points.length > 0) {
+              const lastPoint = points[points.length - 1];
+              lastPoint.handleOut = { x: cp1x, y: cp1y };
+            }
+            
+            // Add new point with handles
+            points.push({
+              x: absX,
+              y: absY,
+              handleIn: { x: cp2x, y: cp2y },
+              handleOut: { x: absX + (absX - cp2x), y: absY + (absY - cp2y) },
+              id: generateId()
+            });
+            
+            // Save control point for T command
+            lastControlX = absX1;
+            lastControlY = absY1;
+            
+            currentX = absX;
+            currentY = absY;
+          }
+          break;
+        }
+        case 'T': {
+          // Smooth quadratic bezier curve
+          if (params.length >= 2) {
+            const [x, y] = params;
+            
+            // Convert to absolute coordinates
+            const absX = command === 't' ? currentX + x : x;
+            const absY = command === 't' ? currentY + y : y;
+            
+            // Calculate the control point as reflection of the previous curve's control point
+            let absX1 = currentX;
+            let absY1 = currentY;
+            
+            if (points.length > 0 && (lastCommand.toUpperCase() === 'Q' || lastCommand.toUpperCase() === 'T')) {
+              absX1 = currentX + (currentX - lastControlX);
+              absY1 = currentY + (currentY - lastControlY);
+            }
+            
+            // Convert quadratic to cubic (same as Q command)
+            const cp1x = currentX + 2/3 * (absX1 - currentX);
+            const cp1y = currentY + 2/3 * (absY1 - currentY);
+            const cp2x = absX + 2/3 * (absX1 - absX);
+            const cp2y = absY + 2/3 * (absY1 - absY);
+            
+            // Update last point's handle out
+            if (points.length > 0) {
+              const lastPoint = points[points.length - 1];
+              lastPoint.handleOut = { x: cp1x, y: cp1y };
+            }
+            
+            // Add new point with handles
+            points.push({
+              x: absX,
+              y: absY,
+              handleIn: { x: cp2x, y: cp2y },
+              handleOut: { x: absX + (absX - cp2x), y: absY + (absY - cp2y) },
+              id: generateId()
+            });
+            
+            // Save control point for next T command
+            lastControlX = absX1;
+            lastControlY = absY1;
+            
+            currentX = absX;
+            currentY = absY;
+          }
+          break;
+        }
+        case 'A': {
+          // Arc command - approximate with cubic curves
+          if (params.length >= 7) {
+            const [rx, ry, xAxisRotation, largeArcFlag, sweepFlag, x, y] = params;
+            
+            // Convert to absolute coordinates
+            const absX = command === 'a' ? currentX + x : x;
+            const absY = command === 'a' ? currentY + y : y;
+            
+            // For simplicity, just create a straight line with handles
+            // A proper implementation would convert the arc to cubic bezier segments
+            if (points.length > 0) {
+              const prevPoint = points[points.length - 1];
+              const newPoint = createControlPoint(absX, absY, prevPoint);
+              
+              // Add some curvature in the direction of movement
+              const dx = absX - currentX;
+              const dy = absY - currentY;
+              const dist = Math.sqrt(dx*dx + dy*dy);
+              const bendFactor = Math.min(dist * 0.5, 50);
+              
+              prevPoint.handleOut = {
+                x: currentX + dx * 0.25 + (sweepFlag ? bendFactor : -bendFactor) * dy / dist,
+                y: currentY + dy * 0.25 + (sweepFlag ? -bendFactor : bendFactor) * dx / dist
+              };
+              
+              newPoint.handleIn = {
+                x: absX - dx * 0.25 + (sweepFlag ? bendFactor : -bendFactor) * dy / dist,
+                y: absY - dy * 0.25 + (sweepFlag ? -bendFactor : bendFactor) * dx / dist
+              };
+              
+              points.push(newPoint);
+            } else {
+              points.push(createControlPoint(absX, absY));
+            }
+            
             currentX = absX;
             currentY = absY;
           }
           break;
         }
         case 'Z': {
-          // Close path command
+          // Close path command - connect back to first point
           if (points.length > 0 && (currentX !== firstX || currentY !== firstY)) {
             const lastPoint = points[points.length - 1];
             const firstPoint = points[0];
             
             // Create smooth connection back to start
-            const closePoint = createControlPoint(firstX, firstY, lastPoint);
+            const dx = firstX - lastPoint.x;
+            const dy = firstY - lastPoint.y;
+            const dist = Math.sqrt(dx*dx + dy*dy);
             
-            // Update the first point's handleIn based on the curve
-            firstPoint.handleIn = {
-              x: firstX - (closePoint.handleOut.x - firstX),
-              y: firstY - (closePoint.handleOut.y - firstY)
-            };
-            
-            // Update the last point's handleOut for a smooth transition
-            lastPoint.handleOut = {
-              x: lastPoint.x + (firstPoint.x - lastPoint.x) / 3,
-              y: lastPoint.y + (firstPoint.y - lastPoint.y) / 3
-            };
+            // Only add closing handles if there's a reasonable distance
+            if (dist > 5) {
+              // Update the last point's handleOut
+              lastPoint.handleOut = {
+                x: lastPoint.x + dx / 3,
+                y: lastPoint.y + dy / 3
+              };
+              
+              // Update the first point's handleIn
+              firstPoint.handleIn = {
+                x: firstX - dx / 3,
+                y: firstY - dy / 3
+              };
+            }
             
             currentX = firstX;
             currentY = firstY;

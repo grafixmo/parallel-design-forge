@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+
+import { useState, useEffect, useRef } from 'react';
 import { 
   ControlPoint, 
   CurveStyle, 
@@ -34,6 +35,22 @@ const normalizeDesignData = (data: any): string => {
   return '';
 };
 
+// Simple debounce function to prevent multiple rapid calls
+function debounce<F extends (...args: any[]) => any>(func: F, wait: number): (...args: Parameters<F>) => void {
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  
+  return function(...args: Parameters<F>) {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+    
+    timeout = setTimeout(() => {
+      func(...args);
+      timeout = null;
+    }, wait);
+  };
+}
+
 const Index = () => {
   const { toast } = useToast();
   
@@ -48,6 +65,10 @@ const Index = () => {
   // UI state
   const [showLibrary, setShowLibrary] = useState<boolean>(false);
   const [isDrawingMode, setIsDrawingMode] = useState<boolean>(true);
+  
+  // Export state
+  const [isExporting, setIsExporting] = useState<boolean>(false);
+  const lastExportTime = useRef<number>(0);
   
   // Use our custom hook for bezier objects
   const {
@@ -156,8 +177,15 @@ const Index = () => {
     updateObjects(updatedObjects);
   };
   
-  // Export design as SVG
-  const handleExportSVG = () => {
+  // Export design as SVG with debouncing to prevent multiple rapid exports
+  const handleExportSVG = debounce(() => {
+    // Prevent multiple export calls within 1 second
+    const now = Date.now();
+    if (now - lastExportTime.current < 1000 || isExporting) {
+      console.log('Export throttled or already in progress');
+      return;
+    }
+    
     if (objects.length === 0) {
       toast({
         title: 'Cannot Export',
@@ -167,20 +195,34 @@ const Index = () => {
       return;
     }
     
-    // Generate SVG content
-    const svgContent = exportAsSVG(
-      objects,
-      canvasWidth,
-      canvasHeight
-    );
+    setIsExporting(true);
+    lastExportTime.current = now;
     
-    downloadSVG(svgContent, 'soutache-design.svg');
-    
-    toast({
-      title: 'Design Exported',
-      description: 'Your design has been exported as an SVG file.'
-    });
-  };
+    try {
+      // Generate SVG content
+      const svgContent = exportAsSVG(
+        objects,
+        canvasWidth,
+        canvasHeight
+      );
+      
+      downloadSVG(svgContent, 'soutache-design.svg');
+      
+      toast({
+        title: 'Design Exported',
+        description: 'Your design has been exported as an SVG file.'
+      });
+    } catch (error) {
+      console.error('Export error:', error);
+      toast({
+        title: 'Export Failed',
+        description: 'There was an error exporting your design.',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsExporting(false);
+    }
+  }, 300);
 
   // Updated handleSelectDesign function to support merging
   const handleSelectDesign = (design: SavedDesign, merge: boolean = false) => {
@@ -252,7 +294,7 @@ const Index = () => {
     }
   };
 
-  // Update handleImportSVG to support merging
+  // Update handleImportSVG to support merging and better centering
   const handleImportSVG = (svgString: string, merge: boolean = false) => {
     try {
       if (!svgString || typeof svgString !== 'string') {
@@ -261,8 +303,11 @@ const Index = () => {
       
       console.log('Importing SVG string (first 100 chars):', svgString.substring(0, 100) + '...');
       
+      // Apply preprocessing to enhance SVG before import
+      const enhancedSvg = preprocessSVG(svgString);
+      
       // Import SVG and convert to BezierObjects
-      const importedObjects = importSVGFromString(svgString);
+      const importedObjects = importSVGFromString(enhancedSvg);
       
       if (!importedObjects || importedObjects.length === 0) {
         throw new Error('No valid objects found in the SVG file');
@@ -275,8 +320,11 @@ const Index = () => {
         objects.forEach(obj => deleteObject(obj.id));
       }
       
+      // Apply additional scaling and centering for imported objects
+      const scaledObjects = scaleAndCenterObjects(importedObjects, canvasWidth, canvasHeight);
+      
       // Add imported objects with new IDs
-      const newObjects = importedObjects.map(obj => ({
+      const newObjects = scaledObjects.map(obj => ({
         ...obj,
         id: generateId() // Generate new IDs to avoid conflicts
       }));
@@ -298,6 +346,104 @@ const Index = () => {
         variant: 'destructive'
       });
     }
+  };
+  
+  // Function to preprocess SVG before import
+  const preprocessSVG = (svgString: string): string => {
+    // First convert using the utility function
+    let enhancedSvg = convertToValidSVG(svgString);
+    
+    if (!enhancedSvg) {
+      console.warn('SVG conversion failed, using original SVG');
+      enhancedSvg = svgString;
+    }
+    
+    return enhancedSvg;
+  };
+  
+  // Function to scale and center imported objects
+  const scaleAndCenterObjects = (objects: BezierObject[], targetWidth: number, targetHeight: number): BezierObject[] => {
+    if (objects.length === 0) return [];
+    
+    // Calculate the bounding box of all objects
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    
+    // Find min/max coordinates across all objects
+    objects.forEach(obj => {
+      obj.points.forEach(point => {
+        minX = Math.min(minX, point.x);
+        minY = Math.min(minY, point.y);
+        maxX = Math.max(maxX, point.x);
+        maxY = Math.max(maxY, point.y);
+        
+        // Include handle points in bounding box
+        minX = Math.min(minX, point.handleIn.x, point.handleOut.x);
+        minY = Math.min(minY, point.handleIn.y, point.handleOut.y);
+        maxX = Math.max(maxX, point.handleIn.x, point.handleOut.x);
+        maxY = Math.max(maxY, point.handleIn.y, point.handleOut.y);
+      });
+    });
+    
+    // Calculate content dimensions
+    const contentWidth = maxX - minX;
+    const contentHeight = maxY - minY;
+    
+    // Skip if dimensions are invalid
+    if (contentWidth <= 0 || contentHeight <= 0 || !isFinite(contentWidth) || !isFinite(contentHeight)) {
+      console.warn('Invalid content dimensions, skipping scaling');
+      return objects;
+    }
+    
+    // Calculate scaling factor - aim to use 75% of canvas size
+    const targetArea = targetWidth * targetHeight * 0.75;
+    const contentArea = contentWidth * contentHeight;
+    const scaleFactor = Math.sqrt(targetArea / contentArea);
+    
+    // Calculate centering offsets
+    const contentCenterX = (minX + maxX) / 2;
+    const contentCenterY = (minY + maxY) / 2;
+    const targetCenterX = targetWidth / 2;
+    const targetCenterY = targetHeight / 2;
+    
+    console.log(`Scaling imported objects by ${scaleFactor.toFixed(2)}, centering at (${targetCenterX}, ${targetCenterY})`);
+    
+    // Apply scaling and centering transformations to all objects
+    return objects.map(obj => {
+      // Deep clone the object to avoid mutations
+      const clonedObj = JSON.parse(JSON.stringify(obj));
+      
+      // Apply transformations to all points
+      clonedObj.points = clonedObj.points.map((point: ControlPoint) => {
+        // Calculate scaled and centered coordinates
+        const scaledX = (point.x - contentCenterX) * scaleFactor + targetCenterX;
+        const scaledY = (point.y - contentCenterY) * scaleFactor + targetCenterY;
+        
+        // Update handle coordinates with the same transformation
+        const scaledHandleInX = (point.handleIn.x - contentCenterX) * scaleFactor + targetCenterX;
+        const scaledHandleInY = (point.handleIn.y - contentCenterY) * scaleFactor + targetCenterY;
+        const scaledHandleOutX = (point.handleOut.x - contentCenterX) * scaleFactor + targetCenterX;
+        const scaledHandleOutY = (point.handleOut.y - contentCenterY) * scaleFactor + targetCenterY;
+        
+        return {
+          ...point,
+          x: scaledX,
+          y: scaledY,
+          handleIn: {
+            x: scaledHandleInX,
+            y: scaledHandleInY
+          },
+          handleOut: {
+            x: scaledHandleOutX,
+            y: scaledHandleOutY
+          }
+        };
+      });
+      
+      return clonedObj;
+    });
   };
   
   // Save design to Supabase - ensure data is properly stringified
@@ -325,7 +471,7 @@ const Index = () => {
     // Save design to the designs table (legacy)
     const svg_content = exportAsSVG(objects, canvasWidth, canvasHeight);
 
-const design: SavedDesign = {
+    const design: SavedDesign = {
       name,
       category,
       shapes_data: stringifiedData,
@@ -341,7 +487,6 @@ const design: SavedDesign = {
       }
       
       // Also save as a template to the new templates table
-
       const template: Template = {
         name,
         category,
