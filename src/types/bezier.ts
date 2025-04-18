@@ -64,6 +64,7 @@ export interface SavedDesign {
   name: string;
   category: string;
   shapes_data: string; // JSON stringified DesignData
+  svg_content?: string; // Added missing property
   created_at?: string;
   updated_at?: string;
 }

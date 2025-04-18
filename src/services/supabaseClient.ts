@@ -255,6 +255,7 @@ export interface Template {
   created_at?: string;
   likes?: number;
   user_id?: string; // Si usas autenticación
+  svg_content?: string; // Added missing property
 }
 
 // Designs-related functions
