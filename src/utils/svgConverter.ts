@@ -519,7 +519,8 @@ export function processSVGPaths(paths: SVGPathElement[], existingCurveConfig?: C
 import { generateId } from './bezierUtils';
 
 /**
- * Approximate control points from an SVG path data string with optional transform
+ * Enhanced approximation of control points from SVG path data
+ * with improved handling for all path commands
  */
 const approximateControlPointsFromPath = (pathData: string, matrix: DOMMatrix | null = null): ControlPoint[] => {
   const points: ControlPoint[] = [];
@@ -535,8 +536,9 @@ const approximateControlPointsFromPath = (pathData: string, matrix: DOMMatrix | 
     let lastCommand = '';
     let lastControlX = 0;
     let lastControlY = 0;
+    let firstPoint: ControlPoint | null = null;
     
-    commands.forEach(({ command, params }) => {
+    commands.forEach(({ command, params }, index) => {
       switch (command.toUpperCase()) {
         case 'M': {
           // Move to command
@@ -547,10 +549,20 @@ const approximateControlPointsFromPath = (pathData: string, matrix: DOMMatrix | 
             if (points.length === 0) {
               firstX = currentX;
               firstY = currentY;
+              
+              const newPoint = createControlPoint(currentX, currentY);
+              points.push(newPoint);
+              firstPoint = newPoint;
+              console.log(`Added M point at ${currentX},${currentY}`);
+            } else {
+              // For subsequent M commands, treat like LineTo if in the middle of a path
+              if (index > 0) {
+                const prevPoint = points[points.length - 1];
+                const newPoint = createControlPoint(currentX, currentY, prevPoint);
+                points.push(newPoint);
+                console.log(`Added subsequent M point at ${currentX},${currentY}`);
+              }
             }
-            
-            points.push(createControlPoint(currentX, currentY));
-            console.log(`Added M point at ${currentX},${currentY}`);
           }
           break;
         }
@@ -562,22 +574,58 @@ const approximateControlPointsFromPath = (pathData: string, matrix: DOMMatrix | 
             
             if (points.length > 0) {
               const prevPoint = points[points.length - 1];
-              points.push(createControlPoint(currentX, currentY, prevPoint));
+              const newPoint = createControlPoint(currentX, currentY, prevPoint);
+              
+              // Update handles to create a straight line
+              const dx = currentX - prevPoint.x;
+              const dy = currentY - prevPoint.y;
+              
+              // Set handles along the line direction for smooth transition
+              prevPoint.handleOut = {
+                x: prevPoint.x + dx / 3,
+                y: prevPoint.y + dy / 3
+              };
+              
+              newPoint.handleIn = {
+                x: currentX - dx / 3,
+                y: currentY - dy / 3
+              };
+              
+              points.push(newPoint);
+              console.log(`Added L point at ${currentX},${currentY}`);
             } else {
+              // First point in path
               points.push(createControlPoint(currentX, currentY));
+              console.log(`Added L point (as first point) at ${currentX},${currentY}`);
             }
-            console.log(`Added L point at ${currentX},${currentY}`);
           }
           break;
         }
         case 'H': {
           // Horizontal line to
           if (params.length >= 1) {
+            const oldX = currentX;
             currentX = command === 'H' ? params[0] : currentX + params[0];
             
             if (points.length > 0) {
               const prevPoint = points[points.length - 1];
-              points.push(createControlPoint(currentX, currentY, prevPoint));
+              const newPoint = createControlPoint(currentX, currentY, prevPoint);
+              
+              // Create horizontal line handles
+              const dx = currentX - prevPoint.x;
+              
+              prevPoint.handleOut = {
+                x: prevPoint.x + dx / 3,
+                y: prevPoint.y
+              };
+              
+              newPoint.handleIn = {
+                x: currentX - dx / 3,
+                y: currentY
+              };
+              
+              points.push(newPoint);
+              console.log(`Added H point from ${oldX} to ${currentX}`);
             } else {
               points.push(createControlPoint(currentX, currentY));
             }
@@ -587,11 +635,28 @@ const approximateControlPointsFromPath = (pathData: string, matrix: DOMMatrix | 
         case 'V': {
           // Vertical line to
           if (params.length >= 1) {
+            const oldY = currentY;
             currentY = command === 'V' ? params[0] : currentY + params[0];
             
             if (points.length > 0) {
               const prevPoint = points[points.length - 1];
-              points.push(createControlPoint(currentX, currentY, prevPoint));
+              const newPoint = createControlPoint(currentX, currentY, prevPoint);
+              
+              // Create vertical line handles
+              const dy = currentY - prevPoint.y;
+              
+              prevPoint.handleOut = {
+                x: prevPoint.x,
+                y: prevPoint.y + dy / 3
+              };
+              
+              newPoint.handleIn = {
+                x: currentX,
+                y: currentY - dy / 3
+              };
+              
+              points.push(newPoint);
+              console.log(`Added V point from ${oldY} to ${currentY}`);
             } else {
               points.push(createControlPoint(currentX, currentY));
             }
@@ -615,16 +680,22 @@ const approximateControlPointsFromPath = (pathData: string, matrix: DOMMatrix | 
             if (points.length > 0) {
               const lastPoint = points[points.length - 1];
               lastPoint.handleOut = { x: absX1, y: absY1 };
+            } else {
+              // If this is the first command (unusual), create a starting point
+              const startPoint = createControlPoint(currentX, currentY);
+              startPoint.handleOut = { x: absX1, y: absY1 };
+              points.push(startPoint);
             }
             
             // Add new point with handles
-            points.push({
+            const newPoint = {
               x: absX,
               y: absY,
               handleIn: { x: absX2, y: absY2 },
-              handleOut: { x: absX + (absX - absX2), y: absY + (absY - absY2) },
+              handleOut: { x: absX + (absX - absX2), y: absY + (absY - absY2) }, // Mirror handleIn for continuation
               id: generateId()
-            });
+            };
+            points.push(newPoint);
             
             // Save last control point for S command
             lastControlX = absX2;
@@ -632,7 +703,7 @@ const approximateControlPointsFromPath = (pathData: string, matrix: DOMMatrix | 
             
             currentX = absX;
             currentY = absY;
-            console.log(`Added C point at ${absX},${absY}`);
+            console.log(`Added C point at ${absX},${absY} with handles at (${absX1},${absY1}) and (${absX2},${absY2})`);
           }
           break;
         }
@@ -660,16 +731,22 @@ const approximateControlPointsFromPath = (pathData: string, matrix: DOMMatrix | 
             if (points.length > 0) {
               const lastPoint = points[points.length - 1];
               lastPoint.handleOut = { x: absX1, y: absY1 };
+            } else {
+              // If this is the first command (unusual), create a starting point
+              const startPoint = createControlPoint(currentX, currentY);
+              startPoint.handleOut = { x: absX1, y: absY1 };
+              points.push(startPoint);
             }
             
             // Add new point with handles
-            points.push({
+            const newPoint = {
               x: absX,
               y: absY,
               handleIn: { x: absX2, y: absY2 },
-              handleOut: { x: absX + (absX - absX2), y: absY + (absY - absY2) },
+              handleOut: { x: absX + (absX - absX2), y: absY + (absY - absY2) }, // Mirror handleIn
               id: generateId()
-            });
+            };
+            points.push(newPoint);
             
             // Save last control point for next S command
             lastControlX = absX2;
@@ -677,6 +754,7 @@ const approximateControlPointsFromPath = (pathData: string, matrix: DOMMatrix | 
             
             currentX = absX;
             currentY = absY;
+            console.log(`Added S point at ${absX},${absY}`);
           }
           break;
         }
@@ -701,16 +779,22 @@ const approximateControlPointsFromPath = (pathData: string, matrix: DOMMatrix | 
             if (points.length > 0) {
               const lastPoint = points[points.length - 1];
               lastPoint.handleOut = { x: cp1x, y: cp1y };
+            } else {
+              // If this is the first command (unusual), create a starting point
+              const startPoint = createControlPoint(currentX, currentY);
+              startPoint.handleOut = { x: cp1x, y: cp1y };
+              points.push(startPoint);
             }
             
             // Add new point with handles
-            points.push({
+            const newPoint = {
               x: absX,
               y: absY,
               handleIn: { x: cp2x, y: cp2y },
               handleOut: { x: absX + (absX - cp2x), y: absY + (absY - cp2y) },
               id: generateId()
-            });
+            };
+            points.push(newPoint);
             
             // Save control point for T command
             lastControlX = absX1;
@@ -718,6 +802,7 @@ const approximateControlPointsFromPath = (pathData: string, matrix: DOMMatrix | 
             
             currentX = absX;
             currentY = absY;
+            console.log(`Added Q point at ${absX},${absY}`);
           }
           break;
         }
@@ -749,16 +834,22 @@ const approximateControlPointsFromPath = (pathData: string, matrix: DOMMatrix | 
             if (points.length > 0) {
               const lastPoint = points[points.length - 1];
               lastPoint.handleOut = { x: cp1x, y: cp1y };
+            } else {
+              // If this is the first command (unusual), create a starting point
+              const startPoint = createControlPoint(currentX, currentY);
+              startPoint.handleOut = { x: cp1x, y: cp1y };
+              points.push(startPoint);
             }
             
             // Add new point with handles
-            points.push({
+            const newPoint = {
               x: absX,
               y: absY,
               handleIn: { x: cp2x, y: cp2y },
               handleOut: { x: absX + (absX - cp2x), y: absY + (absY - cp2y) },
               id: generateId()
-            });
+            };
+            points.push(newPoint);
             
             // Save control point for next T command
             lastControlX = absX1;
@@ -766,6 +857,7 @@ const approximateControlPointsFromPath = (pathData: string, matrix: DOMMatrix | 
             
             currentX = absX;
             currentY = absY;
+            console.log(`Added T point at ${absX},${absY}`);
           }
           break;
         }
@@ -778,26 +870,46 @@ const approximateControlPointsFromPath = (pathData: string, matrix: DOMMatrix | 
             const absX = command === 'a' ? currentX + x : x;
             const absY = command === 'a' ? currentY + y : y;
             
-            // For simplicity, just create a straight line with handles
-            // A proper implementation would convert the arc to cubic bezier segments
+            // For simplicity, we'll convert the arc to a cubic bezier approximation
+            // This is a simplified approach - a proper implementation would convert the arc to several cubic bezier segments
+            const dx = absX - currentX;
+            const dy = absY - currentY;
+            const dist = Math.sqrt(dx*dx + dy*dy);
+            
+            // Calculate handle magnitudes (using 55% of distance rule)
+            const handleMagnitude = dist * 0.55;
+            
+            // Add a cubic curve approximation
             if (points.length > 0) {
               const prevPoint = points[points.length - 1];
-              const newPoint = createControlPoint(absX, absY, prevPoint);
               
-              // Add some curvature in the direction of movement
-              const dx = absX - currentX;
-              const dy = absY - currentY;
-              const dist = Math.sqrt(dx*dx + dy*dy);
-              const bendFactor = Math.min(dist * 0.5, 50);
+              // Calculate handle directions based on arc sweep
+              const angle = Math.atan2(dy, dx);
+              const perpAngle = angle + (sweepFlag ? -Math.PI/2 : Math.PI/2);
               
+              // Calculate handle offset
+              const offsetX = Math.cos(perpAngle) * handleMagnitude * 0.5;
+              const offsetY = Math.sin(perpAngle) * handleMagnitude * 0.5;
+              
+              // Set handles with curvature in the right direction
               prevPoint.handleOut = {
-                x: currentX + dx * 0.25 + (sweepFlag ? bendFactor : -bendFactor) * dy / dist,
-                y: currentY + dy * 0.25 + (sweepFlag ? -bendFactor : bendFactor) * dx / dist
+                x: currentX + dx * 0.25 + offsetX,
+                y: currentY + dy * 0.25 + offsetY
               };
               
-              newPoint.handleIn = {
-                x: absX - dx * 0.25 + (sweepFlag ? bendFactor : -bendFactor) * dy / dist,
-                y: absY - dy * 0.25 + (sweepFlag ? -bendFactor : bendFactor) * dx / dist
+              // Create new point
+              const newPoint = {
+                x: absX,
+                y: absY,
+                handleIn: {
+                  x: absX - dx * 0.25 + offsetX,
+                  y: absY - dy * 0.25 + offsetY
+                },
+                handleOut: {
+                  x: absX + dx * 0.1,
+                  y: absY + dy * 0.1
+                },
+                id: generateId()
               };
               
               points.push(newPoint);
@@ -807,14 +919,14 @@ const approximateControlPointsFromPath = (pathData: string, matrix: DOMMatrix | 
             
             currentX = absX;
             currentY = absY;
+            console.log(`Added A point at ${absX},${absY}`);
           }
           break;
         }
         case 'Z': {
           // Close path command - connect back to first point
-          if (points.length > 0 && (currentX !== firstX || currentY !== firstY)) {
+          if (points.length > 0 && firstPoint && (currentX !== firstX || currentY !== firstY)) {
             const lastPoint = points[points.length - 1];
-            const firstPoint = points[0];
             
             // Create smooth connection back to start
             const dx = firstX - lastPoint.x;
@@ -823,7 +935,7 @@ const approximateControlPointsFromPath = (pathData: string, matrix: DOMMatrix | 
             
             // Only add closing handles if there's a reasonable distance
             if (dist > 5) {
-              // Update the last point's handleOut
+              // Update the last point's handleOut to point toward first point
               lastPoint.handleOut = {
                 x: lastPoint.x + dx / 3,
                 y: lastPoint.y + dy / 3
@@ -836,33 +948,74 @@ const approximateControlPointsFromPath = (pathData: string, matrix: DOMMatrix | 
               };
             }
             
+            // Move current position back to first point
             currentX = firstX;
             currentY = firstY;
+            console.log(`Added Z to close path back to ${firstX},${firstY}`);
           }
           break;
         }
       }
       
       lastCommand = command;
-      
-      // Apply matrix transformation if exists
-      if (matrix && points.length > 0) {
-        const lastPoint = points[points.length - 1];
-        const transformedPoint = matrix.transformPoint(new DOMPoint(lastPoint.x, lastPoint.y));
-        lastPoint.x = transformedPoint.x;
-        lastPoint.y = transformedPoint.y;
-        
-        if (lastPoint.handleIn) {
-          const transformedHandleIn = matrix.transformPoint(new DOMPoint(lastPoint.handleIn.x, lastPoint.handleIn.y));
-          lastPoint.handleIn = { x: transformedHandleIn.x, y: transformedHandleIn.y };
-        }
-        
-        if (lastPoint.handleOut) {
-          const transformedHandleOut = matrix.transformPoint(new DOMPoint(lastPoint.handleOut.x, lastPoint.handleOut.y));
-          lastPoint.handleOut = { x: transformedHandleOut.x, y: transformedHandleOut.y };
-        }
-      }
     });
+    
+    // Apply matrix transformation if exists
+    if (matrix && points.length > 0) {
+      points.forEach(point => {
+        // Transform main point
+        const transformedPoint = matrix.transformPoint(new DOMPoint(point.x, point.y));
+        point.x = transformedPoint.x;
+        point.y = transformedPoint.y;
+        
+        // Transform handle points
+        if (point.handleIn) {
+          const transformedHandleIn = matrix.transformPoint(new DOMPoint(point.handleIn.x, point.handleIn.y));
+          point.handleIn = { x: transformedHandleIn.x, y: transformedHandleIn.y };
+        }
+        
+        if (point.handleOut) {
+          const transformedHandleOut = matrix.transformPoint(new DOMPoint(point.handleOut.x, point.handleOut.y));
+          point.handleOut = { x: transformedHandleOut.x, y: transformedHandleOut.y };
+        }
+      });
+    }
+    
+    // Enhance point connections - adjust handles to create smoother curves between adjacent points
+    for (let i = 1; i < points.length; i++) {
+      const prevPoint = points[i-1];
+      const currentPoint = points[i];
+      
+      // Ensure handle lengths are proportional to distance between points
+      const dist = Math.sqrt(
+        Math.pow(currentPoint.x - prevPoint.x, 2) + 
+        Math.pow(currentPoint.y - prevPoint.y, 2)
+      );
+      
+      // Use 1/3 of distance as a reasonable handle length
+      const handleLength = Math.min(dist / 3, 50);
+      
+      // Calculate direction vector
+      const dx = currentPoint.x - prevPoint.x;
+      const dy = currentPoint.y - prevPoint.y;
+      const len = Math.sqrt(dx*dx + dy*dy);
+      
+      if (len > 0) {
+        const ux = dx / len;
+        const uy = dy / len;
+        
+        // Adjust handles based on direction - this creates smoother curves
+        prevPoint.handleOut = {
+          x: prevPoint.x + ux * handleLength,
+          y: prevPoint.y + uy * handleLength
+        };
+        
+        currentPoint.handleIn = {
+          x: currentPoint.x - ux * handleLength,
+          y: currentPoint.y - uy * handleLength
+        };
+      }
+    }
     
     console.log(`Generated ${points.length} control points`);
     return points;
@@ -893,10 +1046,11 @@ const createControlPoint = (x: number, y: number, prevPoint?: ControlPoint): Con
     const dy = y - prevPoint.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
 
-    // Normalize and scale the vector for handles
+    // Normalize and scale the vector for handles - use 1/3 of distance
     if (dist > 0) {
-      const ndx = dx / dist * handleDist;
-      const ndy = dy / dist * handleDist;
+      const handleLen = Math.min(dist / 3, handleDist);
+      const ndx = dx / dist * handleLen;
+      const ndy = dy / dist * handleLen;
 
       // Set handle positions based on the direction from prev point
       handleIn = { x: x - ndx, y: y - ndy };

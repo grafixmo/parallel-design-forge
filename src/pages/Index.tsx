@@ -35,19 +35,48 @@ const normalizeDesignData = (data: any): string => {
   return '';
 };
 
-// Simple debounce function to prevent multiple rapid calls
-function debounce<F extends (...args: any[]) => any>(func: F, wait: number): (...args: Parameters<F>) => void {
+// Improved debounce function with immediate option and better typing
+function debounce<F extends (...args: any[]) => any>(
+  func: F, 
+  wait: number, 
+  options: { leading?: boolean; trailing?: boolean } = {}
+): (...args: Parameters<F>) => void {
   let timeout: ReturnType<typeof setTimeout> | null = null;
+  let lastArgs: Parameters<F> | null = null;
+  let lastCallTime: number = 0;
+  const leading = options.leading !== false;
+  const trailing = options.trailing !== false;
   
   return function(...args: Parameters<F>) {
-    if (timeout) {
-      clearTimeout(timeout);
+    const now = Date.now();
+    const isFirstCall = !lastCallTime && leading;
+    
+    lastArgs = args;
+    lastCallTime = now;
+    
+    // Execute immediately for leading edge
+    if (isFirstCall) {
+      func(...args);
     }
     
-    timeout = setTimeout(() => {
-      func(...args);
+    // Clear any existing timeout
+    if (timeout) {
+      clearTimeout(timeout);
       timeout = null;
-    }, wait);
+    }
+    
+    // Set a new timeout for trailing edge
+    if (trailing) {
+      timeout = setTimeout(() => {
+        // Only execute if we have args and enough time has passed
+        if (lastArgs && (Date.now() - lastCallTime >= wait)) {
+          func(...lastArgs);
+          lastArgs = null;
+          lastCallTime = 0;
+        }
+        timeout = null;
+      }, wait);
+    }
   };
 }
 
@@ -66,9 +95,10 @@ const Index = () => {
   const [showLibrary, setShowLibrary] = useState<boolean>(false);
   const [isDrawingMode, setIsDrawingMode] = useState<boolean>(true);
   
-  // Export state
+  // Export state - track if we are currently in middle of exporting
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const lastExportTime = useRef<number>(0);
+  const exportLock = useRef<boolean>(false); // New lock to prevent concurrent exports
   
   // Use our custom hook for bezier objects
   const {
@@ -177,15 +207,15 @@ const Index = () => {
     updateObjects(updatedObjects);
   };
   
-  // Export design as SVG with debouncing to prevent multiple rapid exports
+  // Completely redesigned export function with proper locking mechanism
   const handleExportSVG = debounce(() => {
-    // Prevent multiple export calls within 1 second
-    const now = Date.now();
-    if (now - lastExportTime.current < 1000 || isExporting) {
-      console.log('Export throttled or already in progress');
+    // Skip if already exporting or locked
+    if (isExporting || exportLock.current) {
+      console.log('Export already in progress or locked, skipping');
       return;
     }
     
+    // Check for objects
     if (objects.length === 0) {
       toast({
         title: 'Cannot Export',
@@ -195,8 +225,10 @@ const Index = () => {
       return;
     }
     
+    // Set export lock
+    exportLock.current = true;
     setIsExporting(true);
-    lastExportTime.current = now;
+    lastExportTime.current = Date.now();
     
     try {
       // Generate SVG content
@@ -220,9 +252,13 @@ const Index = () => {
         variant: 'destructive'
       });
     } finally {
-      setIsExporting(false);
+      // Release lock after a short delay to prevent rapid consecutive calls
+      setTimeout(() => {
+        exportLock.current = false;
+        setIsExporting(false);
+      }, 1000);
     }
-  }, 300);
+  }, 500, { leading: true, trailing: false });
 
   // Updated handleSelectDesign function to support merging
   const handleSelectDesign = (design: SavedDesign, merge: boolean = false) => {
@@ -294,7 +330,7 @@ const Index = () => {
     }
   };
 
-  // Update handleImportSVG to support merging and better centering
+  // Completely rewritten handleImportSVG with better error handling and preprocessing
   const handleImportSVG = (svgString: string, merge: boolean = false) => {
     try {
       if (!svgString || typeof svgString !== 'string') {
@@ -361,7 +397,7 @@ const Index = () => {
     return enhancedSvg;
   };
   
-  // Function to scale and center imported objects
+  // Improved scaleAndCenterObjects function with better handling of complex SVGs
   const scaleAndCenterObjects = (objects: BezierObject[], targetWidth: number, targetHeight: number): BezierObject[] => {
     if (objects.length === 0) return [];
     
@@ -373,26 +409,51 @@ const Index = () => {
     
     // Find min/max coordinates across all objects
     objects.forEach(obj => {
+      if (!obj.points || obj.points.length === 0) return;
+      
       obj.points.forEach(point => {
-        minX = Math.min(minX, point.x);
-        minY = Math.min(minY, point.y);
-        maxX = Math.max(maxX, point.x);
-        maxY = Math.max(maxY, point.y);
+        if (!point) return;
         
-        // Include handle points in bounding box
-        minX = Math.min(minX, point.handleIn.x, point.handleOut.x);
-        minY = Math.min(minY, point.handleIn.y, point.handleOut.y);
-        maxX = Math.max(maxX, point.handleIn.x, point.handleOut.x);
-        maxY = Math.max(maxY, point.handleIn.y, point.handleOut.y);
+        // Check main point coordinates
+        if (isFinite(point.x) && isFinite(point.y)) {
+          minX = Math.min(minX, point.x);
+          minY = Math.min(minY, point.y);
+          maxX = Math.max(maxX, point.x);
+          maxY = Math.max(maxY, point.y);
+        }
+        
+        // Check handle points if they exist
+        if (point.handleIn && isFinite(point.handleIn.x) && isFinite(point.handleIn.y)) {
+          minX = Math.min(minX, point.handleIn.x);
+          minY = Math.min(minY, point.handleIn.y);
+          maxX = Math.max(maxX, point.handleIn.x);
+          maxY = Math.max(maxY, point.handleIn.y);
+        }
+        
+        if (point.handleOut && isFinite(point.handleOut.x) && isFinite(point.handleOut.y)) {
+          minX = Math.min(minX, point.handleOut.x);
+          minY = Math.min(minY, point.handleOut.y);
+          maxX = Math.max(maxX, point.handleOut.x);
+          maxY = Math.max(maxY, point.handleOut.y);
+        }
       });
     });
+    
+    // Default values if we couldn't determine bounds
+    if (!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) {
+      console.warn('Could not determine SVG bounds, using defaults');
+      minX = 0;
+      minY = 0;
+      maxX = 100;
+      maxY = 100;
+    }
     
     // Calculate content dimensions
     const contentWidth = maxX - minX;
     const contentHeight = maxY - minY;
     
     // Skip if dimensions are invalid
-    if (contentWidth <= 0 || contentHeight <= 0 || !isFinite(contentWidth) || !isFinite(contentHeight)) {
+    if (contentWidth <= 0 || contentHeight <= 0) {
       console.warn('Invalid content dimensions, skipping scaling');
       return objects;
     }
@@ -400,7 +461,13 @@ const Index = () => {
     // Calculate scaling factor - aim to use 75% of canvas size
     const targetArea = targetWidth * targetHeight * 0.75;
     const contentArea = contentWidth * contentHeight;
-    const scaleFactor = Math.sqrt(targetArea / contentArea);
+    
+    // Calculate scaling to fit in target area while preserving aspect ratio
+    // Use square root to calculate scale factor from areas
+    let scaleFactor = Math.sqrt(targetArea / contentArea);
+    
+    // Limit scaling to reasonable bounds to prevent extreme distortion
+    scaleFactor = Math.min(Math.max(scaleFactor, 0.1), 10);
     
     // Calculate centering offsets
     const contentCenterX = (minX + maxX) / 2;
@@ -412,20 +479,38 @@ const Index = () => {
     
     // Apply scaling and centering transformations to all objects
     return objects.map(obj => {
+      // Skip objects without points
+      if (!obj.points || obj.points.length === 0) return obj;
+      
       // Deep clone the object to avoid mutations
       const clonedObj = JSON.parse(JSON.stringify(obj));
       
       // Apply transformations to all points
       clonedObj.points = clonedObj.points.map((point: ControlPoint) => {
+        if (!point) return point;
+        
+        // Ensure all values are valid numbers
+        const ensureValidCoords = (p: {x: number, y: number}): {x: number, y: number} => {
+          return {
+            x: isFinite(p.x) ? p.x : 0,
+            y: isFinite(p.y) ? p.y : 0
+          };
+        };
+        
+        // Get safe coordinates
+        const safePoint = ensureValidCoords(point);
+        const safeHandleIn = point.handleIn ? ensureValidCoords(point.handleIn) : {x: safePoint.x - 50, y: safePoint.y};
+        const safeHandleOut = point.handleOut ? ensureValidCoords(point.handleOut) : {x: safePoint.x + 50, y: safePoint.y};
+        
         // Calculate scaled and centered coordinates
-        const scaledX = (point.x - contentCenterX) * scaleFactor + targetCenterX;
-        const scaledY = (point.y - contentCenterY) * scaleFactor + targetCenterY;
+        const scaledX = (safePoint.x - contentCenterX) * scaleFactor + targetCenterX;
+        const scaledY = (safePoint.y - contentCenterY) * scaleFactor + targetCenterY;
         
         // Update handle coordinates with the same transformation
-        const scaledHandleInX = (point.handleIn.x - contentCenterX) * scaleFactor + targetCenterX;
-        const scaledHandleInY = (point.handleIn.y - contentCenterY) * scaleFactor + targetCenterY;
-        const scaledHandleOutX = (point.handleOut.x - contentCenterX) * scaleFactor + targetCenterX;
-        const scaledHandleOutY = (point.handleOut.y - contentCenterY) * scaleFactor + targetCenterY;
+        const scaledHandleInX = (safeHandleIn.x - contentCenterX) * scaleFactor + targetCenterX;
+        const scaledHandleInY = (safeHandleIn.y - contentCenterY) * scaleFactor + targetCenterY;
+        const scaledHandleOutX = (safeHandleOut.x - contentCenterX) * scaleFactor + targetCenterX;
+        const scaledHandleOutY = (safeHandleOut.y - contentCenterY) * scaleFactor + targetCenterY;
         
         return {
           ...point,
