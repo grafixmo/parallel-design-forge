@@ -15,6 +15,7 @@ import { X, AlertTriangle, FileJson, FileText } from 'lucide-react';
 import { importSVGFromString } from '@/utils/svgExporter';
 import { useToast } from '@/hooks/use-toast';
 import MergeToggle from './MergeToggle';
+import { generateThumbnail } from '@/utils/thumbnailGenerator';
 
 interface LibraryPanelProps {
   onClose: () => void;
@@ -135,6 +136,16 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign }) 
               console.error(`Error updating design ${design.name}:`, updateError);
             }
           }
+
+          // Generate thumbnail for the design if possible
+          let thumbnail = '';
+          try {
+            if (normalizedData) {
+              thumbnail = await generateThumbnail(normalizedData);
+            }
+          } catch (thumbnailError) {
+            console.error(`Error generating thumbnail for design ${design.name}:`, thumbnailError);
+          }
           
           return {
             ...design,
@@ -143,7 +154,8 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign }) 
             isSvg: dataFormat === 'svg',
             isJson: dataFormat === 'json',
             isInvalid: dataFormat === 'invalid',
-            wasFixed: needsUpdate
+            wasFixed: needsUpdate,
+            thumbnail
           };
         } catch (processError) {
           console.error(`Error processing design ${design.name}:`, processError);
@@ -224,6 +236,19 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign }) 
 
   // Get preview content for a design
   const getPreviewContent = (design: SavedDesign) => {
+    // If we have a thumbnail, use it
+    if ((design as any).thumbnail) {
+      return (
+        <div className="w-full h-full flex items-center justify-center">
+          <img 
+            src={(design as any).thumbnail} 
+            alt={design.name} 
+            className="max-w-full max-h-full object-contain"
+          />
+        </div>
+      );
+    }
+    
     if ((design as any).isSvg) {
       return isSvgContent(design.shapes_data) ? 
         renderSvgPreview(design.shapes_data as string) : 

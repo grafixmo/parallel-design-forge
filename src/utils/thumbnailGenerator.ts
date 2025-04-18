@@ -6,7 +6,7 @@ import { generatePathData } from './bezierUtils';
 /**
  * Generates a thumbnail preview for a design
  */
-export const generateThumbnail = (designData: string): string => {
+export const generateThumbnail = async (designData: string): Promise<string> => {
   try {
     // Parse the design data
     const parsed = parseTemplateData(designData);
@@ -30,7 +30,7 @@ export const generateThumbnail = (designData: string): string => {
 
     // If it's an SVG, render it directly
     if (typeof designData === 'string' && (designData.includes('<svg') || designData.startsWith('<?xml'))) {
-      return renderSVGThumbnail(designData, width, height);
+      return await renderSVGThumbnail(designData, width, height);
     }
 
     // For JSON data, render the curves
@@ -105,7 +105,7 @@ const transformPoint = (point: Point, scale: number, offsetX: number, offsetY: n
   };
 };
 
-const renderSVGThumbnail = (svgString: string, width: number, height: number): string => {
+const renderSVGThumbnail = (svgString: string, width: number, height: number): Promise<string> => {
   return new Promise<string>((resolve) => {
     const img = new Image();
     const blob = new Blob([svgString], { type: 'image/svg+xml' });
