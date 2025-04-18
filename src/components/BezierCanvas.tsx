@@ -1030,13 +1030,13 @@ const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
         >
           <ZoomOut className="w-5 h-5" />
         </button>
-        <button 
-          className="bg-white/80 p-2 rounded shadow hover:bg-white transition-colors"
-          onClick={handleResetView}
-          title="Reset View"
-        >
-          <RotateCcw className="w-5 h-5" />
-        </button>
+       <button 
+  className="bg-white/80 p-2 rounded shadow hover:bg-white transition-colors"
+  onClick={handleResetView}
+  title="Reset View"
+>
+  <RotateCcw className="w-5 h-5" />
+</button>
       </div>
       
       {currentDrawingObjectId && (
