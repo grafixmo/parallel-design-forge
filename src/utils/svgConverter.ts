@@ -1,9 +1,9 @@
-
 /**
  * Converts various data formats to valid SVG
  */
 
-import { CurveConfig, BezierObject } from '@/types/bezier';
+import { CurveConfig, BezierObject, ControlPoint, Point } from '@/types/bezier';
+
 type Shape = {
   id?: string;
   type?: string;
@@ -14,12 +14,14 @@ type Shape = {
 };
 
 /**
- * Extract viewBox and dimensions from SVG string
+ * Extract viewBox and dimensions from SVG string with improved handling
  */
 function extractSVGDimensions(svgString: string): { width: number; height: number; viewBox: string | null } {
   const parser = new DOMParser();
   const doc = parser.parseFromString(svgString, 'image/svg+xml');
   const svg = doc.documentElement;
+
+  console.log('Extracting dimensions from SVG element:', svg.outerHTML.substring(0, 100) + '...');
 
   // Get dimensions from viewBox first
   const viewBox = svg.getAttribute('viewBox');
@@ -29,9 +31,35 @@ function extractSVGDimensions(svgString: string): { width: number; height: numbe
   let width = parseFloat(svg.getAttribute('width') || '0');
   let height = parseFloat(svg.getAttribute('height') || '0');
 
+  // If width/height have units (like "100pt" or "50mm"), convert to pixels
+  if (svg.getAttribute('width')?.match(/[a-z]+$/i)) {
+    // Simple conversion - this could be expanded for more accurate unit conversion
+    if (svg.getAttribute('width')?.includes('pt')) {
+      width *= 1.33; // approximate pt to px
+    } else if (svg.getAttribute('width')?.includes('mm')) {
+      width *= 3.78; // approximate mm to px
+    }
+  }
+  
+  if (svg.getAttribute('height')?.match(/[a-z]+$/i)) {
+    if (svg.getAttribute('height')?.includes('pt')) {
+      height *= 1.33;
+    } else if (svg.getAttribute('height')?.includes('mm')) {
+      height *= 3.78;
+    }
+  }
+
   // Use viewBox dimensions if width/height not specified
   if (!width && vbWidth) width = vbWidth;
   if (!height && vbHeight) height = vbHeight;
+
+  // If viewBox is missing but we have width/height, create a viewBox
+  if (!viewBox && width && height) {
+    vbX = 0;
+    vbY = 0;
+    vbWidth = width;
+    vbHeight = height;
+  }
 
   // Fallback dimensions - use canvas size (800x600) if nothing found
   if (!width || !height || isNaN(width) || isNaN(height)) {
@@ -39,6 +67,7 @@ function extractSVGDimensions(svgString: string): { width: number; height: numbe
     height = 600;
   }
 
+  console.log(`Extracted dimensions: ${width}x${height}, viewBox: ${viewBox || 'none'}`);
   return { width, height, viewBox };
 }
 
@@ -153,23 +182,30 @@ export function convertToValidSVG(data: string): string | null {
       // Ensure SVG has proper dimensions and viewBox
       const svg = doc.documentElement;
       
-      // Force width and height to canvas dimensions (800x600) for consistent sizing
+      // Force consistent size for the canvas display
       svg.setAttribute('width', '800');
       svg.setAttribute('height', '600');
       
-      // Create a viewBox that centers the content if original dimensions exist
-      if (!svg.hasAttribute('viewBox') || !viewBox) {
-        // If we have original width/height, create a viewBox that centers the content
-        if (width > 0 && height > 0) {
-          // Calculate centering offsets (negative values to move content into view)
-          const xOffset = (800 - width) / 2;
-          const yOffset = (600 - height) / 2;
-          svg.setAttribute('viewBox', `${-xOffset} ${-yOffset} 800 600`);
-          console.log(`Created centering viewBox: ${-xOffset} ${-yOffset} 800 600`);
-        } else {
-          // Fallback to standard full-canvas viewBox
-          svg.setAttribute('viewBox', '0 0 800 600');
-        }
+      // Set a better viewBox that will center the content
+      if (viewBox) {
+        // Keep original viewBox if it exists
+        svg.setAttribute('viewBox', viewBox);
+      } else if (width > 0 && height > 0) {
+        // Create a viewBox based on original dimensions, centered in our canvas
+        const scaleFactor = Math.min(800 / width, 600 / height) * 0.8; // Scale to 80% of canvas
+        const scaledWidth = width * scaleFactor;
+        const scaledHeight = height * scaleFactor;
+        
+        // Calculate centering offsets
+        const xOffset = (800 - scaledWidth) / 2;
+        const yOffset = (600 - scaledHeight) / 2;
+        
+        // Set viewBox to original content size but position it centered
+        svg.setAttribute('viewBox', `${-xOffset/scaleFactor} ${-yOffset/scaleFactor} ${800/scaleFactor} ${600/scaleFactor}`);
+        console.log(`Created centered viewBox for content: ${svg.getAttribute('viewBox')}`);
+      } else {
+        // Fallback to standard viewBox
+        svg.setAttribute('viewBox', '0 0 800 600');
       }
 
       // Modify the generated SVG to ensure it's compatible with our application
@@ -214,6 +250,9 @@ export function convertToValidSVG(data: string): string | null {
   }
 }
 
+/**
+ * Generate centered and properly scaled SVG from shape objects
+ */
 export function generateSVGFromShapes(shapes: Shape[]): string {
   // Use fixed canvas dimensions for consistent output
   const width = 800;
@@ -257,9 +296,12 @@ export function generateSVGFromShapes(shapes: Shape[]): string {
   const scaleY = Math.min(2, (height * 0.8) / contentHeight);
   const scale = Math.min(scaleX, scaleY);
   
-  // Calculate centering offsets
+  // Calculate proper centering offsets based on scaled content
   const offsetX = (width - contentWidth * scale) / 2 - minX * scale;
   const offsetY = (height - contentHeight * scale) / 2 - minY * scale;
+  
+  console.log(`Generating SVG with content size ${contentWidth}x${contentHeight}`);
+  console.log(`Applied scale: ${scale}, offsets: (${offsetX}, ${offsetY})`);
   
   const shapeElements = shapes.map((shape) => {
     if (!shape.d) return '';
@@ -287,7 +329,11 @@ export function generateSVGFromShapes(shapes: Shape[]): string {
   return svg;
 }
 
-function processSVGPaths(paths: SVGPathElement[], existingCurveConfig?: CurveConfig): BezierObject | null {
+/**
+ * Process SVG paths to create a BezierObject
+ * This is used by the SVG importer in svgExporter.ts
+ */
+export function processSVGPaths(paths: SVGPathElement[], existingCurveConfig?: CurveConfig): BezierObject | null {
   if (paths.length === 0) return null;
 
   console.log(`Processing ${paths.length} SVG paths`);
@@ -320,14 +366,14 @@ function processSVGPaths(paths: SVGPathElement[], existingCurveConfig?: CurveCon
 
   if (pathElements.length === 0) return null;
 
-  // Calculate content dimensions and scale factor to fit canvas
+  // Calculate content dimensions
   const contentWidth = Math.max(10, maxX - minX);
   const contentHeight = Math.max(10, maxY - minY);
   
   // Calculate scale to fit the content within 80% of the canvas (800x600)
-  // but don't scale up small content more than 2x
-  const scaleX = Math.min(2, (800 * 0.8) / contentWidth);
-  const scaleY = Math.min(2, (600 * 0.8) / contentHeight);
+  // but don't scale up small content more than 3x
+  const scaleX = Math.min(3, (800 * 0.8) / contentWidth);
+  const scaleY = Math.min(3, (600 * 0.8) / contentHeight);
   const scale = Math.min(scaleX, scaleY);
   
   // Calculate canvas center and content center for proper centering
@@ -335,6 +381,9 @@ function processSVGPaths(paths: SVGPathElement[], existingCurveConfig?: CurveCon
   const canvasCenterY = 300; // 600/2
   const contentCenterX = (minX + maxX) / 2;
   const contentCenterY = (minY + maxY) / 2;
+
+  console.log(`Content size: ${contentWidth}x${contentHeight}, scale: ${scale}`);
+  console.log(`Canvas center: (${canvasCenterX}, ${canvasCenterY}), Content center: (${contentCenterX}, ${contentCenterY})`);
 
   // Generate scaled and centered points
   const points = approximateControlPointsFromPath(pathElements[0].d);
@@ -379,7 +428,7 @@ function processSVGPaths(paths: SVGPathElement[], existingCurveConfig?: CurveCon
   };
 }
 
-import { ControlPoint, Point, CurveStyle, generateId } from './bezierUtils';
+import { generateId } from './bezierUtils';
 
 /**
  * Approximate control points from an SVG path data string with optional transform
