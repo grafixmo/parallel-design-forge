@@ -57,11 +57,8 @@ const SupabaseStatus: React.FC = () => {
     console.log("SupabaseStatus: Received result:", result);
 
     // Crear el array de estado de tablas basado en el resultado
-    const newTableStatuses: { name: string; accessible: boolean }[] = [
-      { name: 'designs', accessible: result.tableAccess?.designs ?? false },
-      { name: 'templates', accessible: result.tableAccess?.templates ?? false },
-      // Añadir otras tablas si se verifican en verifySupabaseConnection
-    ];
+    // (Ya no necesitamos un array state separado, podemos usar status.designsOk etc directamente)
+    // const newTableStatuses: { name: string; accessible: boolean }[] = [ ... ];
 
     // Actualizar el estado unificado
     setStatus({
@@ -82,8 +79,8 @@ const SupabaseStatus: React.FC = () => {
       }
     };
     performCheck();
-    return () => { isMounted = false; }; // Cleanup para evitar setear estado si se desmonta
-  }, [checkStatus]); // Ejecutar cuando checkStatus cambie (solo al montar)
+    return () => { isMounted = false; }; // Cleanup
+  }, [checkStatus]); // Ejecutar solo al montar
 
   // --- Funciones para credenciales manuales COMENTADAS ---
   /*
@@ -138,16 +135,18 @@ const SupabaseStatus: React.FC = () => {
                      <span className="flex items-center text-muted-foreground">
                        <Database className="w-3 h-3 mr-1.5" /> Designs Table:
                      </span>
-                     <span className={status.designsOk ? 'text-green-600' : 'text-red-600'}>
-                       {renderStatusIcon(status.designsOk)} {status.designsOk ? 'Accessible' : 'Error'}
+                     <span className={`flex items-center space-x-1 ${status.designsOk ? 'text-green-600' : 'text-red-600'}`}>
+                       {renderStatusIcon(status.designsOk)}
+                       <span>{status.designsOk ? 'Accessible' : 'Error'}</span>
                      </span>
                    </div>
                    <div className="flex items-center justify-between text-xs">
                      <span className="flex items-center text-muted-foreground">
                        <Database className="w-3 h-3 mr-1.5" /> Templates Table:
                      </span>
-                      <span className={status.templatesOk ? 'text-green-600' : 'text-red-600'}>
-                       {renderStatusIcon(status.templatesOk)} {status.templatesOk ? 'Accessible' : 'Error'}
+                      <span className={`flex items-center space-x-1 ${status.templatesOk ? 'text-green-600' : 'text-red-600'}`}>
+                       {renderStatusIcon(status.templatesOk)}
+                       <span>{status.templatesOk ? 'Accessible' : 'Error'}</span>
                      </span>
                    </div>
                 </div>
