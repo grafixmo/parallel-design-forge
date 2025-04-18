@@ -31,21 +31,45 @@ function extractSVGDimensions(svgString: string): { width: number; height: numbe
   let width = parseFloat(svg.getAttribute('width') || '0');
   let height = parseFloat(svg.getAttribute('height') || '0');
 
+  // Handle percentage dimensions
+  if (svg.getAttribute('width')?.includes('%')) {
+    width = 800; // Default canvas width
+  }
+  
+  if (svg.getAttribute('height')?.includes('%')) {
+    height = 600; // Default canvas height
+  }
+
   // If width/height have units (like "100pt" or "50mm"), convert to pixels
   if (svg.getAttribute('width')?.match(/[a-z]+$/i)) {
-    // Simple conversion - this could be expanded for more accurate unit conversion
-    if (svg.getAttribute('width')?.includes('pt')) {
-      width *= 1.33; // approximate pt to px
-    } else if (svg.getAttribute('width')?.includes('mm')) {
-      width *= 3.78; // approximate mm to px
+    // Better unit conversion
+    const unit = svg.getAttribute('width')?.match(/[a-z]+$/i)?.[0] || '';
+    const value = parseFloat(svg.getAttribute('width') || '0');
+    
+    // Convert common units to pixels
+    if (unit === 'pt') {
+      width = value * 1.33; // point to pixel
+    } else if (unit === 'mm') {
+      width = value * 3.78; // mm to pixel
+    } else if (unit === 'cm') {
+      width = value * 37.8; // cm to pixel
+    } else if (unit === 'in') {
+      width = value * 96; // inch to pixel
     }
   }
   
   if (svg.getAttribute('height')?.match(/[a-z]+$/i)) {
-    if (svg.getAttribute('height')?.includes('pt')) {
-      height *= 1.33;
-    } else if (svg.getAttribute('height')?.includes('mm')) {
-      height *= 3.78;
+    const unit = svg.getAttribute('height')?.match(/[a-z]+$/i)?.[0] || '';
+    const value = parseFloat(svg.getAttribute('height') || '0');
+    
+    if (unit === 'pt') {
+      height = value * 1.33;
+    } else if (unit === 'mm') {
+      height = value * 3.78;
+    } else if (unit === 'cm') {
+      height = value * 37.8;
+    } else if (unit === 'in') {
+      height = value * 96;
     }
   }
 
@@ -62,7 +86,8 @@ function extractSVGDimensions(svgString: string): { width: number; height: numbe
   }
 
   // Fallback dimensions - use canvas size (800x600) if nothing found
-  if (!width || !height || isNaN(width) || isNaN(height)) {
+  if (!width || !height || isNaN(width) || isNaN(height) || width <= 0 || height <= 0) {
+    console.log("Using fallback dimensions 800x600");
     width = 800;
     height = 600;
   }
@@ -77,13 +102,19 @@ function extractSVGDimensions(svgString: string): { width: number; height: numbe
 function normalizeSVGPath(pathData: string): string {
   if (!pathData) return '';
   
+  // Special case for Affinity Designer and Illustrator paths
+  if (pathData.includes('e-') || pathData.includes('E-')) {
+    // Handle scientific notation carefully
+    pathData = pathData.replace(/(-?\d*\.?\d+)[eE]([-+]?\d+)/g, (match) => {
+      return Number(match).toString();
+    });
+  }
+  
   return pathData
-    // Handle scientific notation
-    .replace(/(-?\d*\.?\d+)[eE][+-]?\d+/g, (match) => Number(match).toString())
     // Handle various coordinate formats
     .replace(/([0-9])-/g, '$1 -')
-    // Add spaces after letters
-    .replace(/([a-zA-Z])/g, '$1 ')
+    // Add spaces after command letters
+    .replace(/([MmLlHhVvCcSsQqTtAaZz])/g, '$1 ')
     // Replace commas with spaces
     .replace(/,/g, ' ')
     // Convert multiple spaces/tabs/newlines to single space
@@ -98,26 +129,21 @@ function parsePathCommands(pathData: string): { command: string; params: number[
   if (!pathData) return [];
   
   const normalized = normalizeSVGPath(pathData);
-  const tokens = normalized.split(' ');
+  const commandRegex = /([MmLlHhVvCcSsQqTtAaZz])\s*([^MmLlHhVvCcSsQqTtAaZz]*)/g;
   const commands: { command: string; params: number[] }[] = [];
-  let currentCommand: { command: string; params: number[] } | null = null;
-
-  tokens.forEach(token => {
-    if (/[a-zA-Z]/.test(token)) {
-      if (currentCommand) {
-        commands.push(currentCommand);
-      }
-      currentCommand = { command: token, params: [] };
-    } else if (currentCommand) {
-      const num = parseFloat(token);
-      if (!isNaN(num)) {
-        currentCommand.params.push(num);
-      }
+  
+  let match;
+  while ((match = commandRegex.exec(normalized)) !== null) {
+    const command = match[1];
+    const paramsStr = match[2].trim();
+    
+    if (command === 'Z' || command === 'z') {
+      commands.push({ command, params: [] });
+      continue;
     }
-  });
-
-  if (currentCommand) {
-    commands.push(currentCommand);
+    
+    const params = paramsStr.split(/\s+/).map(parseFloat).filter(n => !isNaN(n));
+    commands.push({ command, params });
   }
 
   return commands;
@@ -134,6 +160,9 @@ function processPathData(pathData: string): string {
   
   // Build normalized path string
   return commands.map(cmd => {
+    if (cmd.command === 'Z' || cmd.command === 'z') {
+      return cmd.command;
+    }
     return `${cmd.command}${cmd.params.join(' ')}`;
   }).join(' ');
 }
@@ -186,21 +215,42 @@ export function convertToValidSVG(data: string): string | null {
       svg.setAttribute('width', '800');
       svg.setAttribute('height', '600');
       
-      // Set a better viewBox that will center the content
+      // Improved viewBox calculation for proper centering and scaling
       if (viewBox) {
-        // Keep original viewBox if it exists
-        svg.setAttribute('viewBox', viewBox);
+        // Keep original viewBox with correct proportions
+        let [vbX, vbY, vbWidth, vbHeight] = viewBox.split(/[\s,]+/).map(parseFloat);
+        
+        // Calculate aspect ratios to maintain proportions
+        const svgRatio = vbWidth / vbHeight;
+        const canvasRatio = 800 / 600;
+        
+        // Scale and center the content
+        if (svgRatio > canvasRatio) {
+          // Content is wider than canvas
+          const newHeight = vbWidth / canvasRatio;
+          const yOffset = (newHeight - vbHeight) / 2;
+          svg.setAttribute('viewBox', `${vbX} ${vbY - yOffset} ${vbWidth} ${newHeight}`);
+        } else {
+          // Content is taller than canvas
+          const newWidth = vbHeight * canvasRatio;
+          const xOffset = (newWidth - vbWidth) / 2;
+          svg.setAttribute('viewBox', `${vbX - xOffset} ${vbY} ${newWidth} ${vbHeight}`);
+        }
+        
+        console.log(`Adjusted viewBox: ${svg.getAttribute('viewBox')}`);
       } else if (width > 0 && height > 0) {
         // Create a viewBox based on original dimensions, centered in our canvas
-        const scaleFactor = Math.min(800 / width, 600 / height) * 0.8; // Scale to 80% of canvas
+        // Using a 60% scaling factor (reduced from 80%) to make content more visible
+        const scaleFactor = Math.min(800 / width, 600 / height) * 0.6;
         const scaledWidth = width * scaleFactor;
         const scaledHeight = height * scaleFactor;
         
-        // Calculate centering offsets
+        // Calculate centering offsets - ensure content is truly centered
         const xOffset = (800 - scaledWidth) / 2;
         const yOffset = (600 - scaledHeight) / 2;
         
         // Set viewBox to original content size but position it centered
+        // Using a more accurate computation to ensure proper centering
         svg.setAttribute('viewBox', `${-xOffset/scaleFactor} ${-yOffset/scaleFactor} ${800/scaleFactor} ${600/scaleFactor}`);
         console.log(`Created centered viewBox for content: ${svg.getAttribute('viewBox')}`);
       } else {
@@ -290,10 +340,10 @@ export function generateSVGFromShapes(shapes: Shape[]): string {
   const contentWidth = Math.max(10, maxX - minX);
   const contentHeight = Math.max(10, maxY - minY);
   
-  // Calculate scale factor to fit the content within 80% of the canvas
-  // but don't scale up small content more than 2x
-  const scaleX = Math.min(2, (width * 0.8) / contentWidth);
-  const scaleY = Math.min(2, (height * 0.8) / contentHeight);
+  // Calculate scale factor to fit the content within 60% of the canvas (reduced from 80%)
+  // and don't scale up small content too much
+  const scaleX = Math.min(1.5, (width * 0.6) / contentWidth);
+  const scaleY = Math.min(1.5, (height * 0.6) / contentHeight);
   const scale = Math.min(scaleX, scaleY);
   
   // Calculate proper centering offsets based on scaled content
@@ -370,10 +420,10 @@ export function processSVGPaths(paths: SVGPathElement[], existingCurveConfig?: C
   const contentWidth = Math.max(10, maxX - minX);
   const contentHeight = Math.max(10, maxY - minY);
   
-  // Calculate scale to fit the content within 80% of the canvas (800x600)
-  // but don't scale up small content more than 3x
-  const scaleX = Math.min(3, (800 * 0.8) / contentWidth);
-  const scaleY = Math.min(3, (600 * 0.8) / contentHeight);
+  // Calculate scale to fit the content within 60% of the canvas (800x600) - reduced from 80%
+  // but don't scale up small content too much
+  const scaleX = Math.min(1.5, (800 * 0.6) / contentWidth);
+  const scaleY = Math.min(1.5, (600 * 0.6) / contentHeight);
   const scale = Math.min(scaleX, scaleY);
   
   // Calculate canvas center and content center for proper centering
@@ -444,6 +494,7 @@ const approximateControlPointsFromPath = (pathData: string, matrix: DOMMatrix | 
     let currentY = 0;
     let firstX = 0;
     let firstY = 0;
+    let lastCommand = '';
     
     commands.forEach(({ command, params }) => {
       switch (command.toUpperCase()) {
@@ -476,6 +527,34 @@ const approximateControlPointsFromPath = (pathData: string, matrix: DOMMatrix | 
               points.push(createControlPoint(currentX, currentY));
             }
             console.log(`Added L point at ${currentX},${currentY}`);
+          }
+          break;
+        }
+        case 'H': {
+          // Horizontal line to
+          if (params.length >= 1) {
+            currentX = command === 'H' ? params[0] : currentX + params[0];
+            
+            if (points.length > 0) {
+              const prevPoint = points[points.length - 1];
+              points.push(createControlPoint(currentX, currentY, prevPoint));
+            } else {
+              points.push(createControlPoint(currentX, currentY));
+            }
+          }
+          break;
+        }
+        case 'V': {
+          // Vertical line to
+          if (params.length >= 1) {
+            currentY = command === 'V' ? params[0] : currentY + params[0];
+            
+            if (points.length > 0) {
+              const prevPoint = points[points.length - 1];
+              points.push(createControlPoint(currentX, currentY, prevPoint));
+            } else {
+              points.push(createControlPoint(currentX, currentY));
+            }
           }
           break;
         }
@@ -513,6 +592,47 @@ const approximateControlPointsFromPath = (pathData: string, matrix: DOMMatrix | 
           }
           break;
         }
+        case 'S': {
+          // Smooth cubic bezier curve
+          if (params.length >= 4) {
+            const [x2, y2, x, y] = params;
+            
+            // Convert to absolute coordinates
+            const absX2 = command === 's' ? currentX + x2 : x2;
+            const absY2 = command === 's' ? currentY + y2 : y2;
+            const absX = command === 's' ? currentX + x : x;
+            const absY = command === 's' ? currentY + y : y;
+            
+            // Calculate the first control point as reflection of the previous curve's second control point
+            let absX1 = currentX;
+            let absY1 = currentY;
+            
+            if (points.length > 0 && (lastCommand === 'C' || lastCommand === 'c' || lastCommand === 'S' || lastCommand === 's')) {
+              const lastPoint = points[points.length - 1];
+              absX1 = currentX + (currentX - lastPoint.handleIn.x);
+              absY1 = currentY + (currentY - lastPoint.handleIn.y);
+            }
+            
+            // Update last point's handle out
+            if (points.length > 0) {
+              const lastPoint = points[points.length - 1];
+              lastPoint.handleOut = { x: absX1, y: absY1 };
+            }
+            
+            // Add new point with handles
+            points.push({
+              x: absX,
+              y: absY,
+              handleIn: { x: absX2, y: absY2 },
+              handleOut: { x: absX + (absX - absX2), y: absY + (absY - absY2) },
+              id: generateId()
+            });
+            
+            currentX = absX;
+            currentY = absY;
+          }
+          break;
+        }
         case 'Z': {
           // Close path command
           if (points.length > 0 && (currentX !== firstX || currentY !== firstY)) {
@@ -522,14 +642,16 @@ const approximateControlPointsFromPath = (pathData: string, matrix: DOMMatrix | 
             // Create smooth connection back to start
             const closePoint = createControlPoint(firstX, firstY, lastPoint);
             
+            // Update the first point's handleIn based on the curve
             firstPoint.handleIn = {
               x: firstX - (closePoint.handleOut.x - firstX),
               y: firstY - (closePoint.handleOut.y - firstY)
             };
             
+            // Update the last point's handleOut for a smooth transition
             lastPoint.handleOut = {
-              x: lastPoint.x - (firstPoint.handleIn.x - firstX),
-              y: lastPoint.y - (firstPoint.handleIn.y - firstY)
+              x: lastPoint.x + (firstPoint.x - lastPoint.x) / 3,
+              y: lastPoint.y + (firstPoint.y - lastPoint.y) / 3
             };
             
             currentX = firstX;
@@ -538,6 +660,8 @@ const approximateControlPointsFromPath = (pathData: string, matrix: DOMMatrix | 
           break;
         }
       }
+      
+      lastCommand = command;
       
       // Apply matrix transformation if exists
       if (matrix && points.length > 0) {
