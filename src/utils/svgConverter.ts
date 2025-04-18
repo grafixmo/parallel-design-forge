@@ -23,8 +23,10 @@ export function convertToValidSVG(data: string): string | null {
       }
     }
 
+    // Directly return if already an SVG
     if (data.trim().startsWith('<svg') || data.includes('<?xml')) {
-      return data;
+      // Clean up SVG - normalize attributes, remove unnecessary whitespace
+      return cleanupSvgString(data);
     }
 
     let parsedData;
@@ -46,7 +48,7 @@ export function convertToValidSVG(data: string): string | null {
           .trim();
 
         if (cleanedSvg.startsWith('<svg')) {
-          return cleanedSvg;
+          return cleanupSvgString(cleanedSvg);
         }
       }
 
@@ -61,16 +63,53 @@ export function convertToValidSVG(data: string): string | null {
   }
 }
 
+/**
+ * Cleanup and normalize SVG string
+ */
+function cleanupSvgString(svgString: string): string {
+  // Remove redundant whitespace, normalize quotes
+  return svgString
+    .replace(/\s+/g, ' ')
+    .replace(/>\s+</g, '><')
+    .replace(/\s+>/g, '>')
+    .replace(/<\s+/g, '<')
+    .replace(/\"/g, '"')
+    .trim();
+}
+
+/**
+ * Process path data to ensure it's in a consistent format
+ */
+function processPathData(pathData: string): string {
+  if (!pathData) return '';
+  
+  // Normalize spaces and commas
+  let processed = pathData
+    .replace(/,\s+/g, ' ') // Replace comma+space with just space
+    .replace(/,/g, ' ')    // Replace remaining commas with spaces
+    .replace(/\s+/g, ' ')  // Normalize multiple spaces to single space
+    .trim();
+    
+  // Add spaces after command letters if missing (e.g., "M10,10" -> "M 10,10")
+  processed = processed.replace(/([MLHVCSQTAZmlhvcsqtaz])([^\s])/g, '$1 $2');
+  
+  return processed;
+}
+
 export function generateSVGFromShapes(shapes: Shape[]): string {
   const width = 800;
   const height = 600;
 
   const shapeElements = shapes.map((shape) => {
     if (!shape.d) return '';
+    
+    // Process path data to ensure consistent format
+    const processedPathData = processPathData(shape.d);
+    
     const stroke = shape.stroke || 'black';
     const strokeWidth = shape.strokeWidth || 1;
     const fill = shape.fill || 'none';
-    return `<path d="${shape.d}" stroke="${stroke}" stroke-width="${strokeWidth}" fill="${fill}" />`;
+    return `<path d="${processedPathData}" stroke="${stroke}" stroke-width="${strokeWidth}" fill="${fill}" />`;
   });
 
   const svgContent = shapeElements.join("\n  ");
