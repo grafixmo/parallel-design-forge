@@ -1,3 +1,5 @@
+// src/components/TemplateGallery.tsx
+
 import React, { useState, useEffect } from 'react';
 import {
   Dialog,
@@ -9,7 +11,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { ScrollArea } from '@/components/ui/scroll-area'; // Importado
+import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,7 +22,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle
 } from '@/components/ui/alert-dialog';
-// Popover no se usa actualmente, pero lo dejamos por si acaso
 import {
   Popover,
   PopoverContent,
@@ -34,10 +35,10 @@ import {
   deleteTemplate,
   likeTemplate,
   Template
-} from '@/services/supabaseClient'; // Asegúrate que la ruta es correcta
-import { useToast } from '@/hooks/use-toast'; // Asegúrate que la ruta es correcta
+} from '@/services/supabaseClient';
+import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
-import { parseTemplateData } from '@/utils/svgExporter'; // Asegúrate que la ruta es correcta
+import { parseTemplateData } from '@/utils/svgExporter';
 
 interface TemplateGalleryProps {
   open: boolean;
@@ -94,6 +95,7 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
 
   const handleSelectTemplate = (template: Template) => {
     try {
+      // Parse and normalize the template data before using it
       const normalizedData = parseTemplateData(template.design_data);
 
       if (!normalizedData) {
@@ -105,6 +107,7 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
         return;
       }
 
+      // Pass the normalized data to the parent component
       onSelectTemplate(JSON.stringify(normalizedData));
       onClose();
 
@@ -214,30 +217,31 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
   };
 
   const handleOpenDeleteDialog = (template: Template, e: React.MouseEvent) => {
-    e.stopPropagation();
+    e.stopPropagation(); // Prevent template selection
     setSelectedTemplate(template);
     setDeleteDialogOpen(true);
   };
 
   const handleOpenRenameDialog = (template: Template, e: React.MouseEvent) => {
-    e.stopPropagation();
+    e.stopPropagation(); // Prevent template selection
     setSelectedTemplate(template);
     setNewName(template.name);
     setNewDescription(template.description || '');
     setRenameDialogOpen(true);
   };
 
+  // Filter templates by search query
   const filteredTemplates = templates.filter(template =>
     template.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     (template.description && template.description.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
+  // Format date for display
   const formatDate = (dateString?: string) => {
     if (!dateString) return 'Unknown date';
     try {
-      return format(new Date(dateString), 'MMM d, yyyy'); // Formato de fecha ajustado
+      return format(new Date(dateString), 'MMM d, yyyy');
     } catch (error) {
-      console.error("Error formatting date:", dateString, error);
       return 'Invalid date';
     }
   };
@@ -245,16 +249,14 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
   return (
     <>
       <Dialog open={open} onOpenChange={(openState) => !openState && onClose()}>
-        {/* Contenedor principal del diálogo con flex y altura máxima */}
-        <DialogContent className="w-full max-w-5xl max-h-[80vh] flex flex-col">
-
-          {/* Header: no se encoge */}
+        {/* Fixed DialogContent with explicit height instead of just max-height */}
+        <DialogContent className="w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden">
           <DialogHeader className="flex-shrink-0">
             <DialogTitle className="text-xl">Design Gallery</DialogTitle>
           </DialogHeader>
 
-          {/* Controles (búsqueda, refresco): no se encogen */}
-          <div className="flex items-center space-x-4 mb-4 flex-shrink-0 px-6 pt-4"> {/* Añadido padding similar a DialogHeader/Footer */}
+          {/* Search container with flex-shrink-0 to prevent it from collapsing */}
+          <div className="flex items-center space-x-4 mb-4 flex-shrink-0">
             <div className="relative flex-1">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
@@ -265,9 +267,8 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
               />
               {searchQuery && (
                 <button
-                  className="absolute right-2.5 top-2.5 p-0.5" // Añadido padding pequeño al botón X
+                  className="absolute right-2.5 top-2.5"
                   onClick={() => setSearchQuery('')}
-                  aria-label="Clear search"
                 >
                   <X className="h-4 w-4 text-muted-foreground" />
                 </button>
@@ -278,10 +279,13 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
             </Button>
           </div>
 
-          {/* Componente Tabs: ocupa espacio restante, flex column, oculta overflow */}
-          <Tabs value={activeCategory} onValueChange={handleCategoryChange} className="flex-1 flex flex-col overflow-hidden px-6"> {/* Añadido padding horizontal */}
+          {/* Added h-full to Tabs to ensure it takes available space */}
+          <Tabs 
+            value={activeCategory} 
+            onValueChange={handleCategoryChange}
 
-            {/* Lista de Tabs: no se encoge */}
+            className="flex-1 flex flex-col h-full overflow-hidden"
+          >
             <TabsList className="mb-4 flex-shrink-0">
               <TabsTrigger value="all">All</TabsTrigger>
               <TabsTrigger value="Earrings">Earrings</TabsTrigger>
@@ -291,89 +295,81 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
               <TabsTrigger value="Paper">Paper (JPG)</TabsTrigger>
             </TabsList>
 
-            {/* Contenido de la Tab activa: ocupa espacio restante, oculta overflow */}
-            <TabsContent value={activeCategory} className="flex-1 overflow-hidden">
-               {/* Área de Scroll: ocupa toda la altura disponible */}
-              <ScrollArea className="h-full pr-3"> {/* pr-3 para espacio barra scroll */}
+            {/* Added h-full to TabsContent */}
+            <TabsContent value={activeCategory} className="flex-1 h-full overflow-hidden">
+              {/* Updated ScrollArea to take full height and width */}
+              <ScrollArea className="h-full w-full pr-3">
                 {isLoading ? (
-                  <div className="flex flex-col items-center justify-center h-full py-10"> {/* Usar h-full y padding */}
+                  <div className="flex flex-col items-center justify-center h-64">
                     <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
                     <p className="text-muted-foreground">Loading templates...</p>
                   </div>
                 ) : filteredTemplates.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-full py-10 text-center"> {/* Usar h-full y padding */}
+                  <div className="flex flex-col items-center justify-center h-64 text-center">
                     <p className="text-muted-foreground mb-2">No templates found</p>
                     <p className="text-sm text-muted-foreground max-w-md">
                       {searchQuery
-                        ? 'Try a different search term or category.'
-                        : 'Start by saving designs to your gallery.'}
+                        ? 'Try a different search term or category'
+                        : 'Start by saving designs to your gallery'}
                     </p>
                   </div>
                 ) : (
-                  // Grid dentro del ScrollArea
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 pb-4"> {/* Añadido padding bottom */}
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 pb-4">
                     {filteredTemplates.map((template) => (
                       <div
                         key={template.id}
                         onClick={() => handleSelectTemplate(template)}
-                        className="group border rounded-md p-3 hover:shadow-md transition-all cursor-pointer bg-card flex flex-col" // Usar bg-card
+                        className="group border rounded-md p-3 hover:shadow-md transition-all cursor-pointer bg-white flex flex-col"
                       >
-                        {/* Contenedor de la miniatura */}
-                        <div className="aspect-video mb-2 bg-muted rounded flex items-center justify-center overflow-hidden relative"> {/* Usar bg-muted */}
+                        <div className="aspect-video mb-2 bg-gray-100 rounded flex items-center justify-center overflow-hidden relative">
                           {template.thumbnail ? (
                             <img
                               src={template.thumbnail}
                               alt={template.name}
                               className="w-full h-full object-contain"
-                              loading="lazy" // Carga diferida para imágenes
                             />
                           ) : (
-                            <ExternalLink className="h-8 w-8 text-muted-foreground" /> // Usar text-muted-foreground
+                            <ExternalLink className="h-8 w-8 text-gray-300" />
                           )}
-                          {/* Overlay al hacer hover */}
-                          <div className="absolute inset-0 bg-black/60 transition-opacity flex items-center justify-center opacity-0 group-hover:opacity-100">
-                            <span className="text-xs font-medium text-white px-2 py-1 rounded">
+                          <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-all flex items-center justify-center opacity-0 group-hover:opacity-100">
+                            <span className="text-xs font-medium text-white bg-black bg-opacity-70 px-2 py-1 rounded">
                               Click to load
                             </span>
                           </div>
                         </div>
 
-                        {/* Información del template */}
-                        <div className="flex-1 space-y-1"> {/* Añadido space-y-1 */}
+                        <div className="flex-1">
                           <h3 className="font-medium text-sm truncate" title={template.name}>{template.name}</h3>
                           {template.description && (
-                            <p className="text-xs text-muted-foreground truncate" title={template.description}>
+                            <p className="text-xs text-gray-500 truncate mt-1" title={template.description}>
                               {template.description}
                             </p>
                           )}
                         </div>
 
-                        {/* Acciones y metadatos */}
-                        <div className="flex items-center justify-between mt-2 pt-2 border-t"> {/* Quitado border-gray-100, hereda de card */}
-                          {/* Likes */}
+                        <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100">
                           <div className="flex items-center space-x-1 text-xs text-muted-foreground">
                             <button
                               onClick={(e) => handleLikeTemplate(template, e)}
-                              className="text-muted-foreground hover:text-red-500 transition-colors p-1 -m-1" // Aumentar área de click
+                              className="text-muted-foreground hover:text-red-500 transition-colors"
                               title="Like this template"
                             >
                               <Heart className="h-3.5 w-3.5" fill={template.likes && template.likes > 0 ? "currentColor" : "none"} />
                             </button>
-                            <span className="tabular-nums">{template.likes || 0}</span> {/* Usar tabular-nums para números */}
+                            <span>{template.likes || 0}</span>
                           </div>
 
-                          {/* Botones de acción */}
                           <div className="flex items-center space-x-1">
                             <button
                               onClick={(e) => handleOpenRenameDialog(template, e)}
-                              className="text-muted-foreground hover:text-primary transition-colors p-1 -m-1" // Aumentar área de click
+                              className="text-muted-foreground hover:text-primary transition-colors"
                               title="Edit template"
                             >
                               <Edit className="h-3.5 w-3.5" />
                             </button>
                             <button
                               onClick={(e) => handleOpenDeleteDialog(template, e)}
-                              className="text-muted-foreground hover:text-destructive transition-colors p-1 -m-1" // Aumentar área de click
+                              className="text-muted-foreground hover:text-destructive transition-colors"
                               title="Delete template"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
@@ -381,8 +377,7 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
                           </div>
                         </div>
 
-                        {/* Fecha */}
-                        <div className="mt-1.5"> {/* Ajustado margen */}
+                        <div className="mt-1">
                           <span className="text-[10px] text-muted-foreground">
                             {formatDate(template.created_at)}
                           </span>
@@ -395,14 +390,13 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
             </TabsContent>
           </Tabs>
 
-          {/* Footer: no se encoge */}
-          <DialogFooter className="mt-auto flex-shrink-0 pt-4 px-6 pb-6 border-t"> {/* Añadido padding y border */}
+          <DialogFooter className="mt-4 flex-shrink-0">
             <Button variant="outline" onClick={onClose}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* --- Diálogos Modales (sin cambios) --- */}
+      {/* Delete confirmation dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -420,6 +414,7 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* Rename/edit dialog */}
       <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
@@ -435,7 +430,6 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
                 className="col-span-3"
-                required // Campo requerido
               />
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
@@ -447,7 +441,7 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
                 value={newDescription}
                 onChange={(e) => setNewDescription(e.target.value)}
                 className="col-span-3"
-                placeholder="(Optional)" // Placeholder más claro
+                placeholder="Add a short description"
               />
             </div>
           </div>
@@ -459,7 +453,7 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
               Cancel
             </Button>
             <Button onClick={handleRenameTemplate} disabled={!newName.trim()}>
-              Save Changes
+              Save changes
             </Button>
           </DialogFooter>
         </DialogContent>
