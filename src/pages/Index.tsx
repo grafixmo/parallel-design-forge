@@ -238,7 +238,8 @@ const Index = () => {
         console.error('Error parsing design JSON:', parseError);
         throw new Error(`Failed to parse design data: ${parseError?.message || 'Unknown format'}`);
       }
-    } catch (error) {
+    } catch (error: any) {
+      console.error('❌ Error saving design:', error);
       console.error('Error loading design:', error);
       toast({
         title: 'Load Failed',
@@ -279,7 +280,8 @@ const Index = () => {
         title: 'SVG Imported',
         description: `Imported ${importedObjects.length} object(s) from SVG file.`
       });
-    } catch (error) {
+    } catch (error: any) {
+      console.error('❌ Error saving design:', error);
       console.error('Error importing SVG:', error);
       toast({
         title: 'Import Failed',
@@ -320,6 +322,7 @@ const Index = () => {
     };
     
     try {
+      console.log('🧩 Saving design with:', design);
       const { data, error } = await saveDesign(design);
       
       if (error) {
