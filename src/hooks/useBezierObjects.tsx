@@ -1,3 +1,4 @@
+
 import { useState, useCallback } from 'react';
 import { 
   BezierObject, 
@@ -32,6 +33,25 @@ export function useBezierObjects() {
   const [selectedObjectIds, setSelectedObjectIds] = useState<string[]>([]);
   const [history, setHistory] = useState<HistoryState[]>([]);
   const [currentHistoryIndex, setCurrentHistoryIndex] = useState<number>(-1);
+  
+  // Add current state to history - define this function earlier in the file
+  const addToHistory = useCallback((updatedObjects: BezierObject[]) => {
+    const newHistoryState: HistoryState = {
+      objects: JSON.parse(JSON.stringify(updatedObjects)), // Deep clone
+      timestamp: Date.now()
+    };
+    
+    // If we're not at the end of history, truncate it
+    const newHistory = currentHistoryIndex === history.length - 1 || currentHistoryIndex === -1
+      ? [...history, newHistoryState]
+      : [...history.slice(0, currentHistoryIndex + 1), newHistoryState];
+    
+    // Limit history size to 50 entries
+    const limitedHistory = newHistory.slice(-50);
+    
+    setHistory(limitedHistory);
+    setCurrentHistoryIndex(limitedHistory.length - 1);
+  }, [history, currentHistoryIndex]);
   
   // Create a new bezier object
   const createObject = useCallback((points: ControlPoint[] = [], name: string = 'Untitled Object') => {
@@ -134,7 +154,7 @@ export function useBezierObjects() {
       obj.id === objectId ? { ...obj, curveConfig } : obj
     );
     addToHistory(updatedObjects);
-  }, [objects]);
+  }, [objects, addToHistory]);
   
   // Update transform settings with proper point transformation
   const updateObjectTransform = useCallback((objectId: string, transform: TransformSettings) => {
@@ -227,7 +247,7 @@ export function useBezierObjects() {
       title: "Object Deleted",
       description: "The selected object has been removed"
     });
-  }, [objects]);
+  }, [objects, addToHistory]);
   
   // Delete all selected objects
   const deleteSelectedObjects = useCallback(() => {
@@ -247,7 +267,7 @@ export function useBezierObjects() {
     });
     
     setSelectedObjectIds([]);
-  }, [selectedObjectIds, objects]);
+  }, [selectedObjectIds, objects, addToHistory]);
   
   // Rename an object
   const renameObject = useCallback((objectId: string, name: string) => {
@@ -264,26 +284,7 @@ export function useBezierObjects() {
       obj.id === objectId ? { ...obj, name } : obj
     );
     addToHistory(updatedObjects);
-  }, [objects]);
-  
-  // Add current state to history
-  const addToHistory = useCallback((updatedObjects: BezierObject[]) => {
-    const newHistoryState: HistoryState = {
-      objects: JSON.parse(JSON.stringify(updatedObjects)), // Deep clone
-      timestamp: Date.now()
-    };
-    
-    // If we're not at the end of history, truncate it
-    const newHistory = currentHistoryIndex === history.length - 1 || currentHistoryIndex === -1
-      ? [...history, newHistoryState]
-      : [...history.slice(0, currentHistoryIndex + 1), newHistoryState];
-    
-    // Limit history size to 50 entries
-    const limitedHistory = newHistory.slice(-50);
-    
-    setHistory(limitedHistory);
-    setCurrentHistoryIndex(limitedHistory.length - 1);
-  }, [history, currentHistoryIndex]);
+  }, [objects, addToHistory]);
   
   // Undo the last action
   const undo = useCallback(() => {
