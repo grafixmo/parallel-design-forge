@@ -471,7 +471,7 @@ const design: SavedDesign = {
         onLoadDesigns={() => setShowLibrary(true)}
         onExportSVG={handleExportSVG}
         onImportSVG={handleImportSVG}
-        onLoadTemplate={handleLoadTemplate}
+        onLoadTemplate={(templateData, merge) => handleLoadTemplate(templateData, merge)}
         isDrawingMode={isDrawingMode}
         onToggleDrawingMode={handleToggleDrawingMode}
       />

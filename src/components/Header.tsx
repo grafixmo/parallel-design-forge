@@ -1,4 +1,3 @@
-
 import React, { useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { PenLine, Trash2, Upload, Save, Database, MousePointer, Image, ArrowDownToLine, ArrowUpFromLine } from 'lucide-react';
@@ -34,8 +33,8 @@ interface HeaderProps {
   onSaveDesign: (name: string, category: string) => void;
   onLoadDesigns: () => void;
   onExportSVG: () => void;
-  onImportSVG?: (data: string) => void; // Prop for importing SVG
-  onLoadTemplate?: (templateData: string) => void;
+  onImportSVG?: (data: string) => void;
+  onLoadTemplate?: (templateData: string, merge?: boolean) => void;
   isDrawingMode?: boolean;
   onToggleDrawingMode?: () => void;
 }
@@ -67,9 +66,9 @@ const Header: React.FC<HeaderProps> = ({
     setDesignName('');
   };
 
-  const handleSelectTemplate = (templateData: string) => {
+  const handleSelectTemplate = (templateData: string, merge?: boolean) => {
     if (onLoadTemplate) {
-      onLoadTemplate(templateData);
+      onLoadTemplate(templateData, merge);
     }
   };
 
