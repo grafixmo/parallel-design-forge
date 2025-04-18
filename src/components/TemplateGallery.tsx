@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import {
   Dialog,
@@ -40,7 +39,11 @@ interface TemplateGalleryProps {
   onSelectTemplate: (templateData: string, merge?: boolean) => void;
 }
 
+// Define a type for the data format to ensure compatibility
+type DataFormat = 'svg' | 'json' | 'invalid';
+
 const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSelectTemplate }) => {
+  // ... keep existing code (useState hooks and other declarations)
   const { toast } = useToast();
   const [templates, setTemplates] = useState<Template[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -82,7 +85,7 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
           console.log(`Processing template: ${template.name}, ID: ${template.id || 'unknown'}`);
           
           let normalizedData: string = '';
-          let dataFormat: 'json' | 'svg' | 'invalid' = 'invalid';
+          let dataFormat: DataFormat = 'invalid';
           let needsUpdate = false;
           
           // Validate and normalize template data
@@ -192,6 +195,7 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
     }
   };
 
+  // ... keep existing code (handleCategoryChange, handleSelectTemplate, etc.)
   const handleCategoryChange = (category: string) => {
     setActiveCategory(category);
   };
@@ -401,6 +405,7 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
     }
   };
 
+  // ... keep existing code (render method)
   return (
     <>
       <Dialog open={open} onOpenChange={(openState) => !openState && onClose()}>
