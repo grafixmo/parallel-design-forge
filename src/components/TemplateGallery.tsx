@@ -40,6 +40,7 @@ import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { parseTemplateData } from '@/utils/svgExporter';
 import MergeToggle from './MergeToggle'; // Change from named import to default import
+import { generateThumbnail } from '@/utils/thumbnailGenerator';
 
 
 interface TemplateGalleryProps {
@@ -64,7 +65,19 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
   // Fetch templates when the gallery is opened or category changes
   useEffect(() => {
     if (open) {
-      fetchTemplates();
+      fetchTemplates().then(async () => {
+        // Generate thumbnails for each template that doesn't have one
+        const templatesWithThumbnails = await Promise.all(
+          templates.map(async (template) => {
+            if (!template.thumbnail && template.design_data) {
+              const thumbnail = await generateThumbnail(template.design_data);
+              return { ...template, thumbnail };
+            }
+            return template;
+          })
+        );
+        setTemplates(templatesWithThumbnails);
+      });
     }
   }, [open, activeCategory]);
 
