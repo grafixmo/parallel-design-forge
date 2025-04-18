@@ -367,7 +367,7 @@ const design: SavedDesign = {
   };
   
   // Load a template from the gallery
-  const handleLoadTemplate = (templateData: string) => {
+  const handleLoadTemplate = (templateData: string, merge: boolean = false) => {
     try {
       console.log('Loading template data:', templateData);
       
@@ -405,39 +405,37 @@ const design: SavedDesign = {
         throw new Error('Failed to parse template data');
       }
       
-      // Clear current objects
-      objects.forEach(obj => deleteObject(obj.id));
+      if (!merge) {
+        // Clear current objects if not in merge mode
+        objects.forEach(obj => deleteObject(obj.id));
+      }
       
       // Add objects from template
       if (parsedData.objects && parsedData.objects.length > 0) {
         // Format with objects array
-        parsedData.objects.forEach(obj => {
-          // Make sure each object has the required properties
-          const validObject = {
-            ...obj,
-            curveConfig: obj.curveConfig || {
-              styles: [{ color: '#000000', width: 2 }],
-              parallelCount: 1,
-              spacing: 5
-            },
-            transform: obj.transform || {
-              rotation: 0,
-              scaleX: 1,
-              scaleY: 1
-            }
-          };
-          createObject(validObject.points, validObject.name);
-        });
+        const newObjects = parsedData.objects.map(obj => ({
+          ...obj,
+          id: generateId(), // Generate new IDs to avoid conflicts
+          isSelected: false // Make sure new objects are not selected
+        }));
+
+        if (merge) {
+          // In merge mode, add new objects to existing ones
+          setAllObjects([...objects, ...newObjects]);
+        } else {
+          // In replace mode, just set the new objects
+          setAllObjects(newObjects);
+        }
         
-        // Set background image if present
-        if (parsedData.backgroundImage) {
+        // Set background image if present and not in merge mode
+        if (!merge && parsedData.backgroundImage) {
           setBackgroundImage(parsedData.backgroundImage.url);
           setBackgroundOpacity(parsedData.backgroundImage.opacity);
         }
         
         toast({
-          title: 'Template Loaded',
-          description: 'Template has been loaded successfully.'
+          title: merge ? 'Template Merged' : 'Template Loaded',
+          description: `Template has been ${merge ? 'merged with existing design' : 'loaded'} successfully.`
         });
       } else {
         toast({

@@ -39,11 +39,12 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { parseTemplateData } from '@/utils/svgExporter';
+import { MergeToggle } from './MergeToggle';
 
 interface TemplateGalleryProps {
   open: boolean;
   onClose: () => void;
-  onSelectTemplate: (templateData: string) => void;
+  onSelectTemplate: (templateData: string, merge?: boolean) => void;
 }
 
 const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSelectTemplate }) => {
@@ -57,6 +58,7 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDescription, setNewDescription] = useState('');
+  const [mergeEnabled, setMergeEnabled] = useState(false);
 
   // Fetch templates when the gallery is opened or category changes
   useEffect(() => {
@@ -107,13 +109,13 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
         return;
       }
 
-      // Pass the normalized data to the parent component
-      onSelectTemplate(JSON.stringify(normalizedData));
+      // Pass the normalized data and merge flag to the parent component
+      onSelectTemplate(JSON.stringify(normalizedData), mergeEnabled);
       onClose();
 
       toast({
-        title: 'Template Loaded',
-        description: `"${template.name}" has been loaded to the canvas`
+        title: mergeEnabled ? 'Template Merged' : 'Template Loaded',
+        description: `"${template.name}" has been ${mergeEnabled ? 'merged with' : 'loaded to'} the canvas`
       });
     } catch (error) {
       console.error('Error loading template:', error);
@@ -255,7 +257,7 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
             <DialogTitle className="text-xl">Design Gallery</DialogTitle>
           </DialogHeader>
 
-          {/* Search container with flex-shrink-0 to prevent it from collapsing */}
+          {/* Search and controls container */}
           <div className="flex items-center space-x-4 mb-4 flex-shrink-0">
             <div className="relative flex-1">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -274,6 +276,7 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
                 </button>
               )}
             </div>
+            <MergeToggle enabled={mergeEnabled} onToggle={setMergeEnabled} />
             <Button variant="outline" onClick={fetchTemplates}>
               Refresh
             </Button>
