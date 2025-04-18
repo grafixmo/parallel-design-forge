@@ -12,6 +12,52 @@ type Shape = {
   strokeWidth?: number;
 };
 
+/**
+ * Normalize SVG path data to handle various formats
+ */
+function normalizeSVGPath(pathData: string): string {
+  return pathData
+    // Normalize decimal numbers (preserve negative signs)
+    .replace(/(-?\d*\.?\d+)([eE][+-]?\d+)?/g, ' $1 ')
+    // Add spaces after letters
+    .replace(/([a-zA-Z])/g, '$1 ')
+    // Replace commas with spaces
+    .replace(/,/g, ' ')
+    // Convert multiple spaces to single space
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Parse SVG path data into individual commands and coordinates
+ */
+function parsePathCommands(pathData: string): { command: string; params: number[] }[] {
+  const normalized = normalizeSVGPath(pathData);
+  const tokens = normalized.split(' ');
+  const commands: { command: string; params: number[] }[] = [];
+  let currentCommand: { command: string; params: number[] } | null = null;
+
+  tokens.forEach(token => {
+    if (/[a-zA-Z]/.test(token)) {
+      if (currentCommand) {
+        commands.push(currentCommand);
+      }
+      currentCommand = { command: token, params: [] };
+    } else if (currentCommand) {
+      const num = parseFloat(token);
+      if (!isNaN(num)) {
+        currentCommand.params.push(num);
+      }
+    }
+  });
+
+  if (currentCommand) {
+    commands.push(currentCommand);
+  }
+
+  return commands;
+}
+
 export function convertToValidSVG(data: string): string | null {
   try {
     if (typeof data !== 'string') {
@@ -23,12 +69,26 @@ export function convertToValidSVG(data: string): string | null {
       }
     }
 
-    // Directly return if already an SVG
+    // Handle existing SVG
     if (data.trim().startsWith('<svg') || data.includes('<?xml')) {
-      // Clean up SVG - normalize attributes, remove unnecessary whitespace
-      return cleanupSvgString(data);
+      // Process SVG to normalize paths
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(data, 'image/svg+xml');
+      
+      // Process all path elements
+      doc.querySelectorAll('path').forEach(path => {
+        const originalD = path.getAttribute('d');
+        if (originalD) {
+          // Normalize path data
+          const normalized = normalizeSVGPath(originalD);
+          path.setAttribute('d', normalized);
+        }
+      });
+
+      return new XMLSerializer().serializeToString(doc);
     }
 
+    // Handle JSON data
     let parsedData;
     try {
       parsedData = JSON.parse(data);
@@ -41,6 +101,7 @@ export function convertToValidSVG(data: string): string | null {
       const first = parsedData[0];
 
       if (typeof first.d === 'string' && first.d.trim().startsWith('<svg')) {
+        // Process embedded SVG
         const rawSvg = first.d;
         const cleanedSvg = rawSvg
           .replace(/\"/g, '"')
@@ -48,7 +109,7 @@ export function convertToValidSVG(data: string): string | null {
           .trim();
 
         if (cleanedSvg.startsWith('<svg')) {
-          return cleanupSvgString(cleanedSvg);
+          return convertToValidSVG(cleanedSvg); // Recursively process embedded SVG
         }
       }
 
@@ -64,36 +125,18 @@ export function convertToValidSVG(data: string): string | null {
 }
 
 /**
- * Cleanup and normalize SVG string
- */
-function cleanupSvgString(svgString: string): string {
-  // Remove redundant whitespace, normalize quotes
-  return svgString
-    .replace(/\s+/g, ' ')
-    .replace(/>\s+</g, '><')
-    .replace(/\s+>/g, '>')
-    .replace(/<\s+/g, '<')
-    .replace(/\"/g, '"')
-    .trim();
-}
-
-/**
- * Process path data to ensure it's in a consistent format
+ * Process path data into a consistent format
  */
 function processPathData(pathData: string): string {
   if (!pathData) return '';
   
-  // Normalize spaces and commas
-  let processed = pathData
-    .replace(/,\s+/g, ' ') // Replace comma+space with just space
-    .replace(/,/g, ' ')    // Replace remaining commas with spaces
-    .replace(/\s+/g, ' ')  // Normalize multiple spaces to single space
-    .trim();
-    
-  // Add spaces after command letters if missing (e.g., "M10,10" -> "M 10,10")
-  processed = processed.replace(/([MLHVCSQTAZmlhvcsqtaz])([^\s])/g, '$1 $2');
+  // Normalize and validate path data
+  const commands = parsePathCommands(pathData);
   
-  return processed;
+  // Build normalized path string
+  return commands.map(cmd => {
+    return `${cmd.command}${cmd.params.join(' ')}`;
+  }).join(' ');
 }
 
 export function generateSVGFromShapes(shapes: Shape[]): string {

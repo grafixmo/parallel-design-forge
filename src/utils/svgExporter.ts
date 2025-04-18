@@ -1,4 +1,3 @@
-
 import {
   ControlPoint,
   CurveConfig,
@@ -675,263 +674,165 @@ const processSVGPaths = (paths: SVGPathElement[], existingCurveConfig?: CurveCon
 
 /**
  * Approximate control points from an SVG path data string
- * This is a very simplified implementation that works for basic paths
  */
 const approximateControlPointsFromPath = (pathData: string): ControlPoint[] => {
-  // Simple path parser that extracts points from M, C, S, and Z commands
   const points: ControlPoint[] = [];
-
-  // This is a very simplified parser - a real implementation would be more robust
   try {
-    console.log('Parsing path data:', pathData.substring(0, 100) + (pathData.length > 100 ? '...' : ''));
-
-    // Remove all letters and replace them with spaces for tokenization
-    const cleaned = pathData.replace(/([A-Za-z])/g, ' $1 ').trim();
-    const tokens = cleaned.split(/\s+/);
-
-    console.log(`Tokenized path data into ${tokens.length} tokens`);
-
+    console.log('Processing path data');
+    
+    // Parse path into commands
+    const commands = parsePathCommands(pathData);
+    
     let currentX = 0;
     let currentY = 0;
     let firstX = 0;
     let firstY = 0;
-    let i = 0;
-
-    while (i < tokens.length) {
-      const token = tokens[i++];
-
-      if (!token) continue;
-
-      if (token === 'M' || token === 'm') {
-        // Move to command
-        if (i + 1 >= tokens.length) break;
-
-        try {
-          const x = parseFloat(tokens[i++] || '0');
-          const y = parseFloat(tokens[i++] || '0');
-
-          // Check for NaN values
-          if (isNaN(x) || isNaN(y)) {
-            console.log('Invalid M command coordinates, skipping');
-            continue;
-          }
-
-          currentX = token === 'm' ? currentX + x : x;
-          currentY = token === 'm' ? currentY + y : y;
-
-          // Remember the first point for Z command
-          if (points.length === 0) {
-            firstX = currentX;
-            firstY = currentY;
-          }
-
-          // Add the point with default handles
-          points.push(createControlPoint(currentX, currentY));
-
-          console.log(`Added M point at ${currentX},${currentY}`);
-        } catch (e) {
-          console.log('Error processing M command:', e);
-        }
-      } else if (token === 'L' || token === 'l') {
-        // Line to command
-        if (i + 1 >= tokens.length) break;
-
-        try {
-          const x = parseFloat(tokens[i++] || '0');
-          const y = parseFloat(tokens[i++] || '0');
-
-          // Check for NaN values
-          if (isNaN(x) || isNaN(y)) {
-            console.log('Invalid L command coordinates, skipping');
-            continue;
-          }
-
-          currentX = token === 'l' ? currentX + x : x;
-          currentY = token === 'l' ? currentY + y : y;
-
-          // Add the point with calculated handles
-          if (points.length > 0) {
-            const prevPoint = points[points.length - 1];
-            points.push(createControlPoint(currentX, currentY, prevPoint));
-          } else {
+    
+    commands.forEach(({ command, params }) => {
+      switch (command.toUpperCase()) {
+        case 'M': {
+          // Move to command
+          if (params.length >= 2) {
+            currentX = command === 'M' ? params[0] : currentX + params[0];
+            currentY = command === 'M' ? params[1] : currentY + params[1];
+            
+            if (points.length === 0) {
+              firstX = currentX;
+              firstY = currentY;
+            }
+            
             points.push(createControlPoint(currentX, currentY));
+            console.log(`Added M point at ${currentX},${currentY}`);
           }
-
-          console.log(`Added L point at ${currentX},${currentY}`);
-        } catch (e) {
-          console.log('Error processing L command:', e);
+          break;
         }
-      }
-      else if (token === 'C' || token === 'c') {
-        // Cubic bezier curve command
-        if (i + 5 >= tokens.length) break;
-
-        try {
-          const x1 = parseFloat(tokens[i++] || '0');
-          const y1 = parseFloat(tokens[i++] || '0');
-          const x2 = parseFloat(tokens[i++] || '0');
-          const y2 = parseFloat(tokens[i++] || '0');
-          const x = parseFloat(tokens[i++] || '0');
-          const y = parseFloat(tokens[i++] || '0');
-
-          // Check for NaN values
-          if ([x1, y1, x2, y2, x, y].some(v => isNaN(v))) {
-            console.log('Invalid C command coordinates, skipping');
-            continue;
+        case 'L': {
+          // Line to command
+          if (params.length >= 2) {
+            currentX = command === 'L' ? params[0] : currentX + params[0];
+            currentY = command === 'L' ? params[1] : currentY + params[1];
+            
+            if (points.length > 0) {
+              const prevPoint = points[points.length - 1];
+              points.push(createControlPoint(currentX, currentY, prevPoint));
+            } else {
+              points.push(createControlPoint(currentX, currentY));
+            }
+            console.log(`Added L point at ${currentX},${currentY}`);
           }
-
-          // Convert to absolute coordinates if relative
-          const absX1 = token === 'c' ? currentX + x1 : x1;
-          const absY1 = token === 'c' ? currentY + y1 : y1;
-          const absX2 = token === 'c' ? currentX + x2 : x2;
-          const absY2 = token === 'c' ? currentY + y2 : y2;
-          const absX = token === 'c' ? currentX + x : x;
-          const absY = token === 'c' ? currentY + y : y;
-
-          // Update last point's handle out
-          if (points.length > 0) {
-            const lastPoint = points[points.length - 1];
-            lastPoint.handleOut = { x: absX1, y: absY1 };
-          } else if (absX1 !== 0 || absY1 !== 0) {
-            // If there's no previous point but handle is not at origin, create an artificial first point
-             // (Handles will be adjusted if this is the start of the path)
+          break;
+        }
+        case 'C': {
+          // Cubic bezier curve command
+          if (params.length >= 6) {
+            const [x1, y1, x2, y2, x, y] = params;
+            
+            // Convert to absolute coordinates if needed
+            const absX1 = command === 'c' ? currentX + x1 : x1;
+            const absY1 = command === 'c' ? currentY + y1 : y1;
+            const absX2 = command === 'c' ? currentX + x2 : x2;
+            const absY2 = command === 'c' ? currentY + y2 : y2;
+            const absX = command === 'c' ? currentX + x : x;
+            const absY = command === 'c' ? currentY + y : y;
+            
+            // Update last point's handle out
+            if (points.length > 0) {
+              const lastPoint = points[points.length - 1];
+              lastPoint.handleOut = { x: absX1, y: absY1 };
+            }
+            
+            // Add new point with handles
             points.push({
-              x: currentX,
-              y: currentY,
-              handleIn: { x: currentX - 50, y: currentY }, // Default placeholder
-              handleOut: { x: absX1, y: absY1 },
+              x: absX,
+              y: absY,
+              handleIn: { x: absX2, y: absY2 },
+              handleOut: { x: absX + (absX - absX2), y: absY + (absY - absY2) },
               id: generateId()
             });
+            
+            currentX = absX;
+            currentY = absY;
+            console.log(`Added C point at ${absX},${absY}`);
           }
-
-          // Add new point with handle in from the curve
-          points.push({
-            x: absX,
-            y: absY,
-            handleIn: { x: absX2, y: absY2 },
-            handleOut: { x: absX + (absX - absX2), y: absY + (absY - absY2) }, // Approximate handle out
-            id: generateId()
-          });
-
-          console.log(`Added C point at ${absX},${absY} with handles`);
-
-          currentX = absX;
-          currentY = absY;
-        } catch (e) {
-          console.log('Error processing C command:', e);
+          break;
         }
-      } else if (token === 'S' || token === 's') {
-        // Smooth cubic bezier curve command
-        if (i + 3 >= tokens.length) break;
-
-        try {
-          const x2 = parseFloat(tokens[i++] || '0');
-          const y2 = parseFloat(tokens[i++] || '0');
-          const x = parseFloat(tokens[i++] || '0');
-          const y = parseFloat(tokens[i++] || '0');
-
-          // Check for NaN values
-          if ([x2, y2, x, y].some(v => isNaN(v))) {
-            console.log('Invalid S command coordinates, skipping');
-            continue;
-          }
-
-          // Convert to absolute coordinates if relative
-          const absX2 = token === 's' ? currentX + x2 : x2;
-          const absY2 = token === 's' ? currentY + y2 : y2;
-          const absX = token === 's' ? currentX + x : x;
-          const absY = token === 's' ? currentY + y : y;
-
-          // Calculate the reflection of the previous control point's handleOut for the new handleOut (x1, y1)
-          let x1 = currentX;
-          let y1 = currentY;
-
-          if (points.length > 0) {
-            const prevPoint = points[points.length - 1];
-            if (prevPoint.handleOut) {
-              // Reflect the handleOut of the previous point
-              x1 = currentX + (currentX - prevPoint.handleOut.x);
-              y1 = currentY + (currentY - prevPoint.handleOut.y);
-            }
-           // Update previous point's handle out to this reflected point
-            prevPoint.handleOut = { x: x1, y: y1 };
-          }
-
-          // Add new point
-          points.push({
-            x: absX,
-            y: absY,
-            handleIn: { x: absX2, y: absY2 },
-            // Approximate handle out by reflecting the handleIn (absX2, absY2)
-            handleOut: { x: absX + (absX - absX2), y: absY + (absY - absY2) },
-            id: generateId() 
-          });
-
-          console.log(`Added S point at ${absX},${absY}`);
-
-          currentX = absX;
-          currentY = absY;
-        } catch (e) {
-          console.log('Error processing S command:', e);
-        }
-      } else if (token === 'Z' || token === 'z') {
-        // Close path command - connect back to first point
-        try {
+        case 'Z': {
+          // Close path command
           if (points.length > 0 && (currentX !== firstX || currentY !== firstY)) {
-            console.log(`Adding Z point to close path back to ${firstX},${firstY}`);
-
-            // If we have enough points to form a segment to close
-            if (points.length > 1) {
-              const lastPoint = points[points.length - 1];
-              const firstPoint = points[0];
-
-               // Create a temporary representation of the closing point connection based on the last point
-               // This helps calculate the handle needed for the first point's handleIn
-              const closePoint = createControlPoint(firstX, firstY, lastPoint);
-
-              // Update the first point's handle in to smoothly connect from the last point
-              // Reflect the temporary closing point's outgoing handle
-              firstPoint.handleIn = {
-                x: firstX - (closePoint.handleOut.x - firstX),
-                y: firstY - (closePoint.handleOut.y - firstY)
-              };
-
-               // Update the last point's handleOut to smoothly connect towards the first point
-               // Reflect the first point's (now updated) incoming handle
-               lastPoint.handleOut = {
-                 x: lastPoint.x - (firstPoint.handleIn.x - firstX), // Reflect firstPoint.handleIn relative to lastPoint
-                 y: lastPoint.y - (firstPoint.handleIn.y - firstY)
-               };
-
-            } else if (points.length === 1) {
-               // Handle closing a path with only one point (M command only) - make handles zero length?
-               const point = points[0];
-               point.handleIn = { x: point.x, y: point.y };
-               point.handleOut = { x: point.x, y: point.y };
-             }
-             // Update current position to the start point coordinates
-             currentX = firstX;
-             currentY = firstY;
-
-             console.log('Path closed back to start point.');
-          } else {
-            console.log('Path already closed or not enough points, skipping Z command.');
+            const lastPoint = points[points.length - 1];
+            const firstPoint = points[0];
+            
+            // Create smooth connection back to start
+            const closePoint = createControlPoint(firstX, firstY, lastPoint);
+            
+            firstPoint.handleIn = {
+              x: firstX - (closePoint.handleOut.x - firstX),
+              y: firstY - (closePoint.handleOut.y - firstY)
+            };
+            
+            lastPoint.handleOut = {
+              x: lastPoint.x - (firstPoint.handleIn.x - firstX),
+              y: lastPoint.y - (firstPoint.handleIn.y - firstY)
+            };
+            
+            currentX = firstX;
+            currentY = firstY;
           }
-        } catch (e) {
-          console.log('Error processing Z command:', e);
+          break;
         }
-      } else {
-         // Unknown command or invalid data
-         console.log(`Unknown or invalid token encountered: ${token}`);
-         // You might want to add logic here to skip expected parameters for unknown commands
       }
-    }
-
-    console.log(`Finished parsing path data. Generated ${points.length} points.`);
+    });
+    
+    console.log(`Generated ${points.length} control points`);
     return points;
-
   } catch (error) {
-    console.error('Critical error parsing SVG path data:', error);
+    console.error('Error parsing SVG path:', error);
     return [];
   }
 };
+
+/**
+ * Normalize SVG path data to handle various formats
+ */
+function normalizeSVGPath(pathData: string): string {
+  return pathData
+    // Normalize decimal numbers (preserve negative signs)
+    .replace(/(-?\d*\.?\d+)([eE][+-]?\d+)?/g, ' $1 ')
+    // Add spaces after letters
+    .replace(/([a-zA-Z])/g, '$1 ')
+    // Replace commas with spaces
+    .replace(/,/g, ' ')
+    // Convert multiple spaces to single space
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Parse SVG path data into individual commands and coordinates
+ */
+function parsePathCommands(pathData: string): { command: string; params: number[] }[] {
+  const normalized = normalizeSVGPath(pathData);
+  const tokens = normalized.split(' ');
+  const commands: { command: string; params: number[] }[] = [];
+  let currentCommand: { command: string; params: number[] } | null = null;
+
+  tokens.forEach(token => {
+    if (/[a-zA-Z]/.test(token)) {
+      if (currentCommand) {
+        commands.push(currentCommand);
+      }
+      currentCommand = { command: token, params: [] };
+    } else if (currentCommand) {
+      const num = parseFloat(token);
+      if (!isNaN(num)) {
+        currentCommand.params.push(num);
+      }
+    }
+  });
+
+  if (currentCommand) {
+    commands.push(currentCommand);
+  }
+
+  return commands;
+}
