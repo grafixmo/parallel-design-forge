@@ -1,136 +1,98 @@
+/**
+ * Generador de path SVG a partir de puntos de control
+ */
+export const generatePathData = (points: any[]): string | null => {
+  if (!points || points.length < 2) return null;
+
+  let d = `M ${points[0].x} ${points[0].y}`;
+  for (let i = 1; i < points.length; i++) {
+    const p = points[i];
+    const prev = points[i - 1];
+
+    // Check if points have handle information (adapt based on your ControlPoint structure)
+    // Assuming handles are named handleOut and handleIn as in svgExporter
+    if (prev.handleOut && p.handleIn) {
+      d += ` C ${prev.handleOut.x} ${prev.handleOut.y}, ${p.handleIn.x} ${p.handleIn.y}, ${p.x} ${p.y}`;
+    } else {
+      // Fallback to line if no handle info
+      d += ` L ${p.x} ${p.y}`;
+    }
+  }
+
+  // Optional: Add 'Z' if the shape should be closed based on object properties
+  // if (isClosed) d += ' Z';
+
+  return d;
+};
+
 
 /**
- * Converts various data formats to valid SVG
+ * Convierte datos de diseño en un SVG válido (usado como fallback).
  */
-export function convertToValidSVG(data: string): string | null {
+export const convertToValidSVG = (data: any): string | null => {
   try {
-    // First, normalize the data to ensure it's a string
-    if (typeof data !== 'string') {
+    let parsed: any;
+    if (typeof data === 'string') {
       try {
-        data = JSON.stringify(data);
+        parsed = JSON.parse(data);
       } catch (e) {
-        console.error('Failed to stringify non-string data:', e);
+        // If it's not JSON, maybe it's already SVG? Basic check.
+        if (data.trim().startsWith('<svg')) {
+             console.log('✅ convertToValidSVG: Input looks like SVG already.');
+             return data;
+        }
+        console.warn('convertToValidSVG: No se pudo parsear como JSON. Retornando null.');
         return null;
       }
+    } else {
+      parsed = data;
     }
-    
-    // Try to parse the data
-    let parsedData;
-    try {
-      parsedData = JSON.parse(data);
-    } catch (e) {
-      // If it's already valid SVG, just return it
-      if (data.includes('<svg') || data.startsWith('<?xml')) {
-        return data;
+
+    // Expecting an object with an 'objects' array
+    if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.objects)) {
+      console.warn('convertToValidSVG: No se encontraron objetos válidos en el diseño. Expected { objects: [...] }.');
+      return null;
+    }
+
+    const pathElements: string[] = [];
+    for (const obj of parsed.objects) {
+      // Validate object structure (needs at least points array)
+      if (!obj || !Array.isArray(obj.points) || obj.points.length < 2) {
+        console.warn('convertToValidSVG: Objeto inválido o con pocos puntos:', obj);
+        continue; // Skip this object
       }
-      console.error('Failed to parse data:', e);
+
+      const d = generatePathData(obj.points); // Use the helper function
+      if (!d) {
+        console.warn('convertToValidSVG: No se pudo generar atributo "d" del path para:', obj);
+        continue; // Skip this object
+      }
+
+      // Extract style information if available, otherwise use defaults
+      const stroke = obj.curveConfig?.styles?.[0]?.color || '#000000';
+      const strokeWidth = obj.curveConfig?.styles?.[0]?.width || 2;
+      const fill = obj.curveConfig?.styles?.[0]?.fill || 'none'; // Add fill support
+
+      const path = `<path d="${d}" stroke="${stroke}" stroke-width="${strokeWidth}" fill="${fill}"/>`;
+      pathElements.push(path);
+    }
+
+    if (pathElements.length === 0) {
+      console.warn('convertToValidSVG: No se generaron paths válidos a partir de los objetos.');
       return null;
     }
-    
-    // If not an array, return null
-    if (!Array.isArray(parsedData)) {
-      console.error('Data is not an array:', parsedData);
-      return null;
-    }
-    
-    // Create SVG content
-    let svgContent = '';
-    
-    // Determine width and height from the data if possible
-    let width = 800;
-    let height = 600;
-    let viewBox = "0 0 800 600";
-    
-    // Check for explicit width/height in the first object
-    if (parsedData[0] && (parsedData[0].width || parsedData[0].height)) {
-      width = parsedData[0].width || width;
-      height = parsedData[0].height || height;
-      viewBox = `0 0 ${width} ${height}`;
-    }
-    
-    // Format 1: SVG path elements with 'd' attribute
-    if (parsedData.some(item => item.d)) {
-      parsedData.forEach(item => {
-        if (item.d) {
-          const stroke = item.stroke || "black";
-          const fill = item.fill || "none";
-          const strokeWidth = item.strokeWidth || 1;
-          svgContent += `<path d="${item.d}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}" />`;
-        }
-      });
-    }
-    // Format 2: Bezier curve data with points array
-    else if (parsedData.some(item => item.points && Array.isArray(item.points))) {
-      parsedData.forEach(item => {
-        if (item.points && Array.isArray(item.points)) {
-          // Generate SVG path data from bezier points
-          let pathData = '';
-          const points = item.points;
-          const isClosed = item.isClosed || false;
-          
-          for (let i = 0; i < points.length; i++) {
-            const point = points[i];
-            
-            if (i === 0) {
-              // Move to first point
-              pathData += `M ${point.x},${point.y} `;
-            } else {
-              const prevPoint = points[i-1];
-              
-              // Check if this point has control points
-              if (point.controlPoint1 && prevPoint.controlPoint2) {
-                // Cubic bezier curve
-                pathData += `C ${prevPoint.controlPoint2.x},${prevPoint.controlPoint2.y} ${point.controlPoint1.x},${point.controlPoint1.y} ${point.x},${point.y} `;
-              } else if (point.controlPoint1) {
-                // Quadratic bezier curve
-                pathData += `Q ${point.controlPoint1.x},${point.controlPoint1.y} ${point.x},${point.y} `;
-              } else {
-                // Line to
-                pathData += `L ${point.x},${point.y} `;
-              }
-            }
-          }
-          
-          // Close the path if needed
-          if (isClosed) {
-            pathData += 'Z';
-          }
-          
-          const stroke = item.stroke || "black";
-          const fill = item.fill || "none";
-          const strokeWidth = item.strokeWidth || 1;
-          
-          svgContent += `<path d="${pathData}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}" />`;
-        }
-      });
-    }
-    // Format 3: Simple coordinate points
-    else if (parsedData.some(item => item.x !== undefined && item.y !== undefined)) {
-      // Convert coordinate points to SVG path
-      let pathData = '';
-      
-      parsedData.forEach((point, index) => {
-        if (index === 0) {
-          pathData += `M ${point.x},${point.y} `;
-        } else {
-          pathData += `L ${point.x},${point.y} `;
-        }
-      });
-      
-      svgContent += `<path d="${pathData}" fill="none" stroke="black" stroke-width="1" />`;
-    }
-    
-    // If no content was generated, return null
-    if (!svgContent) {
-      console.error('Could not generate SVG content from data');
-      return null;
-    }
-    
-    // Return the complete SVG document
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${viewBox}">${svgContent}</svg>`;
-    
-  } catch (error) {
-    console.error('Error converting to SVG:', error);
+
+    // Basic SVG structure. Consider extracting canvas dimensions if available in 'parsed' data.
+    const svg = `
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600">
+  <g> ${pathElements.join('\n    ')}
+  </g>
+</svg>`.trim();
+
+    console.log('✅ convertToValidSVG: SVG generado con éxito');
+    return svg;
+  } catch (err) {
+    console.error('❌ Error en convertToValidSVG:', err);
     return null;
   }
-}
+};

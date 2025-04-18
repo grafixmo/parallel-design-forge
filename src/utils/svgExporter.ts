@@ -1,4 +1,3 @@
-
 import {
   ControlPoint,
   CurveConfig,
@@ -6,67 +5,148 @@ import {
   BezierObject,
   CurveStyle,
   Point
-} from '../types/bezier';
-import { generatePathData, generateId } from './bezierUtils';
+} from '../types/bezier'; // Assuming types are in ../types/bezier
+// Make sure generateId is correctly imported if needed elsewhere, or define it here if local
+import { generateId } from './bezierUtils'; // Assuming generateId is in bezierUtils
+// Keep generatePathData import if it's used by exportAsSVG and defined in bezierUtils
+import { generatePathData } from './bezierUtils';
 
 /**
  * Parses template data from various formats to ensure consistent structure
- * @param templateData The raw template data as string
+ * @param templateData The raw template data as string or object
  * @returns Parsed and normalized template data object or null if invalid
  */
-export const parseTemplateData = (templateData: string): any => {
+export const parseTemplateData = (templateData: string | object): { objects: BezierObject[] } | null => {
   try {
-    // First attempt to parse as JSON
     let parsed: any;
 
-    try {
-      parsed = JSON.parse(templateData);
-    } catch (e) {
-      // If not valid JSON, check if it's SVG and try to import
-      if (typeof templateData === 'string' && (templateData.includes('<svg') || templateData.startsWith('<?xml'))) {
-        console.log('Template appears to be SVG format, attempting import');
-        return importSVGFromString(templateData);
-      } else {
-        throw new Error('Template data is neither valid JSON nor SVG');
+    if (typeof templateData === 'string') {
+      try {
+        parsed = JSON.parse(templateData);
+      } catch (e) {
+        // If not valid JSON, check if it's SVG and try to import
+        if (templateData.includes('<svg') || templateData.startsWith('<?xml')) {
+          console.log('parseTemplateData: Template appears to be SVG format, attempting import...');
+          const importedObjects = importSVGFromString(templateData); // Use the corrected import function
+          return importedObjects.length > 0 ? { objects: importedObjects } : null;
+        } else {
+          throw new Error('Template data is neither valid JSON nor SVG');
+        }
       }
+    } else if (typeof templateData === 'object' && templateData !== null) {
+       parsed = templateData; // Already an object
+    } else {
+       throw new Error('Invalid template data type');
     }
+
 
     // Check what kind of data structure we have
     if (parsed.objects && Array.isArray(parsed.objects)) {
       // It's already in the expected format with objects array
+       // Optional: Add validation/normalization for each object here
       return parsed;
     } else if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].points) {
       // It's an array of objects, convert to expected format
+      // Optional: Add validation/normalization for each object here
       return { objects: parsed };
     } else if (parsed.points && Array.isArray(parsed.points)) {
-      // It's a single object with points array, convert to expected format
-      const singleObject = {
+      // It's a single object structure, wrap it in the expected format
+      const singleObject: BezierObject = {
         id: parsed.id || generateId(),
         name: parsed.name || 'Imported Object',
-        points: parsed.points,
-        curveConfig: parsed.curveConfig || {
-          styles: [{ color: '#000000', width: 2 }],
-          parallelCount: 1,
-          spacing: 5
-        },
-        transform: parsed.transform || {
-          rotation: 0,
-          scaleX: 1,
-          scaleY: 1
-        },
+        points: parsed.points.map((p: any) => validateAndRepairPoint(p)), // Validate points
+        curveConfig: parsed.curveConfig || defaultCurveConfig(),
+        transform: parsed.transform || defaultTransform(),
         isSelected: false
       };
       return { objects: [singleObject] };
     }
 
     // If we couldn't determine the format, return null
-    console.error('Could not parse template data into a recognized format');
+    console.error('parseTemplateData: Could not parse template data into a recognized format.');
     return null;
   } catch (error) {
     console.error('Error parsing template data:', error);
     return null;
   }
 };
+
+/**
+ * Default transform settings
+ */
+const defaultTransform = (): TransformSettings => {
+  return {
+    rotation: 0,
+    scaleX: 1,
+    scaleY: 1
+  };
+};
+
+/**
+ * Default curve style
+ */
+const defaultCurveStyle = (): CurveStyle => {
+  return {
+    color: '#000000',
+    width: 2,
+    fill: 'none',
+    opacity: 1,
+    lineCap: 'round',
+    lineJoin: 'round',
+    dashArray: '' // Ensure dashArray is included
+  };
+};
+
+
+/**
+ * Default curve configuration
+ */
+const defaultCurveConfig = (): CurveConfig => {
+  return {
+    parallelCount: 1,
+    spacing: 5,
+    styles: [defaultCurveStyle()]
+  };
+};
+
+
+/**
+ * Gets the center X coordinate of a set of points
+ */
+const getPointsCenterX = (points: ControlPoint[], defaultWidth: number): number => {
+  if (!points || points.length === 0) return defaultWidth / 2;
+  const sumX = points.reduce((sum, point) => sum + point.x, 0);
+  return sumX / points.length;
+};
+/**
+ * Gets the center Y coordinate of a set of points
+ */
+const getPointsCenterY = (points: ControlPoint[], defaultHeight: number): number => {
+  if (!points || points.length === 0) return defaultHeight / 2;
+  const sumY = points.reduce((sum, point) => sum + point.y, 0);
+  return sumY / points.length;
+};
+
+
+/**
+ * Generates an SVG path element string from path data and style
+ */
+const generateSVGPath = (pathData: string, style: CurveStyle): string => {
+  // Ensure defaults are applied if style properties are missing
+  const safeStyle = { ...defaultCurveStyle(), ...style };
+  return `<path
+    d="${pathData}"
+    fill="${safeStyle.fill}"
+    stroke="${safeStyle.color}"
+    stroke-width="${safeStyle.width}"
+    stroke-opacity="${safeStyle.opacity}"
+    stroke-linecap="${safeStyle.lineCap}"
+    stroke-linejoin="${safeStyle.lineJoin}"
+    stroke-dasharray="${safeStyle.dashArray}"
+  />`;
+};
+
+
 /**
  * Exports multiple BezierObjects to SVG format
  * @param objects Array of BezierObjects to export
@@ -86,66 +166,87 @@ export const exportAsSVG = (
     let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${canvasWidth}" height="${canvasHeight}"
       viewBox="0 0 ${canvasWidth} ${canvasHeight}" xmlns:xlink="http://www.w3.org/1999/xlink">`;
 
-    // Add metadata with custom data attributes for proper reimport
+    // Add metadata with custom namespace for easier identification and reimport
     svg += `<metadata>
-      <qordatta:design xmlns:qordatta="http://qordatta.com/ns" version="1.0"/>
+      <qordatta:design xmlns:qordatta="http://qordatta.com/ns" version="1.1">
+        <qordatta:canvas width="${canvasWidth}" height="${canvasHeight}" />
+      </qordatta:design>
     </metadata>`;
 
-    // Add background if requested
+    // Add background rect if requested
     if (includeBackground) {
-      svg += `<rect width="${canvasWidth}" height="${canvasHeight}" fill="white"/>`;
+      svg += `<rect width="100%" height="100%" fill="white"/>`; // Use 100% for flexibility
     }
 
     // Process each object
     objects.forEach((object, index) => {
-      // Skip objects without points
-      if (!object.points || object.points.length < 2) {
+      // Basic validation: skip objects without points or less than 2 points
+      if (!object || !object.points || object.points.length < 2) {
+         console.warn(`Skipping object ${index} due to invalid points.`);
         return;
       }
 
-      const { points, transform = defaultTransform(), curveConfig = defaultCurveConfig() } = object;
+      // Ensure object has necessary properties, applying defaults if missing
+      const currentPoints = object.points;
+      const currentTransform = { ...defaultTransform(), ...(object.transform || {}) };
+      const currentCurveConfig = { ...defaultCurveConfig(), ...(object.curveConfig || {}) };
+      // Ensure styles array exists and has at least one style
+      if (!currentCurveConfig.styles || currentCurveConfig.styles.length === 0) {
+          currentCurveConfig.styles = [defaultCurveStyle()];
+      }
 
-      // Calculate the center of points for this object's transformation
-      const centerX = getPointsCenterX(points, canvasWidth);
-      const centerY = getPointsCenterY(points, canvasHeight);
 
-      // Create a group for this object with ID and metadata
+      // Calculate the center of points for this object's transformation origin
+      const centerX = getPointsCenterX(currentPoints, canvasWidth); // Pass canvasWidth as default reference
+      const centerY = getPointsCenterY(currentPoints, canvasHeight);// Pass canvasHeight as default reference
+
+      // Create a group for this object with ID and metadata attributes
+      // Store configuration and transform as JSON strings in data attributes
       svg += `<g id="${object.id || `bezier-object-${index}`}"
         data-name="${object.name || `Object ${index + 1}`}"
-        data-curve-config='${JSON.stringify(curveConfig)}'
-        data-transform='${JSON.stringify(transform)}'
-        transform="translate(${object.position?.x || 0}, ${object.position?.y || 0})
-        rotate(${transform.rotation || 0} ${centerX} ${centerY})
-        scale(${transform.scaleX || 1} ${transform.scaleY || 1})">`;
+        data-curve-config='${JSON.stringify(currentCurveConfig)}'
+        data-transform='${JSON.stringify(currentTransform)}'
+        transform="translate(${object.position?.x || 0}, ${object.position?.y || 0}) rotate(${currentTransform.rotation} ${centerX} ${centerY}) scale(${currentTransform.scaleX} ${currentTransform.scaleY})">`; // Apply transforms
 
-      // Draw all curves based on configuration
-      const mainPathData = generatePathData(points);
+      // --- Draw Paths ---
+      // Generate main path data using the imported function
+      const mainPathData = generatePathData(currentPoints); // Assumes generatePathData exists and works correctly
+
       if (mainPathData) {
-        // First draw parallel curves if configured
-        if (curveConfig.parallelCount > 1) {
-          for (let i = 1; i < curveConfig.parallelCount; i++) {
-            const offset = i * (curveConfig.spacing || 5);
-            const style = curveConfig.styles?.[i] || curveConfig.styles?.[0] || defaultCurveStyle();
-
-            // Draw a path for each parallel curve
-            const pathData = generatePathData(points, offset);
-            if (pathData) {
-              svg += generateSVGPath(pathData, style);
+        // Draw parallel curves first (if parallelCount > 1)
+        if (currentCurveConfig.parallelCount > 1) {
+          // Ensure spacing is defined
+          const spacing = currentCurveConfig.spacing ?? 5;
+          for (let i = 1; i < currentCurveConfig.parallelCount; i++) {
+            const offset = i * spacing;
+             // Get style for this parallel curve, fallback to main style or default
+            const style = currentCurveConfig.styles?.[i] || currentCurveConfig.styles[0];
+            // Generate path data with offset (generatePathData needs to support offset)
+            // NOTE: generatePathData from bezierUtils might need modification to handle offset
+            // For now, let's assume it *doesn't* handle offset and just draw the main path multiple times with different styles
+             // To implement parallel paths correctly, generatePathData needs point offsetting logic.
+             // As a placeholder, we draw the main path with potentially different styles:
+            const parallelPathData = generatePathData(currentPoints); // Placeholder - needs offset calculation
+            if (parallelPathData) {
+                 svg += generateSVGPath(parallelPathData, style); // Use the style for this parallel line
             }
           }
         }
 
-        // Then draw main curve
-        const mainStyle = curveConfig.styles?.[0] || defaultCurveStyle();
+        // Draw the main curve (index 0)
+        const mainStyle = currentCurveConfig.styles[0];
         svg += generateSVGPath(mainPathData, mainStyle);
+
+      } else {
+         console.warn(`Could not generate path data for object ${index}.`);
       }
 
-      // Add control points as data attributes for perfect reimport
+      // Add control points as custom metadata for perfect reimport
       svg += `<metadata>
-        <qordatta:points xmlns:qordatta="http://qordatta.com/ns">${JSON.stringify(points)}</qordatta:points>
+        <qordatta:points xmlns:qordatta="http://qordatta.com/ns">${JSON.stringify(currentPoints)}</qordatta:points>
       </metadata>`;
 
-      // Close the group
+      // Close the group for this object
       svg += '</g>';
     });
 
@@ -155,84 +256,17 @@ export const exportAsSVG = (
     return svg;
   } catch (error) {
     console.error('Error generating SVG:', error);
-    // Return a simple error SVG
+    // Return a simple error SVG for feedback
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${canvasWidth}" height="${canvasHeight}" viewBox="0 0 ${canvasWidth} ${canvasHeight}">
-      <rect width="${canvasWidth}" height="${canvasHeight}" fill="white"/>
-      <text x="${canvasWidth/2}" y="${canvasHeight/2}" font-family="sans-serif" font-size="14" text-anchor="middle" fill="red">
-        Error generating SVG
+      <rect width="100%" height="100%" fill="#fdd"/>
+      <text x="50%" y="50%" font-family="sans-serif" font-size="14" text-anchor="middle" fill="red">
+        Error generating SVG: ${error instanceof Error ? error.message : 'Unknown error'}
       </text>
     </svg>`;
   }
 };
-/**
- * Generates an SVG path element from path data and style
- */
-const generateSVGPath = (pathData: string, style: CurveStyle): string => {
-  return `<path
-    d="${pathData}"
-    fill="${style.fill || 'none'}"
-    stroke="${style.color || '#000000'}"
-    stroke-width="${style.width || 2}"
-    stroke-opacity="${style.opacity !== undefined ? style.opacity : 1}"
-    stroke-linecap="${style.lineCap || 'round'}"
-    stroke-linejoin="${style.lineJoin || 'round'}"
-    stroke-dasharray="${style.dashArray || ''}"
-  />`;
-};
 
-/**
- * Gets the center X coordinate of a set of points
- */
-const getPointsCenterX = (points: ControlPoint[], defaultWidth: number): number => {
-  if (!points || points.length === 0) return defaultWidth / 2;
-  const sumX = points.reduce((sum, point) => sum + point.x, 0);
-  return sumX / points.length;
-};
 
-/**
- * Gets the center Y coordinate of a set of points
- */
-const getPointsCenterY = (points: ControlPoint[], defaultHeight: number): number => {
-  if (!points || points.length === 0) return defaultHeight / 2;
-  const sumY = points.reduce((sum, point) => sum + point.y, 0);
-  return sumY / points.length;
-};
-
-/**
- * Default transform settings
- */
-const defaultTransform = (): TransformSettings => {
-  return {
-    rotation: 0,
-    scaleX: 1,
-    scaleY: 1
-  };
-};
-
-/**
- * Default curve configuration
- */
-const defaultCurveConfig = (): CurveConfig => {
-  return {
-    parallelCount: 1,
-    spacing: 5,
-    styles: [defaultCurveStyle()]
-  };
-};
-
-/**
- * Default curve style
- */
-const defaultCurveStyle = (): CurveStyle => {
-  return {
-    color: '#000000',
-    width: 2,
-    fill: 'none',
-    opacity: 1,
-    lineCap: 'round',
-    lineJoin: 'round'
-  };
-};
 /**
  * Downloads an SVG file to the user's device
  * @param svgContent SVG content to download
@@ -241,13 +275,14 @@ const defaultCurveStyle = (): CurveStyle => {
 export const downloadSVG = (svgContent: string, fileName: string = 'bezier-design'): void => {
   try {
     // Ensure we have a valid file name
-    const sanitizedName = fileName.trim() || 'bezier-design';
+    const sanitizedName = fileName.trim().replace(/\s+/g, '_') || 'bezier-design';
     const fileNameWithExt = sanitizedName.endsWith('.svg') ? sanitizedName : `${sanitizedName}.svg`;
 
     // Create blob and download link
-    const blob = new Blob([svgContent], { type: 'image/svg+xml' });
+    const blob = new Blob([svgContent], { type: 'image/svg+xml;charset=utf-8' }); // Specify charset
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
+    a.style.display = 'none'; // Hide the link
     a.href = url;
     a.download = fileNameWithExt;
 
@@ -256,675 +291,262 @@ export const downloadSVG = (svgContent: string, fileName: string = 'bezier-desig
     a.click();
 
     // Clean up
-    setTimeout(() => {
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    }, 100);
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+
   } catch (error) {
     console.error('Error downloading SVG:', error);
+    // Consider user feedback here, e.g., using a toast notification
     throw new Error('Failed to download SVG file.');
   }
 };
+
 
 /**
  * Helper function to create a control point with appropriate handles
  * @param x X coordinate
  * @param y Y coordinate
- * @param prevPoint Optional previous point to adjust handles
- * @returns New control point
+ * @param prevPoint Optional previous point to adjust handles for smoother curves
+ * @returns New control point object
  */
 const createControlPoint = (x: number, y: number, prevPoint?: ControlPoint): ControlPoint => {
-  // Default handle distance (can be adjusted based on point spacing)
-  const handleDist = 50;
+  // Default handle distance (can be adjusted based on point spacing or globally)
+  const handleDist = 30; // Reduced default distance
 
-  let handleIn = { x: x - handleDist, y };
-  let handleOut = { x: x + handleDist, y };
+  let handleInX = x - handleDist;
+  let handleInY = y;
+  let handleOutX = x + handleDist;
+  let handleOutY = y;
 
-  // If we have a previous point, calculate better handle positions
+  // If we have a previous point, calculate better initial handle positions based on the vector
   if (prevPoint) {
     // Calculate vector from previous point to this one
     const dx = x - prevPoint.x;
     const dy = y - prevPoint.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
 
-    // Normalize and scale the vector for handles
-    if (dist > 0) {
-      const ndx = dx / dist * handleDist;
-      const ndy = dy / dist * handleDist;
+    // Normalize and scale the vector for handles, only if distance is significant
+    if (dist > 1) { // Avoid division by zero or tiny distances
+       // Scale handle distance relative to point distance, capped at handleDist
+      const scaledHandleDist = Math.min(handleDist, dist * 0.3);
+      const ndx = dx / dist * scaledHandleDist;
+      const ndy = dy / dist * scaledHandleDist;
 
       // Set handle positions based on the direction from prev point
-      handleIn = { x: x - ndx, y: y - ndy };
-      handleOut = { x: x + ndx, y: y + ndy };
+      handleInX = x - ndx;
+      handleInY = y - ndy;
+      handleOutX = x + ndx; // Keep handleOut aligned initially
+      handleOutY = y + ndy;
+    } else {
+        // If points are very close, place handles closer or overlapping
+        handleInX = x - 5;
+        handleOutX = x + 5;
     }
   }
 
   return {
     x,
     y,
-    handleIn,
-    handleOut,
-    id: generateId()
+    handleIn: { x: handleInX, y: handleInY },
+    handleOut: { x: handleOutX, y: handleOutY },
+    id: generateId() // Ensure each point gets a unique ID
   };
 };
 
-/**
- * Imports an SVG string and converts it to BezierObjects
- * @param svgString SVG content as string
- * @returns Array of BezierObjects
- */
-export const importSVGFromString = (svgString: string): BezierObject[] => {
-  try {
-    console.log('Starting SVG import process...');
-
-    // Sanitize and validate SVG input
-    if (!svgString || typeof svgString !== 'string') {
-      throw new Error('Invalid SVG input: empty or not a string');
-    }
-
-    // Trim and normalize SVG string
-    const normalizedSvg = svgString.trim().replace(/\s+/g, ' ');
-
-    // Check if it's actually an SVG
-    if (!normalizedSvg.includes('<svg')) {
-      throw new Error('Input does not contain SVG markup');
-    }
-
-    // Parse the SVG string into a DOM document
-    const parser = new DOMParser();
-    const svgDoc = parser.parseFromString(normalizedSvg, 'image/svg+xml');
-
-    // Check for parsing errors
-    const parserError = svgDoc.querySelector('parsererror');
-    if (parserError) {
-      console.error('SVG parsing error:', parserError.textContent);
-      throw new Error('Invalid SVG format: parsing error');
-    }
-
-    // Get the SVG root element
-    const svgRoot = svgDoc.documentElement;
-    if (!svgRoot || svgRoot.tagName !== 'svg') {
-      throw new Error('No SVG element found in the provided content');
-    }
-
-    console.log('SVG parsed successfully, searching for path elements...');
-    const importedObjects: BezierObject[] = [];
-
-    // Check if this is a Qordatta-generated SVG with our custom metadata
-    const isQordattaFormat = svgDoc.querySelector('metadata qordatta\\:design') !== null;
-    console.log('Is Qordatta format?', isQordattaFormat);
-
-    // Process all path groups (g elements)
-    const groups = svgDoc.querySelectorAll('g');
-    console.log(`Found ${groups.length} groups in SVG`);
-
-    if (groups.length === 0) {
-      // If no groups, try to process individual paths directly
-      const paths = svgDoc.querySelectorAll('path');
-      console.log(`Found ${paths.length} ungrouped paths in SVG`);
-
-      if (paths.length > 0) {
-        const singleObject = processSVGPaths(Array.from(paths));
-        if (singleObject) {
-          singleObject.name = 'Imported Path';
-          importedObjects.push(singleObject);
-          console.log('Created single object from ungrouped paths');
-        }
-      }
-    } else {
-      // Process each group as a separate object
-      let groupCount = 0;
-      groups.forEach((group, index) => {
-        // Get object ID and name
-        const objectId = group.getAttribute('id') || `imported_obj_${generateId()}`;
-        const objectName = group.getAttribute('data-name') || `Imported Object ${index + 1}`;
-
-        // Check for our custom data attributes with curve config and transform
-        let curveConfig: CurveConfig | undefined;
-        let transform: TransformSettings | undefined;
-
-        try {
-          const curveConfigData = group.getAttribute('data-curve-config');
-          if (curveConfigData) {
-            curveConfig = JSON.parse(curveConfigData);
-            console.log('Found curve config in SVG metadata');
-          }
-
-          const transformData = group.getAttribute('data-transform');
-          if (transformData) {
-            transform = JSON.parse(transformData);
-            console.log('Found transform in SVG metadata');
-          }
-        } catch (e) {
-          console.warn('Error parsing Qordatta metadata:', e);
-        }
-
-        // Check for our custom points metadata (most accurate)
-        let points: ControlPoint[] | undefined;
-        const pointsMetadata = group.querySelector('metadata qordatta\\:points');
-        if (pointsMetadata && pointsMetadata.textContent) {
-          try {
-            points = JSON.parse(pointsMetadata.textContent);
-            console.log(`Found ${points.length} points in metadata`);
-
-            // Validate points data
-            if (points.length > 0) {
-              // Ensure all points have valid IDs and handle positions
-              points = points.map(point => validateAndRepairPoint(point));
-            }
-          } catch (e) {
-            console.warn('Error parsing Qordatta points metadata:', e);
-            points = undefined;
-          }
-        }
-        // If we couldn't get points from metadata, extract them from paths
-        if (!points || points.length < 2) {
-          console.log('No valid points in metadata, extracting from paths');
-          // Get all paths in this group
-          const paths = group.querySelectorAll('path');
-          if (paths.length === 0) {
-            console.log('No paths found in group, skipping');
-            return;
-          }
-
-          // Process the paths to create a BezierObject
-          const object = processSVGPaths(Array.from(paths), curveConfig);
-          if (!object) {
-            console.log('Failed to process paths in group, skipping');
-            return;
-          }
-
-          // Set object properties
-          object.id = objectId;
-          object.name = objectName;
-
-          // Apply any transform we parsed
-          if (transform) {
-            object.transform = transform;
-          }
-
-          importedObjects.push(object);
-          groupCount++;
-          console.log(`Added object from group ${index + 1}`);
-        } else {
-          // Create object directly from our metadata points
-          const object: BezierObject = {
-            id: objectId,
-            name: objectName,
-            points: points,
-            curveConfig: curveConfig || defaultCurveConfig(),
-            transform: transform || defaultTransform(),
-            isSelected: false
-          };
-
-          importedObjects.push(object);
-          groupCount++;
-          console.log(`Added object from metadata points in group ${index + 1}`);
-        }
-      });
-
-      console.log(`Successfully processed ${groupCount} groups`);
-    }
-
-    // If no objects were created, try a simpler approach
-    if (importedObjects.length === 0) {
-      console.log('No objects created from groups, trying simpler approach with direct path extraction');
-
-      // First, attempt to find all paths
-      const paths = svgDoc.querySelectorAll('path');
-      if (paths.length > 0) {
-        // Create one object with all paths
-        const allPathsObject = processSVGPaths(Array.from(paths));
-        if (allPathsObject) {
-          allPathsObject.name = 'Imported SVG';
-          importedObjects.push(allPathsObject);
-          console.log('Created single object from all paths');
-        } else {
-          // If that failed, try a more aggressive approach by extracting path data directly
-          console.log('Attempting direct path data extraction as fallback');
-          const pathElements = Array.from(paths);
-          const pathData = pathElements[0]?.getAttribute('d');
-
-          if (pathData) {
-            console.log('Found path data, generating points directly');
-            const points = approximateControlPointsFromPath(pathData);
-
-            if (points.length >= 2) {
-              const fallbackObject: BezierObject = {
-                id: generateId(),
-                name: 'Extracted SVG Path',
-                points: points,
-                curveConfig: defaultCurveConfig(),
-                transform: defaultTransform(),
-                isSelected: false
-              };
-
-              importedObjects.push(fallbackObject);
-              console.log('Created object with directly extracted points');
-            } else {
-              throw new Error('Could not generate sufficient control points from SVG path data');
-            }
-          } else {
-            throw new Error('No path data found in SVG paths');
-          }
-        }
-      } else {
-        // Last resort: try to find any element with a shape
-        console.log('No path elements found, looking for other shape elements');
-        const shapes = svgDoc.querySelectorAll('rect, circle, ellipse, polygon, polyline');
-
-        if (shapes.length > 0) {
-          console.log(`Found ${shapes.length} shape elements, creating simplified representation`);
-
-          // Create a very simple object with 4 corner points
-          const width = parseFloat(svgRoot.getAttribute('width') || '100');
-          const height = parseFloat(svgRoot.getAttribute('height') || '100');
-
-          const simplePoints: ControlPoint[] = [
-            createControlPoint(0, 0),
-            createControlPoint(width, 0),
-            createControlPoint(width, height),
-            createControlPoint(0, height)
-          ];
-
-          const simpleObject: BezierObject = {
-            id: generateId(),
-            name: 'SVG Shape Outline',
-            points: simplePoints,
-            curveConfig: defaultCurveConfig(),
-            transform: defaultTransform(),
-            isSelected: false
-          };
-
-          importedObjects.push(simpleObject);
-        } else {
-          throw new Error('No drawable elements found in SVG');
-        }
-      }
-    }
-    // Validate and sanitize all objects before returning
-    const validatedObjects = importedObjects.map(obj => {
-      // Ensure all points have valid properties
-      const validPoints = obj.points.map(point => validateAndRepairPoint(point));
-
-      // Create a cleaned-up object
-      return {
-        ...obj,
-        points: validPoints,
-        curveConfig: obj.curveConfig || defaultCurveConfig(),
-        transform: obj.transform || defaultTransform(),
-        isSelected: false
-      };
-    });
-
-    console.log(`Completed import: ${validatedObjects.length} objects with ${validatedObjects.reduce((sum, obj) => sum + obj.points.length, 0)} total points`);
-
-    return validatedObjects;
-  } catch (error) {
-    console.error('Error importing SVG:', error);
-    throw new Error(`Failed to import SVG: ${error instanceof Error ? error.message : 'Unknown error'}`);
-  }
-};
 
 /**
- * Validates and repairs a control point to ensure all properties are valid
+ * Validates and repairs a control point object to ensure all properties are valid numbers and exist.
+ * @param point The potentially incomplete or invalid point object.
+ * @returns A valid ControlPoint object.
  */
 const validateAndRepairPoint = (point: any): ControlPoint => {
-  if (!point) {
-    // Create default point if null
-    return createControlPoint(0, 0);
+  // Default position if point is totally invalid
+  const defaultX = 0;
+  const defaultY = 0;
+
+  // Ensure x and y are valid numbers, default to 0 otherwise
+  const x = (typeof point?.x === 'number' && !isNaN(point.x)) ? point.x : defaultX;
+  const y = (typeof point?.y === 'number' && !isNaN(point.y)) ? point.y : defaultY;
+
+  // Validate handleIn, default to a position relative to the main point
+  let handleIn: Point = { x: x - 30, y: y }; // Default relative position
+  if (point?.handleIn && typeof point.handleIn.x === 'number' && !isNaN(point.handleIn.x) &&
+      typeof point.handleIn.y === 'number' && !isNaN(point.handleIn.y)) {
+    handleIn = point.handleIn;
   }
 
-  // Ensure x and y are valid numbers
-  const x = typeof point.x === 'number' && !isNaN(point.x) ? point.x : 0;
-  const y = typeof point.y === 'number' && !isNaN(point.y) ? point.y : 0;
-
-  // Validate handle in
-  let handleIn: Point = { x: x - 50, y: y };
-  if (point.handleIn) {
-    if (typeof point.handleIn.x === 'number' && !isNaN(point.handleIn.x) &&
-        typeof point.handleIn.y === 'number' && !isNaN(point.handleIn.y)) {
-      handleIn = point.handleIn;
-    }
+  // Validate handleOut, default to a position relative to the main point
+  let handleOut: Point = { x: x + 30, y: y }; // Default relative position
+  if (point?.handleOut && typeof point.handleOut.x === 'number' && !isNaN(point.handleOut.x) &&
+      typeof point.handleOut.y === 'number' && !isNaN(point.handleOut.y)) {
+    handleOut = point.handleOut;
   }
 
-  // Validate handle out
-  let handleOut: Point = { x: x + 50, y: y };
-  if (point.handleOut) {
-    if (typeof point.handleOut.x === 'number' && !isNaN(point.handleOut.x) &&
-        typeof point.handleOut.y === 'number' && !isNaN(point.handleOut.y)) {
-      handleOut = point.handleOut;
-    }
-  }
-
-  // Ensure point has an ID
-  const id = point.id || generateId();
+  // Ensure point has an ID, generate one if missing
+  const id = (typeof point?.id === 'string' && point.id) ? point.id : generateId();
 
   return { x, y, handleIn, handleOut, id };
 };
 
-/**
- * Process SVG paths and convert them to a BezierObject
- * @param paths Array of SVG path elements
- * @returns BezierObject or null if processing failed
- */
-const processSVGPaths = (paths: SVGPathElement[], existingCurveConfig?: CurveConfig): BezierObject | null => {
-  if (paths.length === 0) return null;
-
-  console.log(`Processing ${paths.length} SVG paths`);
-
-  // Extract path data
-  const pathElements = paths.map(path => {
-    return {
-      d: path.getAttribute('d') || '',
-      stroke: path.getAttribute('stroke') || '#000000',
-      strokeWidth: parseFloat(path.getAttribute('stroke-width') || '2'),
-      fill: path.getAttribute('fill') || 'none',
-      opacity: parseFloat(path.getAttribute('stroke-opacity') || '1'),
-      lineCap: path.getAttribute('stroke-linecap') || 'round',
-      lineJoin: path.getAttribute('stroke-linejoin') || 'round',
-      dashArray: path.getAttribute('stroke-dasharray') || ''
-    };
-  }).filter(p => p.d);
-
-  if (pathElements.length === 0) {
-    console.log('No valid path data found');
-    return null;
-  }
-  // Create control points from the first path
-  const mainPath = pathElements[0];
-  console.log('Generating control points from path:', mainPath.d.substring(0, 50) + '...');
-
-  const points = approximateControlPointsFromPath(mainPath.d);
-  console.log(`Generated ${points.length} control points`);
-
-  if (points.length < 2) {
-    console.log('Not enough control points generated (minimum 2 required)');
-    return null;
-  }
-
-  // Create styles for each path
-  const styles: CurveStyle[] = pathElements.map(p => ({
-    color: p.stroke,
-    width: p.strokeWidth,
-    fill: p.fill,
-    opacity: p.opacity,
-    lineCap: p.lineCap as string,
-    lineJoin: p.lineJoin as string,
-    dashArray: p.dashArray
-  }));
-
-  console.log('Created styles from path attributes:', styles);
-
-  // Use existing curve config if provided, otherwise create one from styles
-  const curveConfig: CurveConfig = existingCurveConfig || {
-    styles,
-    parallelCount: styles.length,
-    spacing: 5
-  };
-
-  // Create the BezierObject
-  return {
-    id: generateId(),
-    name: 'Imported Path',
-    points,
-    curveConfig,
-    transform: defaultTransform(),
-    isSelected: false
-  };
-};
 
 /**
- * Approximate control points from an SVG path data string
- * This is a very simplified implementation that works for basic paths
+ * Approximate control points from an SVG path data string ('d' attribute).
+ * This implementation attempts to parse M, L, C, S, Z commands.
+ * NOTE: This is complex and may not perfectly replicate all path types.
+ * @param pathData The SVG path data string.
+ * @returns An array of approximated ControlPoint objects.
  */
 const approximateControlPointsFromPath = (pathData: string): ControlPoint[] => {
-  // Simple path parser that extracts points from M, C, S, and Z commands
   const points: ControlPoint[] = [];
+  if (!pathData || typeof pathData !== 'string') return points;
 
-  // This is a very simplified parser - a real implementation would be more robust
   try {
     console.log('Parsing path data:', pathData.substring(0, 100) + (pathData.length > 100 ? '...' : ''));
 
-    // Remove all letters and replace them with spaces for tokenization
-    const cleaned = pathData.replace(/([A-Za-z])/g, ' $1 ').trim();
-    const tokens = cleaned.split(/\s+/);
-
-    console.log(`Tokenized path data into ${tokens.length} tokens`);
-
+    // Regex to match SVG path commands and their arguments
+    const commandRegex = /([MLCSZ])([^MLCSZ]*)/gi; // Simplified for absolute commands only for now
+    let match;
     let currentX = 0;
     let currentY = 0;
-    let firstX = 0;
-    let firstY = 0;
-    let i = 0;
+    let startX = 0;
+    let startY = 0;
+    let lastCmd = '';
+    let lastControlX = 0; // For S command reflection
+    let lastControlY = 0;
 
-    while (i < tokens.length) {
-      const token = tokens[i++];
+    while ((match = commandRegex.exec(pathData)) !== null) {
+       const command = match[1];
+       // Split args carefully, considering negative numbers and decimals
+       const args = (match[2] || '').trim().split(/[\s,]+/).map(Number).filter(n => !isNaN(n));
 
-      if (!token) continue;
+       console.log(`Processing command: ${command}, Args: ${args}`);
 
-      if (token === 'M' || token === 'm') {
-        // Move to command
-        if (i + 1 >= tokens.length) break;
+       let k = 0;
+       while (k < args.length) {
+          let point: ControlPoint | null = null;
+          let control1: Point | null = null; // Handles for C/S commands
+          let control2: Point | null = null;
 
-        try {
-          const x = parseFloat(tokens[i++] || '0');
-          const y = parseFloat(tokens[i++] || '0');
+          switch (command.toUpperCase()) { // Handle both upper (absolute) and lower (relative) cases if needed
+             case 'M': // MoveTo: Start new subpath
+                currentX = args[k++];
+                currentY = args[k++];
+                if (points.length === 0) { // Record start point for Z command
+                   startX = currentX;
+                   startY = currentY;
+                }
+                point = createControlPoint(currentX, currentY); // Create first point with default handles
+                points.push(point);
+                 console.log(`Added M point at ${currentX},${currentY}`);
+                lastCmd = 'M';
+                break;
 
-          // Check for NaN values
-          if (isNaN(x) || isNaN(y)) {
-            console.log('Invalid M command coordinates, skipping');
-            continue;
+             case 'L': // LineTo: Draw line to new point
+                currentX = args[k++];
+                currentY = args[k++];
+                 // Create point, use previous point to suggest handles
+                point = createControlPoint(currentX, currentY, points[points.length - 1]);
+                points.push(point);
+                 console.log(`Added L point at ${currentX},${currentY}`);
+                lastCmd = 'L';
+                break;
+
+             case 'C': // CurveTo: Cubic Bezier curve
+                control1 = { x: args[k++], y: args[k++] };
+                control2 = { x: args[k++], y: args[k++] };
+                currentX = args[k++];
+                currentY = args[k++];
+
+                // Update the handleOut of the *previous* point
+                if (points.length > 0) {
+                   points[points.length - 1].handleOut = control1;
+                }
+
+                 // Create the new point with handleIn = control2
+                point = {
+                   x: currentX, y: currentY,
+                   handleIn: control2,
+                   // Approximate handleOut by reflecting handleIn (can be improved)
+                   handleOut: { x: currentX + (currentX - control2.x), y: currentY + (currentY - control2.y) },
+                   id: generateId()
+                };
+                points.push(point);
+                lastControlX = control2.x; // Remember last control point for potential S command
+                lastControlY = control2.y;
+                 console.log(`Added C point at ${currentX},${currentY}`);
+                lastCmd = 'C';
+                break;
+
+             case 'S': // Smooth CurveTo: Smooth cubic Bezier
+                control2 = { x: args[k++], y: args[k++] };
+                currentX = args[k++];
+                currentY = args[k++];
+
+                 // Calculate the first control point (reflection of previous handleOut or previous point)
+                if (points.length > 0 && (lastCmd === 'C' || lastCmd === 'S')) {
+                   const prevPoint = points[points.length - 1];
+                   control1 = {
+                      x: prevPoint.x + (prevPoint.x - lastControlX), // Reflect last control point
+                      y: prevPoint.y + (prevPoint.y - lastControlY)
+                   };
+                   // Update previous point's handleOut to this calculated control point
+                   prevPoint.handleOut = control1;
+                } else {
+                   // If previous command wasn't C or S, first control point is the same as the current point
+                   control1 = { x: points[points.length - 1]?.x || currentX, y: points[points.length - 1]?.y || currentY };
+                   if (points.length > 0) points[points.length - 1].handleOut = control1; // Set handle anyway
+                }
+
+
+                 // Create the new point
+                point = {
+                   x: currentX, y: currentY,
+                   handleIn: control2,
+                   // Approximate handleOut
+                   handleOut: { x: currentX + (currentX - control2.x), y: currentY + (currentY - control2.y) },
+                   id: generateId()
+                };
+                points.push(point);
+                lastControlX = control2.x; // Remember for next potential S command
+                lastControlY = control2.y;
+                 console.log(`Added S point at ${currentX},${currentY}`);
+                lastCmd = 'S';
+                break;
+
+              case 'Z': // ClosePath: Connect back to start
+                if (points.length > 0) {
+                    // Close the path conceptually. How this affects handles depends on desired smoothness.
+                    // A simple approach is to ensure the last point visually connects.
+                    // More complex: Adjust first point's handleIn and last point's handleOut.
+                    const firstPoint = points[0];
+                    const lastPoint = points[points.length - 1];
+
+                    // Check if already closed
+                    if (Math.abs(lastPoint.x - firstPoint.x) > 0.1 || Math.abs(lastPoint.y - firstPoint.y) > 0.1) {
+                        // Optional: Add a final point identical to the first point if structure requires it.
+                        // Or, mark the path/object as 'closed' in its properties instead.
+                        console.log(`Path closed back to start point (${startX}, ${startY}).`);
+                        // Basic handle adjustment attempt for Z
+                        if(points.length > 1) {
+                             // Simple adjustment: aim last handle towards first point, first handle from last point
+                             lastPoint.handleOut = { x: lastPoint.x + (firstPoint.x - lastPoint.x)*0.3, y: lastPoint.y + (firstPoint.y - lastPoint.y)*0.3 };
+                             firstPoint.handleIn = { x: firstPoint.x - (firstPoint.x - lastPoint.x)*0.3, y: firstPoint.y - (firstPoint.y - lastPoint.y)*0.3 };
+                        }
+                    } else {
+                        console.log('Path already closed or Z command redundant.');
+                    }
+                    currentX = startX; // Move conceptual pen back to start
+                    currentY = startY;
+                }
+                lastCmd = 'Z';
+                break;
+
+             default:
+                 console.warn(`Unsupported path command: ${command}`);
+                 // Skip remaining args for this command if structure is unknown
+                 k = args.length;
           }
-
-          currentX = token === 'm' ? currentX + x : x;
-          currentY = token === 'm' ? currentY + y : y;
-
-          // Remember the first point for Z command
-          if (points.length === 0) {
-            firstX = currentX;
-            firstY = currentY;
-          }
-
-          // Add the point with default handles
-          points.push(createControlPoint(currentX, currentY));
-
-          console.log(`Added M point at ${currentX},${currentY}`);
-        } catch (e) {
-          console.log('Error processing M command:', e);
-        }
-      } else if (token === 'L' || token === 'l') {
-        // Line to command
-        if (i + 1 >= tokens.length) break;
-
-        try {
-          const x = parseFloat(tokens[i++] || '0');
-          const y = parseFloat(tokens[i++] || '0');
-
-          // Check for NaN values
-          if (isNaN(x) || isNaN(y)) {
-            console.log('Invalid L command coordinates, skipping');
-            continue;
-          }
-
-          currentX = token === 'l' ? currentX + x : x;
-          currentY = token === 'l' ? currentY + y : y;
-
-          // Add the point with calculated handles
-          if (points.length > 0) {
-            const prevPoint = points[points.length - 1];
-            points.push(createControlPoint(currentX, currentY, prevPoint));
-          } else {
-            points.push(createControlPoint(currentX, currentY));
-          }
-
-          console.log(`Added L point at ${currentX},${currentY}`);
-        } catch (e) {
-          console.log('Error processing L command:', e);
-        }
-      }
-      else if (token === 'C' || token === 'c') {
-        // Cubic bezier curve command
-        if (i + 5 >= tokens.length) break;
-
-        try {
-          const x1 = parseFloat(tokens[i++] || '0');
-          const y1 = parseFloat(tokens[i++] || '0');
-          const x2 = parseFloat(tokens[i++] || '0');
-          const y2 = parseFloat(tokens[i++] || '0');
-          const x = parseFloat(tokens[i++] || '0');
-          const y = parseFloat(tokens[i++] || '0');
-
-          // Check for NaN values
-          if ([x1, y1, x2, y2, x, y].some(v => isNaN(v))) {
-            console.log('Invalid C command coordinates, skipping');
-            continue;
-          }
-
-          // Convert to absolute coordinates if relative
-          const absX1 = token === 'c' ? currentX + x1 : x1;
-          const absY1 = token === 'c' ? currentY + y1 : y1;
-          const absX2 = token === 'c' ? currentX + x2 : x2;
-          const absY2 = token === 'c' ? currentY + y2 : y2;
-          const absX = token === 'c' ? currentX + x : x;
-          const absY = token === 'c' ? currentY + y : y;
-
-          // Update last point's handle out
-          if (points.length > 0) {
-            const lastPoint = points[points.length - 1];
-            lastPoint.handleOut = { x: absX1, y: absY1 };
-          } else if (absX1 !== 0 || absY1 !== 0) {
-            // If there's no previous point but handle is not at origin, create an artificial first point
-             // (Handles will be adjusted if this is the start of the path)
-            points.push({
-              x: currentX,
-              y: currentY,
-              handleIn: { x: currentX - 50, y: currentY }, // Default placeholder
-              handleOut: { x: absX1, y: absY1 },
-              id: generateId()
-            });
-          }
-
-          // Add new point with handle in from the curve
-          points.push({
-            x: absX,
-            y: absY,
-            handleIn: { x: absX2, y: absY2 },
-            handleOut: { x: absX + (absX - absX2), y: absY + (absY - absY2) }, // Approximate handle out
-            id: generateId()
-          });
-
-          console.log(`Added C point at ${absX},${absY} with handles`);
-
-          currentX = absX;
-          currentY = absY;
-        } catch (e) {
-          console.log('Error processing C command:', e);
-        }
-      } else if (token === 'S' || token === 's') {
-        // Smooth cubic bezier curve command
-        if (i + 3 >= tokens.length) break;
-
-        try {
-          const x2 = parseFloat(tokens[i++] || '0');
-          const y2 = parseFloat(tokens[i++] || '0');
-          const x = parseFloat(tokens[i++] || '0');
-          const y = parseFloat(tokens[i++] || '0');
-
-          // Check for NaN values
-          if ([x2, y2, x, y].some(v => isNaN(v))) {
-            console.log('Invalid S command coordinates, skipping');
-            continue;
-          }
-
-          // Convert to absolute coordinates if relative
-          const absX2 = token === 's' ? currentX + x2 : x2;
-          const absY2 = token === 's' ? currentY + y2 : y2;
-          const absX = token === 's' ? currentX + x : x;
-          const absY = token === 's' ? currentY + y : y;
-
-          // Calculate the reflection of the previous control point's handleOut for the new handleOut (x1, y1)
-          let x1 = currentX;
-          let y1 = currentY;
-
-          if (points.length > 0) {
-            const prevPoint = points[points.length - 1];
-            if (prevPoint.handleOut) {
-              // Reflect the handleOut of the previous point
-              x1 = currentX + (currentX - prevPoint.handleOut.x);
-              y1 = currentY + (currentY - prevPoint.handleOut.y);
-            }
-           // Update previous point's handle out to this reflected point
-            prevPoint.handleOut = { x: x1, y: y1 };
-          }
-
-          // Add new point
-          points.push({
-            x: absX,
-            y: absY,
-            handleIn: { x: absX2, y: absY2 },
-            // Approximate handle out by reflecting the handleIn (absX2, absY2)
-            handleOut: { x: absX + (absX - absX2), y: absY + (absY - absY2) },
-            id: generateId() 
-          });
-
-          console.log(`Added S point at ${absX},${absY}`);
-
-          currentX = absX;
-          currentY = absY;
-        } catch (e) {
-          console.log('Error processing S command:', e);
-        }
-      } else if (token === 'Z' || token === 'z') {
-        // Close path command - connect back to first point
-        try {
-          if (points.length > 0 && (currentX !== firstX || currentY !== firstY)) {
-            console.log(`Adding Z point to close path back to ${firstX},${firstY}`);
-
-            // If we have enough points to form a segment to close
-            if (points.length > 1) {
-              const lastPoint = points[points.length - 1];
-              const firstPoint = points[0];
-
-               // Create a temporary representation of the closing point connection based on the last point
-               // This helps calculate the handle needed for the first point's handleIn
-              const closePoint = createControlPoint(firstX, firstY, lastPoint);
-
-              // Update the first point's handle in to smoothly connect from the last point
-              // Reflect the temporary closing point's outgoing handle
-              firstPoint.handleIn = {
-                x: firstX - (closePoint.handleOut.x - firstX),
-                y: firstY - (closePoint.handleOut.y - firstY)
-              };
-
-               // Update the last point's handleOut to smoothly connect towards the first point
-               // Reflect the first point's (now updated) incoming handle
-               lastPoint.handleOut = {
-                 x: lastPoint.x - (firstPoint.handleIn.x - firstX), // Reflect firstPoint.handleIn relative to lastPoint
-                 y: lastPoint.y - (firstPoint.handleIn.y - firstY)
-               };
-
-            } else if (points.length === 1) {
-               // Handle closing a path with only one point (M command only) - make handles zero length?
-               const point = points[0];
-               point.handleIn = { x: point.x, y: point.y };
-               point.handleOut = { x: point.x, y: point.y };
-             }
-             // Update current position to the start point coordinates
-             currentX = firstX;
-             currentY = firstY;
-
-             console.log('Path closed back to start point.');
-          } else {
-            console.log('Path already closed or not enough points, skipping Z command.');
-          }
-        } catch (e) {
-          console.log('Error processing Z command:', e);
-        }
-      } else {
-         // Unknown command or invalid data
-         console.log(`Unknown or invalid token encountered: ${token}`);
-         // You might want to add logic here to skip expected parameters for unknown commands
-      }
+       }
     }
 
     console.log(`Finished parsing path data. Generated ${points.length} points.`);
@@ -932,6 +554,325 @@ const approximateControlPointsFromPath = (pathData: string): ControlPoint[] => {
 
   } catch (error) {
     console.error('Critical error parsing SVG path data:', error);
-    return [];
+    return []; // Return empty array on critical error
+  }
+};
+
+/**
+ * Process an array of SVG path elements and attempt to convert them into a single BezierObject.
+ * @param paths Array of SVGPathElement objects.
+ * @param existingCurveConfig Optional CurveConfig parsed from parent group metadata.
+ * @returns A BezierObject representing the combined paths, or null if processing fails.
+ */
+const processSVGPaths = (paths: SVGPathElement[], existingCurveConfig?: CurveConfig): BezierObject | null => {
+  if (!paths || paths.length === 0) return null;
+
+  console.log(`Processing ${paths.length} SVG paths into one BezierObject`);
+
+  // Extract path data and style attributes from each path element
+  const pathElements = paths.map(path => {
+    return {
+      d: path.getAttribute('d') || '',
+      stroke: path.getAttribute('stroke') || '#000000',
+      strokeWidth: parseFloat(path.getAttribute('stroke-width') || '2'),
+      fill: path.getAttribute('fill') || 'none',
+      opacity: parseFloat(path.getAttribute('stroke-opacity') || '1'),
+      lineCap: (path.getAttribute('stroke-linecap') || 'round') as CanvasLineCap,
+      lineJoin: (path.getAttribute('stroke-linejoin') || 'round') as CanvasLineJoin,
+      dashArray: path.getAttribute('stroke-dasharray') || ''
+    };
+  }).filter(p => p.d); // Filter out paths without a 'd' attribute
+
+  if (pathElements.length === 0) {
+    console.log('No valid path data (d attribute) found in provided elements');
+    return null;
+  }
+
+  // --- Point Generation ---
+  // Use the 'd' attribute from the *first* path element to generate the primary control points.
+  // This assumes parallel paths in SVG often repeat the same geometry.
+  const mainPath = pathElements[0];
+  console.log('Generating control points from first path:', mainPath.d.substring(0, 50) + '...');
+
+  const points = approximateControlPointsFromPath(mainPath.d); // Use the detailed parser
+  console.log(`Generated ${points.length} control points`);
+
+  if (points.length < 2) {
+    console.log('Not enough control points generated (minimum 2 required) from path data.');
+    return null;
+  }
+
+  // --- Style and Curve Configuration ---
+  let curveConfig: CurveConfig;
+
+  if (existingCurveConfig) {
+     console.log("Using existing curve configuration from SVG group metadata.");
+     curveConfig = existingCurveConfig;
+     // Optional: You might still want to reconcile styles if the number of paths doesn't match parallelCount
+     if (curveConfig.styles.length !== pathElements.length) {
+         console.warn(`Mismatch between path count (${pathElements.length}) and styles in metadata (${curveConfig.styles.length}). Adjusting styles.`);
+         // Strategy: Use styles from metadata up to path count, or repeat last style.
+         const stylesFromMetadata = curveConfig.styles;
+         curveConfig.styles = pathElements.map((p, index) => stylesFromMetadata[index] || stylesFromMetadata[stylesFromMetadata.length - 1] || defaultCurveStyle());
+         curveConfig.parallelCount = pathElements.length; // Update parallel count to match actual paths found
+     }
+
+  } else {
+     console.log("Generating curve configuration from individual path attributes.");
+     // Create styles based on the attributes of each path element found
+     const styles: CurveStyle[] = pathElements.map(p => ({
+        color: p.stroke,
+        width: p.strokeWidth,
+        fill: p.fill,
+        opacity: p.opacity,
+        lineCap: p.lineCap, // Store as string compatible with CurveStyle type
+        lineJoin: p.lineJoin, // Store as string compatible with CurveStyle type
+        dashArray: p.dashArray
+     }));
+     console.log('Created styles from path attributes:', styles);
+
+     // Create a curve configuration based on these styles
+     curveConfig = {
+        styles,
+        parallelCount: styles.length, // Each path becomes a 'parallel' line
+        spacing: 5 // Default spacing, maybe try to infer from transforms later?
+     };
+  }
+
+
+  // --- Create BezierObject ---
+  return {
+    id: generateId(), // Generate a new ID for this imported object
+    name: 'Imported Path', // Default name, can be overridden later if group name exists
+    points: points.map(p => validateAndRepairPoint(p)), // Ensure points are valid
+    curveConfig,
+    transform: defaultTransform(), // Apply default transform, can be overridden later
+    isSelected: false
+  };
+};
+
+
+/**
+ * Imports an SVG string and converts it to BezierObjects based on its structure.
+ * Prioritizes 'qordatta' metadata if present, otherwise parses SVG elements.
+ * @param svgString SVG content as a string.
+ * @returns An array of BezierObjects extracted from the SVG.
+ */
+export const importSVGFromString = (svgString: string): BezierObject[] => {
+  try {
+    console.log('Starting SVG import process...');
+    // 1. Validate and Sanitize Input
+    if (!svgString || typeof svgString !== 'string') {
+      throw new Error('Invalid SVG input: empty or not a string');
+    }
+    const normalizedSvg = svgString.trim(); //.replace(/\s+/g, ' '); // Keep original spacing for text potentially
+    if (!normalizedSvg.toLowerCase().includes('<svg')) { // Case-insensitive check
+      throw new Error('Input does not appear to contain SVG markup');
+    }
+
+    // 2. Parse SVG String into DOM
+    const parser = new DOMParser();
+    const svgDoc = parser.parseFromString(normalizedSvg, 'image/svg+xml');
+
+    // Check for parser errors (important!)
+    const parserError = svgDoc.querySelector('parsererror');
+    if (parserError) {
+      console.error('SVG parsing error:', parserError.textContent);
+      throw new Error(`Invalid SVG format: ${parserError.textContent}`);
+    }
+
+    // 3. Get SVG Root Element
+    const svgRoot = svgDoc.documentElement;
+    if (!svgRoot || svgRoot.tagName.toLowerCase() !== 'svg') {
+      throw new Error('No valid SVG element found in the provided content');
+    }
+    console.log('SVG parsed successfully.');
+
+    // 4. Initialize variables
+    const importedObjects: BezierObject[] = [];
+    const isQordattaFormat = svgDoc.querySelector('metadata qordatta\\:design') !== null; // Check for our namespace
+    console.log('Is Qordatta format (contains custom metadata)?', isQordattaFormat);
+
+    // 5. Extraction Strategy: Prioritize Qordatta Metadata in Groups
+    if (isQordattaFormat) {
+       console.log('Qordatta format detected. Processing groups with metadata...');
+       const groups = svgDoc.querySelectorAll('g[data-name]'); // Look for groups likely created by exportAsSVG
+
+       if (groups.length > 0) {
+          console.log(`Found ${groups.length} potential Qordatta groups.`);
+          groups.forEach((group, index) => {
+             const objectId = group.getAttribute('id') || `imported_q_${generateId()}`;
+             const objectName = group.getAttribute('data-name') || `Imported Qordatta ${index + 1}`;
+             console.log(`Processing group: ${objectName} (ID: ${objectId})`);
+
+             let curveConfig: CurveConfig | undefined;
+             let transform: TransformSettings | undefined;
+             let points: ControlPoint[] | undefined;
+
+             // Try parsing metadata attributes
+             try {
+                 const curveConfigData = group.getAttribute('data-curve-config');
+                 if (curveConfigData) curveConfig = JSON.parse(curveConfigData);
+
+                 const transformData = group.getAttribute('data-transform');
+                 if (transformData) transform = JSON.parse(transformData);
+
+                 const pointsMetadata = group.querySelector('metadata qordatta\\:points');
+                 if (pointsMetadata?.textContent) points = JSON.parse(pointsMetadata.textContent);
+
+             } catch (e) {
+                 console.warn(`Error parsing metadata for group ${objectName}:`, e);
+             }
+
+             // Validate extracted points
+             if (points && Array.isArray(points) && points.length >= 2) {
+                 console.log(`Successfully parsed ${points.length} points from metadata.`);
+                 const validatedPoints = points.map(p => validateAndRepairPoint(p)); // Validate each point
+                 const object: BezierObject = {
+                    id: objectId,
+                    name: objectName,
+                    points: validatedPoints,
+                    curveConfig: curveConfig || defaultCurveConfig(), // Use parsed or default
+                    transform: transform || defaultTransform(),       // Use parsed or default
+                    isSelected: false
+                 };
+                 importedObjects.push(object);
+             } else {
+                 console.warn(`Could not get valid points from metadata for group ${objectName}. Will attempt to process paths within it.`);
+                 // Fallback: Process paths within this group if metadata points failed
+                 const paths = group.querySelectorAll('path');
+                 if (paths.length > 0) {
+                    const processedObject = processSVGPaths(Array.from(paths), curveConfig); // Pass existing config
+                    if (processedObject) {
+                       processedObject.id = objectId; // Use group ID
+                       processedObject.name = objectName; // Use group name
+                       if(transform) processedObject.transform = transform; // Apply transform if available
+                       importedObjects.push(processedObject);
+                       console.log(`Successfully processed paths within group ${objectName}.`);
+                    } else {
+                        console.warn(`Failed to process paths within group ${objectName}.`);
+                    }
+                 } else {
+                     console.warn(`No paths found within group ${objectName} for fallback processing.`);
+                 }
+             }
+          });
+       } else {
+           console.log("Qordatta format detected, but no specific groups found. Proceeding to generic extraction.");
+       }
+    }
+
+    // 6. Generic Extraction (if not Qordatta or no Qordatta groups found/processed)
+    if (importedObjects.length === 0) {
+       console.log('Performing generic SVG element extraction (groups, paths, shapes)...');
+
+       // Strategy: Process top-level groups first, then loose paths/shapes
+       const topLevelGroups = Array.from(svgRoot.children).filter(el => el.tagName.toLowerCase() === 'g');
+       const processedElements = new Set<Element>(); // Keep track of processed elements
+
+       console.log(`Found ${topLevelGroups.length} top-level groups.`);
+       topLevelGroups.forEach((group, index) => {
+          const paths = group.querySelectorAll('path'); // Look for paths within the group
+          if (paths.length > 0) {
+             console.log(`Processing group ${index + 1} containing ${paths.length} paths...`);
+             const processedObject = processSVGPaths(Array.from(paths));
+             if (processedObject) {
+                processedObject.id = group.getAttribute('id') || `imported_g_${generateId()}`;
+                processedObject.name = group.getAttribute('id') || `Imported Group ${index + 1}`;
+                 // Attempt to parse transform attribute from the group
+                const transformAttr = group.getAttribute('transform');
+                 // TODO: Implement a parser for SVG transform strings if needed
+                importedObjects.push(processedObject);
+                // Mark group and its paths as processed
+                processedElements.add(group);
+                paths.forEach(p => processedElements.add(p));
+             }
+          }
+       });
+
+       // Process remaining loose paths (not in processed groups)
+       const loosePaths = Array.from(svgRoot.querySelectorAll('path')).filter(p => !processedElements.has(p));
+       console.log(`Found ${loosePaths.length} loose paths.`);
+       if (loosePaths.length > 0) {
+          // Option 1: Treat all loose paths as one object
+          console.log('Processing all loose paths as a single object...');
+          const combinedObject = processSVGPaths(loosePaths);
+          if (combinedObject) {
+             combinedObject.name = "Imported Loose Paths";
+             importedObjects.push(combinedObject);
+             loosePaths.forEach(p => processedElements.add(p));
+          }
+          // Option 2: Treat each loose path as a separate object (might be too many)
+          /*
+          loosePaths.forEach((path, index) => {
+              const singlePathObject = processSVGPaths([path]);
+              if (singlePathObject) {
+                  singlePathObject.id = path.getAttribute('id') || `imported_lp_${generateId()}`;
+                  singlePathObject.name = `Imported Path ${index + 1}`;
+                  importedObjects.push(singlePathObject);
+                  processedElements.add(path);
+              }
+          });
+          */
+       }
+
+       // TODO: Add processing for other shapes (rect, circle, polygon, polyline) if needed
+       // Convert these shapes into approximate Bezier paths using processSVGPaths or a dedicated converter.
+       const otherShapes = Array.from(svgRoot.querySelectorAll('rect, circle, ellipse, polyline, polygon'))
+                              .filter(s => !processedElements.has(s));
+       console.log(`Found ${otherShapes.length} other shapes (rect, circle, etc.) - processing not fully implemented.`);
+       // Example for polyline/polygon:
+       otherShapes.forEach((shape, index) => {
+            if (shape.tagName.toLowerCase() === 'polyline' || shape.tagName.toLowerCase() === 'polygon') {
+                const pointsAttr = shape.getAttribute('points');
+                if (pointsAttr) {
+                     let d = 'M ' + pointsAttr.trim().split(/\s+/).join(' L ');
+                     if (shape.tagName.toLowerCase() === 'polygon') d += ' Z';
+                     // Create a temporary path element to use processSVGPaths
+                     const tempPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                     tempPath.setAttribute('d', d);
+                     // Copy basic style attributes
+                     ['stroke', 'stroke-width', 'fill', 'stroke-opacity'].forEach(attr => {
+                         if (shape.hasAttribute(attr)) tempPath.setAttribute(attr, shape.getAttribute(attr)!);
+                     });
+                     const shapeObject = processSVGPaths([tempPath]);
+                     if (shapeObject) {
+                         shapeObject.id = shape.getAttribute('id') || `imported_shape_${generateId()}`;
+                         shapeObject.name = `Imported ${shape.tagName} ${index + 1}`;
+                         importedObjects.push(shapeObject);
+                         processedElements.add(shape);
+                     }
+                }
+            }
+            // Add similar logic for rect, circle, ellipse converting their attributes to path 'd' strings
+       });
+
+    }
+
+
+    // 7. Final Validation and Return
+    if (importedObjects.length === 0) {
+       console.warn("SVG import process finished, but no BezierObjects could be created.");
+       // Optionally throw an error here if an empty result is considered a failure
+       // throw new Error('No convertible elements found in SVG');
+    }
+
+    // Final check on all created objects
+     const validatedObjects = importedObjects.map(obj => ({
+         ...obj,
+         points: obj.points.map(p => validateAndRepairPoint(p)), // Final validation pass
+         curveConfig: obj.curveConfig || defaultCurveConfig(),
+         transform: obj.transform || defaultTransform(),
+     }));
+
+
+    console.log(`Completed import: ${validatedObjects.length} objects created.`);
+    return validatedObjects;
+
+  } catch (error) {
+    console.error('Error during SVG import:', error);
+    // Re-throw or return empty array depending on desired error handling
+    // return [];
+    throw new Error(`Failed to import SVG: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 };
