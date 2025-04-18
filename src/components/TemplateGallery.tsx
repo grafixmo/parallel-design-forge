@@ -81,8 +81,6 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
       
       const processedTemplates = await Promise.all((response.data || []).map(async (template) => {
         try {
-          console.log(`Processing template: ${template.name}, ID: ${template.id || 'unknown'}`);
-          
           let normalizedData: string = '';
           let dataFormat: DataFormat = 'invalid';
           let needsUpdate = false;
@@ -92,18 +90,14 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
             normalizedData = template.design_data;
             
             if (normalizedData.trim().startsWith('<svg') || normalizedData.includes('<svg ')) {
-              console.log(`Template ${template.name} contains SVG data`);
               dataFormat = 'svg';
             } else {
               try {
                 JSON.parse(normalizedData);
                 dataFormat = 'json';
-                console.log(`Template ${template.name} contains valid JSON data`);
               } catch (parseError) {
-                console.warn(`Template ${template.name} has invalid JSON data:`, parseError);
-                
                 normalizedData = JSON.stringify({ objects: [] });
-                dataFormat = 'json';
+                dataFormat = 'invalid';
                 needsUpdate = true;
               }
             }
@@ -113,45 +107,18 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
               dataFormat = 'json';
               needsUpdate = true;
             } catch (stringifyError) {
-              console.error(`Error stringifying object for template ${template.name}:`, stringifyError);
               normalizedData = JSON.stringify({ objects: [] });
-              dataFormat = 'json';
+              dataFormat = 'invalid';
               needsUpdate = true;
             }
           } else {
-            console.warn(`Template ${template.name} has invalid design_data`);
             normalizedData = JSON.stringify({ objects: [] });
-            dataFormat = 'json';
+            dataFormat = 'invalid';
             needsUpdate = true;
           }
 
-          // Update template if needed
-          if (template.id && needsUpdate) {
-            try {
-              const updateResult = await updateTemplate(template.id, {
-                design_data: normalizedData
-              });
-              
-              if (updateResult.error) {
-                console.error(`Failed to fix template ${template.name}:`, updateResult.error);
-              } else {
-                console.log(`Successfully fixed template ${template.name}`);
-                setFixedCount(prev => prev + 1);
-              }
-            } catch (updateError) {
-              console.error(`Error updating template ${template.name}:`, updateError);
-            }
-          }
-
-          // Generate thumbnail
-          let thumbnail = '';
-          try {
-            if (normalizedData) {
-              thumbnail = await generateThumbnail(normalizedData);
-            }
-          } catch (thumbnailError) {
-            console.error(`Error generating thumbnail for template ${template.name}:`, thumbnailError);
-          }
+          // Add status flags based on dataFormat
+          const isValidFormat = ['svg', 'json'].includes(dataFormat);
 
           return {
             ...template,
@@ -160,7 +127,8 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
             isJson: dataFormat === 'json',
             isInvalid: dataFormat === 'invalid',
             wasFixed: needsUpdate,
-            thumbnail
+            isSafeToUse: isValidFormat,
+            thumbnail: isValidFormat ? await generateThumbnail(normalizedData) : ''
           };
         } catch (processError) {
           console.error(`Error processing template ${template.name}:`, processError);
@@ -168,7 +136,8 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
             ...template,
             design_data: JSON.stringify({ objects: [] }),
             hasParseError: true,
-            isInvalid: true
+            isInvalid: true,
+            isSafeToUse: false
           };
         }
       }));
