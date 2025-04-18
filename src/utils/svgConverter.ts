@@ -40,7 +40,6 @@ export function convertToValidSVG(data: string): string | null {
 
       if (typeof first.d === 'string' && first.d.trim().startsWith('<svg')) {
         const rawSvg = first.d;
-
         const cleanedSvg = rawSvg
           .replace(/\"/g, '"')
           .replace(/^"|"$/g, '')
@@ -74,9 +73,11 @@ export function generateSVGFromShapes(shapes: Shape[]): string {
     return `<path d="${shape.d}" stroke="${stroke}" stroke-width="${strokeWidth}" fill="${fill}" />`;
   });
 
-  const joinedElements = shapeElements.join('\n  ');
+  const svg = `
+<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+  ${shapeElements.join("\n  ")}
+</svg>
+`.trim();
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
-  ${joinedElements}
-</svg>`.trim();
+  return svg;
 }
