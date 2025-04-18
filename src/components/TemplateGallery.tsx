@@ -43,7 +43,6 @@ interface TemplateGalleryProps {
 type DataFormat = 'svg' | 'json' | 'invalid';
 
 const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSelectTemplate }) => {
-  // ... keep existing code (useState hooks and other declarations)
   const { toast } = useToast();
   const [templates, setTemplates] = useState<Template[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -195,7 +194,6 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
     }
   };
 
-  // ... keep existing code (handleCategoryChange, handleSelectTemplate, etc.)
   const handleCategoryChange = (category: string) => {
     setActiveCategory(category);
   };
@@ -405,7 +403,6 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
     }
   };
 
-  // ... keep existing code (render method)
   return (
     <>
       <Dialog open={open} onOpenChange={(openState) => !openState && onClose()}>
