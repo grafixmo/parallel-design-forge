@@ -64,17 +64,26 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
   useEffect(() => {
     if (open) {
       fetchTemplates().then(async () => {
-        // Generate thumbnails for each template that doesn't have one
-        const templatesWithThumbnails = await Promise.all(
-          templates.map(async (template) => {
-            if (!template.thumbnail && template.design_data) {
-              const thumbnail = await generateThumbnail(template.design_data);
-              return { ...template, thumbnail };
-            }
-            return template;
-          })
-        );
-        setTemplates(templatesWithThumbnails);
+        try {
+          // Generate thumbnails for each template that doesn't have one
+          const templatesWithThumbnails = await Promise.all(
+            templates.map(async (template) => {
+              if (!template.thumbnail && template.design_data) {
+                try {
+                  const thumbnail = await generateThumbnail(template.design_data);
+                  return { ...template, thumbnail };
+                } catch (error) {
+                  console.error(`Error generating thumbnail for template ${template.id}:`, error);
+                  return template;
+                }
+              }
+              return template;
+            })
+          );
+          setTemplates(templatesWithThumbnails);
+        } catch (error) {
+          console.error('Error processing templates:', error);
+        }
       });
     }
   }, [open, activeCategory]);

@@ -1,4 +1,3 @@
-
 import { BezierObject, Point, DesignData } from '@/types/bezier';
 import { parseTemplateData } from './svgExporter';
 import { generatePathData } from './bezierUtils';
@@ -8,13 +7,17 @@ import { generatePathData } from './bezierUtils';
  */
 export const generateThumbnail = async (designData: string): Promise<string> => {
   try {
+    console.log('Starting thumbnail generation...');
+    
     // Try to parse the design data
     let parsedData: any;
     try {
       parsedData = JSON.parse(designData);
+      console.log('Successfully parsed JSON data');
     } catch (e) {
-      // If not JSON, try SVG
+      // If not JSON, check if it's SVG
       if (typeof designData === 'string' && (designData.includes('<svg') || designData.startsWith('<?xml'))) {
+        console.log('Template appears to be SVG format, attempting SVG render');
         return renderSVGThumbnail(designData, 200, 150);
       }
       console.error('Failed to parse design data:', e);
@@ -31,7 +34,10 @@ export const generateThumbnail = async (designData: string): Promise<string> => 
     canvas.width = width;
     canvas.height = height;
     const ctx = canvas.getContext('2d');
-    if (!ctx) return '';
+    if (!ctx) {
+      console.error('Failed to get canvas context');
+      return '';
+    }
 
     // Clear canvas with white background
     ctx.fillStyle = 'white';
@@ -39,28 +45,37 @@ export const generateThumbnail = async (designData: string): Promise<string> => 
 
     // Extract objects from different possible data structures
     let objects: BezierObject[] = [];
-    if (Array.isArray(parsedData)) {
-      objects = parsedData;
-    } else if (parsedData.objects && Array.isArray(parsedData.objects)) {
-      objects = parsedData.objects;
-    } else if (parsedData.points && Array.isArray(parsedData.points)) {
-      // Legacy format with single object
-      objects = [{
-        id: 'legacy',
-        points: parsedData.points,
-        curveConfig: parsedData.curveConfig || {
-          styles: [{ color: '#000000', width: 2 }],
-          parallelCount: 1,
-          spacing: 5
-        },
-        transform: {
-          rotation: 0,
-          scaleX: 1,
-          scaleY: 1
-        },
-        name: 'Legacy Object',
-        isSelected: false
-      }];
+    
+    try {
+      if (Array.isArray(parsedData)) {
+        objects = parsedData;
+        console.log('Parsed data is array of objects');
+      } else if (parsedData.objects && Array.isArray(parsedData.objects)) {
+        objects = parsedData.objects;
+        console.log('Parsed data contains objects array');
+      } else if (parsedData.points && Array.isArray(parsedData.points)) {
+        // Legacy format with single object
+        objects = [{
+          id: 'legacy',
+          points: parsedData.points,
+          curveConfig: parsedData.curveConfig || {
+            styles: [{ color: '#000000', width: 2 }],
+            parallelCount: 1,
+            spacing: 5
+          },
+          transform: {
+            rotation: 0,
+            scaleX: 1,
+            scaleY: 1
+          },
+          name: 'Legacy Object',
+          isSelected: false
+        }];
+        console.log('Parsed legacy format with single object');
+      }
+    } catch (error) {
+      console.error('Error extracting objects:', error);
+      return '';
     }
 
     if (objects.length === 0) {
@@ -68,77 +83,106 @@ export const generateThumbnail = async (designData: string): Promise<string> => 
       return '';
     }
 
-    // Find the bounds of all objects
+    // Validate objects and their points
+    objects = objects.filter(obj => {
+      return obj && Array.isArray(obj.points) && obj.points.length >= 2;
+    });
+
+    if (objects.length === 0) {
+      console.warn('No valid objects after filtering');
+      return '';
+    }
+
+    // Find the bounds of all objects with validation
     let minX = Infinity;
     let minY = Infinity;
     let maxX = -Infinity;
     let maxY = -Infinity;
+    let validPointsFound = false;
 
     objects.forEach(obj => {
       if (!obj.points) return;
       obj.points.forEach(point => {
-        if (!point) return;
-        minX = Math.min(minX, point.x || 0);
-        minY = Math.min(minY, point.y || 0);
-        maxX = Math.max(maxX, point.x || 0);
-        maxY = Math.max(maxY, point.y || 0);
+        if (!point || typeof point.x !== 'number' || typeof point.y !== 'number') return;
+        
+        minX = Math.min(minX, point.x);
+        minY = Math.min(minY, point.y);
+        maxX = Math.max(maxX, point.x);
+        maxY = Math.max(maxY, point.y);
+        validPointsFound = true;
       });
     });
 
-    // If we couldn't determine bounds, use defaults
-    if (!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) {
+    // If we couldn't determine valid bounds, use defaults
+    if (!validPointsFound || !isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) {
+      console.log('Using default bounds due to invalid points');
       minX = 0;
       minY = 0;
       maxX = width;
       maxY = height;
     }
 
-    // Calculate scale to fit the design within the thumbnail
-    const scaleX = (width - padding * 2) / (maxX - minX || 1);
-    const scaleY = (height - padding * 2) / (maxY - minY || 1);
+    // Calculate scale with boundary protection
+    const scaleX = (width - padding * 2) / (Math.max(0.1, maxX - minX));
+    const scaleY = (height - padding * 2) / (Math.max(0.1, maxY - minY));
     const scale = Math.min(scaleX, scaleY);
 
     // Calculate centering offset
     const offsetX = padding + (width - padding * 2 - (maxX - minX) * scale) / 2;
     const offsetY = padding + (height - padding * 2 - (maxY - minY) * scale) / 2;
 
-    // Draw each object
-    objects.forEach(obj => {
-      if (!obj.points || obj.points.length < 2) return;
+    console.log('Rendering objects with scale:', scale, 'offset:', offsetX, offsetY);
 
-      // Draw main curve
-      ctx.beginPath();
-      const firstPoint = transformPoint(obj.points[0], scale, offsetX - minX * scale, offsetY - minY * scale);
-      if (!firstPoint) return;
-      
-      ctx.moveTo(firstPoint.x, firstPoint.y);
+    // Draw each object with error handling
+    objects.forEach((obj, index) => {
+      try {
+        if (!obj.points || obj.points.length < 2) return;
 
-      // Draw bezier curves through all points
-      for (let i = 0; i < obj.points.length - 1; i++) {
-        const current = obj.points[i];
-        const next = obj.points[i + 1];
-        if (!current || !next || !current.handleOut || !next.handleIn) continue;
-
-        const cp1 = transformPoint(current.handleOut, scale, offsetX - minX * scale, offsetY - minY * scale);
-        const cp2 = transformPoint(next.handleIn, scale, offsetX - minX * scale, offsetY - minY * scale);
-        const p = transformPoint(next, scale, offsetX - minX * scale, offsetY - minY * scale);
+        // Draw main curve
+        ctx.beginPath();
+        const firstPoint = transformPoint(obj.points[0], scale, offsetX - minX * scale, offsetY - minY * scale);
+        if (!firstPoint) return;
         
-        if (!cp1 || !cp2 || !p) continue;
-        ctx.bezierCurveTo(cp1.x, cp1.y, cp2.x, cp2.y, p.x, p.y);
-      }
+        ctx.moveTo(firstPoint.x, firstPoint.y);
 
-      // Apply style
-      const style = obj.curveConfig?.styles?.[0];
-      ctx.strokeStyle = style?.color || '#000000';
-      ctx.lineWidth = Math.max(1, (style?.width || 2) * scale);
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      ctx.stroke();
+        // Draw bezier curves through all points with validation
+        for (let i = 0; i < obj.points.length - 1; i++) {
+          const current = obj.points[i];
+          const next = obj.points[i + 1];
+          
+          if (!current || !next || !current.handleOut || !next.handleIn) {
+            console.warn(`Invalid point or handles at index ${i}`);
+            continue;
+          }
+
+          const cp1 = transformPoint(current.handleOut, scale, offsetX - minX * scale, offsetY - minY * scale);
+          const cp2 = transformPoint(next.handleIn, scale, offsetX - minX * scale, offsetY - minY * scale);
+          const p = transformPoint(next, scale, offsetX - minX * scale, offsetY - minY * scale);
+          
+          if (!cp1 || !cp2 || !p) {
+            console.warn(`Invalid transformed points at index ${i}`);
+            continue;
+          }
+
+          ctx.bezierCurveTo(cp1.x, cp1.y, cp2.x, cp2.y, p.x, p.y);
+        }
+
+        // Apply style with fallbacks
+        const style = obj.curveConfig?.styles?.[0] || { color: '#000000', width: 2 };
+        ctx.strokeStyle = style.color || '#000000';
+        ctx.lineWidth = Math.max(1, (style.width || 2) * scale);
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.stroke();
+      } catch (error) {
+        console.error(`Error drawing object ${index}:`, error);
+      }
     });
 
+    console.log('Thumbnail generation completed successfully');
     return canvas.toDataURL('image/png');
   } catch (error) {
-    console.error('Error generating thumbnail:', error);
+    console.error('Critical error in thumbnail generation:', error);
     return '';
   }
 };
