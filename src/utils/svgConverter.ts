@@ -1,3 +1,4 @@
+
 /**
  * Converts various data formats to valid SVG
  */
@@ -32,8 +33,8 @@ function extractSVGDimensions(svgString: string): { width: number; height: numbe
   if (!width && vbWidth) width = vbWidth;
   if (!height && vbHeight) height = vbHeight;
 
-  // Fallback dimensions
-  if (!width || !height) {
+  // Fallback dimensions - use canvas size (800x600) if nothing found
+  if (!width || !height || isNaN(width) || isNaN(height)) {
     width = 800;
     height = 600;
   }
@@ -45,6 +46,8 @@ function extractSVGDimensions(svgString: string): { width: number; height: numbe
  * Normalize SVG path data to handle various formats
  */
 function normalizeSVGPath(pathData: string): string {
+  if (!pathData) return '';
+  
   return pathData
     // Handle scientific notation
     .replace(/(-?\d*\.?\d+)[eE][+-]?\d+/g, (match) => Number(match).toString())
@@ -63,6 +66,8 @@ function normalizeSVGPath(pathData: string): string {
  * Parse SVG path data into individual commands and coordinates
  */
 function parsePathCommands(pathData: string): { command: string; params: number[] }[] {
+  if (!pathData) return [];
+  
   const normalized = normalizeSVGPath(pathData);
   const tokens = normalized.split(' ');
   const commands: { command: string; params: number[] }[] = [];
@@ -117,12 +122,23 @@ export function convertToValidSVG(data: string): string | null {
 
     // Handle existing SVG
     if (data.trim().startsWith('<svg') || data.includes('<?xml')) {
+      // Log incoming SVG for debugging
+      console.log('Processing SVG input (first 100 chars):', data.substring(0, 100));
+      
       // Extract original dimensions and viewBox
       const { width, height, viewBox } = extractSVGDimensions(data);
+      console.log(`Extracted dimensions: ${width}x${height}, viewBox: ${viewBox}`);
 
       // Process SVG to normalize paths and preserve dimensions
       const parser = new DOMParser();
       const doc = parser.parseFromString(data, 'image/svg+xml');
+      
+      // Check for parsing errors
+      const parserError = doc.querySelector('parsererror');
+      if (parserError) {
+        console.error('SVG parsing error:', parserError.textContent);
+        return null;
+      }
       
       // Process all path elements
       doc.querySelectorAll('path').forEach(path => {
@@ -136,15 +152,30 @@ export function convertToValidSVG(data: string): string | null {
 
       // Ensure SVG has proper dimensions and viewBox
       const svg = doc.documentElement;
-      if (!svg.hasAttribute('width')) svg.setAttribute('width', width.toString());
-      if (!svg.hasAttribute('height')) svg.setAttribute('height', height.toString());
-      if (!svg.hasAttribute('viewBox') && viewBox) {
-        svg.setAttribute('viewBox', viewBox);
-      } else if (!svg.hasAttribute('viewBox')) {
-        svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+      
+      // Force width and height to canvas dimensions (800x600) for consistent sizing
+      svg.setAttribute('width', '800');
+      svg.setAttribute('height', '600');
+      
+      // Create a viewBox that centers the content if original dimensions exist
+      if (!svg.hasAttribute('viewBox') || !viewBox) {
+        // If we have original width/height, create a viewBox that centers the content
+        if (width > 0 && height > 0) {
+          // Calculate centering offsets (negative values to move content into view)
+          const xOffset = (800 - width) / 2;
+          const yOffset = (600 - height) / 2;
+          svg.setAttribute('viewBox', `${-xOffset} ${-yOffset} 800 600`);
+          console.log(`Created centering viewBox: ${-xOffset} ${-yOffset} 800 600`);
+        } else {
+          // Fallback to standard full-canvas viewBox
+          svg.setAttribute('viewBox', '0 0 800 600');
+        }
       }
 
-      return new XMLSerializer().serializeToString(doc);
+      // Modify the generated SVG to ensure it's compatible with our application
+      const result = new XMLSerializer().serializeToString(doc);
+      console.log('Processed SVG (first 100 chars):', result.substring(0, 100));
+      return result;
     }
 
     // Handle JSON data
@@ -184,9 +215,52 @@ export function convertToValidSVG(data: string): string | null {
 }
 
 export function generateSVGFromShapes(shapes: Shape[]): string {
+  // Use fixed canvas dimensions for consistent output
   const width = 800;
   const height = 600;
-
+  
+  // Calculate bounding box of all shapes for centering
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  
+  // First pass to analyze shape coordinates
+  shapes.forEach(shape => {
+    if (!shape.d) return;
+    
+    const commands = parsePathCommands(shape.d);
+    commands.forEach(cmd => {
+      // Estimate points from commands - this is simplified but works for most SVGs
+      for (let i = 0; i < cmd.params.length; i += 2) {
+        if (i + 1 < cmd.params.length) {
+          const x = cmd.params[i];
+          const y = cmd.params[i + 1];
+          if (!isNaN(x) && !isNaN(y)) {
+            minX = Math.min(minX, x);
+            minY = Math.min(minY, y);
+            maxX = Math.max(maxX, x);
+            maxY = Math.max(maxY, y);
+          }
+        }
+      }
+    });
+  });
+  
+  // Calculate content dimensions and scale factor to fit canvas
+  const contentWidth = Math.max(10, maxX - minX);
+  const contentHeight = Math.max(10, maxY - minY);
+  
+  // Calculate scale factor to fit the content within 80% of the canvas
+  // but don't scale up small content more than 2x
+  const scaleX = Math.min(2, (width * 0.8) / contentWidth);
+  const scaleY = Math.min(2, (height * 0.8) / contentHeight);
+  const scale = Math.min(scaleX, scaleY);
+  
+  // Calculate centering offsets
+  const offsetX = (width - contentWidth * scale) / 2 - minX * scale;
+  const offsetY = (height - contentHeight * scale) / 2 - minY * scale;
+  
   const shapeElements = shapes.map((shape) => {
     if (!shape.d) return '';
     
@@ -196,11 +270,16 @@ export function generateSVGFromShapes(shapes: Shape[]): string {
     const stroke = shape.stroke || 'black';
     const strokeWidth = shape.strokeWidth || 1;
     const fill = shape.fill || 'none';
-    return `<path d="${processedPathData}" stroke="${stroke}" stroke-width="${strokeWidth}" fill="${fill}" />`;
-  });
+    
+    // Apply transform for centering and scaling
+    return `<path d="${processedPathData}" stroke="${stroke}" stroke-width="${strokeWidth}" fill="${fill}" transform="translate(${offsetX}, ${offsetY}) scale(${scale})" />`;
+  }).filter(Boolean);
+
+  console.log(`Generated ${shapeElements.length} paths with scale ${scale} and offset (${offsetX}, ${offsetY})`);
 
   const svgContent = shapeElements.join("\n  ");
 
+  // Include the viewBox for proper rendering
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
   ${svgContent}
 </svg>`.trim();
@@ -241,27 +320,39 @@ function processSVGPaths(paths: SVGPathElement[], existingCurveConfig?: CurveCon
 
   if (pathElements.length === 0) return null;
 
-  // Calculate center and scale
-  const width = maxX - minX;
-  const height = maxY - minY;
-  const centerX = (minX + maxX) / 2;
-  const centerY = (minY + maxY) / 2;
+  // Calculate content dimensions and scale factor to fit canvas
+  const contentWidth = Math.max(10, maxX - minX);
+  const contentHeight = Math.max(10, maxY - minY);
+  
+  // Calculate scale to fit the content within 80% of the canvas (800x600)
+  // but don't scale up small content more than 2x
+  const scaleX = Math.min(2, (800 * 0.8) / contentWidth);
+  const scaleY = Math.min(2, (600 * 0.8) / contentHeight);
+  const scale = Math.min(scaleX, scaleY);
+  
+  // Calculate canvas center and content center for proper centering
+  const canvasCenterX = 400; // 800/2
+  const canvasCenterY = 300; // 600/2
+  const contentCenterX = (minX + maxX) / 2;
+  const contentCenterY = (minY + maxY) / 2;
 
   // Generate scaled and centered points
   const points = approximateControlPointsFromPath(pathElements[0].d);
   const scaledPoints = points.map(point => ({
     ...point,
-    x: (point.x - centerX) + 400, // Center in 800x600 canvas
-    y: (point.y - centerY) + 300,
+    x: (point.x - contentCenterX) * scale + canvasCenterX,
+    y: (point.y - contentCenterY) * scale + canvasCenterY,
     handleIn: {
-      x: (point.handleIn.x - centerX) + 400,
-      y: (point.handleIn.y - centerY) + 300
+      x: (point.handleIn.x - contentCenterX) * scale + canvasCenterX,
+      y: (point.handleIn.y - contentCenterY) * scale + canvasCenterY
     },
     handleOut: {
-      x: (point.handleOut.x - centerX) + 400,
-      y: (point.handleOut.y - centerY) + 300
+      x: (point.handleOut.x - contentCenterX) * scale + canvasCenterX,
+      y: (point.handleOut.y - contentCenterY) * scale + canvasCenterY
     }
   }));
+
+  console.log(`Scaled ${points.length} points with scale ${scale}, centered at (${canvasCenterX}, ${canvasCenterY})`);
 
   // Create styles for each path
   const styles = pathElements.map(p => ({
@@ -296,6 +387,8 @@ import { ControlPoint, Point, CurveStyle, generateId } from './bezierUtils';
 const approximateControlPointsFromPath = (pathData: string, matrix: DOMMatrix | null = null): ControlPoint[] => {
   const points: ControlPoint[] = [];
   try {
+    if (!pathData) return [];
+    
     const commands = parsePathCommands(pathData);
     
     let currentX = 0;
