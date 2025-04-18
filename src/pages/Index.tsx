@@ -326,10 +326,13 @@ const Index = () => {
       }
       
       // Also save as a template to the new templates table
+      const svg_content = exportAsSVG(objects, canvasWidth, canvasHeight);
+
       const template: Template = {
         name,
         category,
         design_data: stringifiedData,
+        svg_content,
         likes: 0
       };
       
