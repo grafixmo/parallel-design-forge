@@ -1,41 +1,57 @@
-// src/services/supabaseClient.ts
-
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-// Asegúrate que los tipos estén actualizados en tu archivo de tipos
-import { SavedDesign, Template } from '@/types/bezier'; // Ajusta la ruta si es necesario
+import { SavedDesign, Template } from '@/types/bezier';
 
-// --- Configuración del Cliente Supabase ---
-console.log('Supabase environment check:', { VITE_SUPABASE_URL: import.meta.env.VITE_SUPABASE_URL ? 'defined' : 'undefined', VITE_SUPABASE_ANON_KEY: import.meta.env.VITE_SUPABASE_ANON_KEY ? 'defined' : 'undefined', /* ...otros... */ });
-let supabaseUrl = import.meta.env.VITE_SUPABASE_URL || import.meta.env.NEXT_PUBLIC_SUPABASE_URL;
-let supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-let isPlaceholder = false;
-if (!supabaseUrl || !supabaseKey) { /* ... placeholders ... */ console.warn("Using placeholders."); } else { console.log(`Initializing Supabase client...`); }
-export const supabase: SupabaseClient = createClient(supabaseUrl!, supabaseKey!);
+// Configuración del Cliente Supabase con credenciales específicas
+const supabaseUrl = 'https://nwrihwenctfimyjcbcal.supabase.co';
+const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im53cmlod2VuY3RmaW15amNiY2FsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDIwNzUxNjMsImV4cCI6MjA1NzY1MTE2M30.fXmf6GUUn0OaEmisInSUp2oBlP2oBGhMSBOSx8HYI2k';
 
+console.log('Initializing Supabase client with URL:', supabaseUrl);
+export const supabase: SupabaseClient = createClient(supabaseUrl, supabaseKey);
 
-// --- Funciones de Verificación (Opcional) ---
-export const verifySupabaseConnection = async (): Promise<{ success: boolean; message: string; tableAccess?: { [key: string]: boolean } }> => {
-  // ... (código de verificación igual) ...
-  console.log('Verifying Supabase connection...');
+// Función de verificación mejorada
+export const verifySupabaseConnection = async (): Promise<{ 
+  success: boolean; 
+  message: string; 
+  tableAccess?: { [key: string]: boolean } 
+}> => {
+  console.log('Verificando conexión a Supabase...');
+  
   try {
-    const { error: designsError } = await supabase.from('designs').select('id').limit(0);
-    const designsAccess = !designsError;
-    if(designsError) console.warn("Could not verify access to 'designs' table:", designsError.message);
-    const { error: templatesError } = await supabase.from('templates').select('id').limit(0);
-    const templatesAccess = !templatesError;
-     if(templatesError) console.warn("Could not verify access to 'templates' table:", templatesError.message);
+    // Verificar tablas requeridas
+    const [designsCheck, templatesCheck] = await Promise.all([
+      supabase.from('designs').select('id').limit(1),
+      supabase.from('templates').select('id').limit(1)
+    ]);
+
+    const designsAccess = !designsCheck.error;
+    const templatesAccess = !templatesCheck.error;
+
+    if (designsCheck.error) console.warn('Error accediendo a tabla designs:', designsCheck.error.message);
+    if (templatesCheck.error) console.warn('Error accediendo a tabla templates:', templatesCheck.error.message);
+
     if (designsAccess && templatesAccess) {
-      console.log('✅ Supabase API connection verified successfully (designs, templates)');
-      return { success: true, message: 'Connection successful.', tableAccess: { designs: designsAccess, templates: templatesAccess } };
+      console.log('✅ Conexión a Supabase verificada correctamente');
+      return { 
+        success: true, 
+        message: 'Conexión exitosa a Supabase.',
+        tableAccess: { designs: true, templates: true }
+      };
     } else {
-       throw new Error(`Failed to access required tables. Designs: ${designsAccess}, Templates: ${templatesAccess}`);
+      const failedTables = [];
+      if (!designsAccess) failedTables.push('designs');
+      if (!templatesAccess) failedTables.push('templates');
+      
+      throw new Error(`No se pudo acceder a las tablas: ${failedTables.join(', ')}`);
     }
   } catch (error: any) {
-    console.error('❌ Supabase connection/access verification failed:', error);
-    return { success: false, message: error.message || 'Unknown connection error', tableAccess: { designs: false, templates: false } };
+    console.error('❌ Error verificando conexión a Supabase:', error);
+    return {
+      success: false,
+      message: error.message || 'Error de conexión desconocido',
+      tableAccess: { designs: false, templates: false }
+    };
   }
 };
-
 
 // --- Funciones relacionadas con Designs ---
 
