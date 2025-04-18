@@ -1,356 +1,252 @@
+// src/components/SupabaseStatus.tsx
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react'; // Añadido useCallback
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
-import { 
-  checkTableAccess, 
-  verifyConnection, 
-  setSupabaseCredentials,
-  resetStoredCredentials,
-  getCurrentSupabaseUrl
-} from '@/services/supabaseClient';
-import { AlertCircle, CheckCircle, RefreshCw, Settings, Key, Trash } from 'lucide-react';
+// --- CAMBIO AQUÍ: Importar la función correcta ---
+import { verifySupabaseConnection } from '@/services/supabaseClient'; // Ajusta la ruta si es necesario
+
+// ELIMINADO: Estas funciones no existen en supabaseClient.ts actual
+// import {
+//   checkTableAccess,
+//   verifyConnection,
+//   setSupabaseCredentials,
+//   resetStoredCredentials,
+//   getCurrentSupabaseUrl
+// } from '@/services/supabaseClient';
+
+import { AlertCircle, CheckCircle, RefreshCw, Settings, Key, Trash, Loader2, Database } from 'lucide-react'; // Añadidos Loader2, Database
 import { Button } from '@/components/ui/button';
-import { toast } from '@/components/ui/sonner';
+// import { toast } from '@/components/ui/sonner'; // 'toast' no se usa en este archivo
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Link } from 'react-router-dom';
+// import { Link } from 'react-router-dom'; // Link no se usa aquí
 
 interface TableStatus {
   name: string;
   accessible: boolean;
-  error?: any;
-  details?: any;
+  // error?: any; // Simplificado, el error general está en connectionStatus
+  // details?: any;
 }
 
 interface ConnectionStatus {
   success: boolean;
-  error?: any;
-  errorType?: string;
-  details?: any;
+  message: string; // Usamos el mensaje de verifySupabaseConnection
+  // error?: any; // Incluido en message
+  // errorType?: string;
+  // details?: any;
 }
 
-const SupabaseStatus = () => {
-  const [tableStatuses, setTableStatuses] = useState<TableStatus[]>([]);
-  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [showStatus, setShowStatus] = useState(true);
-  const [showVerboseDetails, setShowVerboseDetails] = useState(false);
-  const [manualUrl, setManualUrl] = useState('');
-  const [manualKey, setManualKey] = useState('');
-  const [manualDialogOpen, setManualDialogOpen] = useState(false);
+const SupabaseStatus: React.FC = () => {
+  // Estado unificado para simplificar
+  const [status, setStatus] = useState<{
+    loading: boolean;
+    connection: ConnectionStatus | null;
+    tables: TableStatus[];
+  }>({
+    loading: true,
+    connection: null,
+    tables: [ // Inicializar con las tablas que se esperan
+        { name: 'designs', accessible: false },
+        { name: 'templates', accessible: false }
+    ]
+  });
 
-  const checkConnection = async () => {
-    setIsLoading(true);
-    try {
-      // First verify overall connection
-      const connectionResult = await verifyConnection();
-      setConnectionStatus(connectionResult);
-      
-      if (!connectionResult.success) {
-        console.error('Supabase connection failed:', connectionResult);
-        
-        // Show toast notification for credential errors
-        if (connectionResult.errorType === 'credentials_error') {
-          toast.error('Supabase Connection Issue', {
-            description: 'Using placeholder credentials. Please connect to Supabase in project settings.',
-          });
-        }
-        
-        setTableStatuses([]);
-        setIsLoading(false);
-        return;
-      }
-      
-      // If connection succeeded, check tables
-      const tables = ['designs', 'templates'];
-      const statuses: TableStatus[] = [];
+  const [showStatus, setShowStatus] = useState(true); // Mantener estado para mostrar/ocultar
+  const [showVerboseDetails, setShowVerboseDetails] = useState(false); // Para mostrar detalles de error
 
-      // Check each table
-      for (const table of tables) {
-        const result = await checkTableAccess(table);
-        statuses.push({
-          name: table,
-          accessible: result.accessible,
-          error: result.error,
-          details: result.details
-        });
-      }
+  // --- COMENTADO: Estado para credenciales manuales ---
+  // const [manualUrl, setManualUrl] = useState('');
+  // const [manualKey, setManualKey] = useState('');
+  // const [isCredentialDialogOpen, setIsCredentialDialogOpen] = useState(false);
+  // -----------------------------------------------------
 
-      setTableStatuses(statuses);
-    } catch (error) {
-      console.error('Error checking Supabase connection:', error);
-      toast.error('Connection check failed', {
-        description: 'Could not verify Supabase connection status',
-      });
-    } finally {
-      setIsLoading(false);
-      
-      // Keep visible longer when there are issues
-      const delay = connectionStatus?.success && tableStatuses.every(s => s.accessible) ? 10000 : 60000;
-      
-      const timer = setTimeout(() => {
-        setShowStatus(false);
-      }, delay);
-      
-      return () => clearTimeout(timer);
-    }
-  };
+  // Función para verificar el estado
+  const checkStatus = useCallback(async () => {
+    console.log("SupabaseStatus: Checking status...");
+    setStatus(prev => ({ ...prev, loading: true })); // Indicar carga
 
+    // Llamar a la función de verificación correcta
+    const result = await verifySupabaseConnection();
+
+    console.log("SupabaseStatus: Received result:", result);
+
+    // Crear el array de estado de tablas basado en el resultado
+    const newTableStatuses: TableStatus[] = [
+      { name: 'designs', accessible: result.tableAccess?.designs ?? false },
+      { name: 'templates', accessible: result.tableAccess?.templates ?? false },
+      // Añadir 'template_likes' si esa tabla existe y se verifica en verifySupabaseConnection
+      // { name: 'template_likes', accessible: result.tableAccess?.template_likes ?? false },
+    ];
+
+    // Actualizar el estado unificado
+    setStatus({
+      loading: false,
+      connection: {
+        success: result.success,
+        message: result.message,
+      },
+      tables: newTableStatuses,
+    });
+  }, []); // useCallback sin dependencias si solo se llama al montar o manualmente
+
+  // Ejecutar la verificación al montar el componente
   useEffect(() => {
-    checkConnection();
-  }, []);
+    checkStatus();
+  }, [checkStatus]); // Ejecutar cuando checkStatus cambie (solo al montar en este caso)
 
-  // Allow manually dismissing the status
-  const dismissStatus = () => setShowStatus(false);
-
-  // Force a refresh of the status
-  const refreshStatus = () => {
-    setShowVerboseDetails(false);
-    checkConnection();
-  };
-
-  // Function to open Supabase test page
-  const openSupabaseTest = () => {
-    window.location.href = '/supabase-test';
-  };
-
-  // Handle manual connection
-  const handleManualConnect = async () => {
-    if (!manualUrl || !manualKey) {
-      toast.error('Missing credentials', {
-        description: 'Please provide both URL and API key',
-      });
-      return;
-    }
-
-    try {
-      setIsLoading(true);
-      await setSupabaseCredentials(manualUrl, manualKey);
-      
-      // Close dialog
-      setManualDialogOpen(false);
-      
-      // Check connection with new credentials
-      await checkConnection();
-      
-      toast.success('Manual connection applied', {
-        description: 'Supabase credentials updated. Testing connection...'
-      });
-    } catch (error) {
-      console.error('Error setting manual credentials:', error);
-      toast.error('Connection failed', {
-        description: 'Could not connect with provided credentials',
-      });
-    } finally {
-      setIsLoading(false);
+  // --- COMENTADO: Funciones para manejar credenciales manuales ---
+  /*
+  const handleSetManualCredentials = () => {
+    if (manualUrl.trim() && manualKey.trim()) {
+      // ESTA FUNCIÓN NO EXISTE EN supabaseClient.ts ACTUALMENTE
+      // setSupabaseCredentials(manualUrl.trim(), manualKey.trim());
+      console.warn("setSupabaseCredentials function is not implemented in supabaseClient.ts");
+      toast.warning("Manual credential setting not implemented.");
+      // Después de intentar setear, re-verificar estado
+      // checkStatus();
+      // setIsCredentialDialogOpen(false); // Cerrar diálogo
+    } else {
+      toast.error("Both URL and Key are required.");
     }
   };
 
-  // Handle reset/clear credentials
-  const handleResetCredentials = async () => {
-    try {
-      setIsLoading(true);
-      resetStoredCredentials();
-      
-      // Close dialog
-      setManualDialogOpen(false);
-      
-      // Check connection after reset
-      await checkConnection();
-      
-      toast.success('Credentials reset', {
-        description: 'Using default or environment credentials now.'
-      });
-    } catch (error) {
-      console.error('Error resetting credentials:', error);
-      toast.error('Reset failed', {
-        description: 'Could not reset credentials',
-      });
-    } finally {
-      setIsLoading(false);
-    }
+  const handleResetCredentials = () => {
+    // ESTA FUNCIÓN NO EXISTE EN supabaseClient.ts ACTUALMENTE
+    // resetStoredCredentials();
+    console.warn("resetStoredCredentials function is not implemented in supabaseClient.ts");
+    toast.info("Stored credentials reset functionality not implemented.");
+    // Después de intentar resetear, re-verificar estado
+    // checkStatus();
+  };
+  */
+  // --- FIN COMENTADO ---
+
+
+  // Ocultar el componente completo
+  const dismissStatus = () => {
+    setShowStatus(false);
   };
 
+  // Si no se debe mostrar el estado, no renderizar nada
   if (!showStatus) {
     return null;
   }
 
-  const allAccessible = connectionStatus?.success && tableStatuses.every(status => status.accessible);
-  const usingPlaceholders = connectionStatus?.errorType === 'credentials_error';
-  
+  // Determinar la variante del Alert basada en el estado general
+  const alertVariant: "default" | "destructive" = status.loading || !status.connection || !status.connection.success
+    ? "destructive"
+    : "default";
+  const statusTitle = status.loading ? "Checking Status..." :
+                      status.connection?.success ? "Supabase Connected" : "Supabase Connection Failed";
+
   return (
-    <div className="fixed bottom-4 right-4 z-50 max-w-sm">
-      <Alert variant={allAccessible ? "default" : "destructive"} className="shadow-md">
-        <div className="flex items-start">
-          {allAccessible ? (
-            <CheckCircle className="h-4 w-4 mt-0.5 mr-2 text-green-500" />
-          ) : (
-            <AlertCircle className="h-4 w-4 mt-0.5 mr-2" />
-          )}
+    <div className="fixed bottom-4 right-4 z-50 w-full max-w-xs"> {/* Posición fija */}
+      <Alert variant={alertVariant}>
+        <div className="flex items-start space-x-3">
+          <div className="flex-shrink-0 pt-0.5">
+            {status.loading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : status.connection?.success ? (
+              <CheckCircle className="h-4 w-4 text-green-500" />
+            ) : (
+              <AlertCircle className="h-4 w-4 text-red-500" />
+            )}
+          </div>
           <div className="flex-1">
-            <AlertTitle className="flex items-center justify-between">
-              <span>
-                {connectionStatus?.success 
-                  ? "Supabase Connected" 
-                  : usingPlaceholders
-                    ? "Supabase Not Connected"
-                    : "Supabase Connection Issues"}
-              </span>
-              <div className="flex gap-2">
-                {!allAccessible && (
-                  <>
-                    <Dialog open={manualDialogOpen} onOpenChange={setManualDialogOpen}>
-                      <DialogTrigger asChild>
-                        <Button 
-                          variant="outline" 
-                          size="icon" 
-                          className="h-5 w-5 rounded-full"
-                          title="Manual Connection"
-                        >
-                          <Key className="h-3 w-3" />
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent className="sm:max-w-[425px]">
-                        <DialogHeader>
-                          <DialogTitle>Manual Supabase Connection</DialogTitle>
-                          <DialogDescription>
-                            Enter your Supabase URL and anon key to connect manually.
-                          </DialogDescription>
-                        </DialogHeader>
-                        <div className="grid gap-4 py-4">
-                          <div className="grid grid-cols-4 items-center gap-4">
-                            <Label htmlFor="supabase-url" className="text-right">
-                              URL
-                            </Label>
-                            <Input
-                              id="supabase-url"
-                              value={manualUrl}
-                              onChange={(e) => setManualUrl(e.target.value)}
-                              placeholder="https://your-project.supabase.co"
-                              className="col-span-3"
-                            />
-                          </div>
-                          <div className="grid grid-cols-4 items-center gap-4">
-                            <Label htmlFor="supabase-key" className="text-right">
-                              API Key
-                            </Label>
-                            <Input
-                              id="supabase-key"
-                              value={manualKey}
-                              onChange={(e) => setManualKey(e.target.value)}
-                              type="password"
-                              placeholder="your-anon-key"
-                              className="col-span-3"
-                            />
-                          </div>
-                          <div className="flex justify-between pt-2">
-                            <Button 
-                              variant="outline" 
-                              size="sm"
-                              onClick={handleResetCredentials}
-                              disabled={isLoading}
-                            >
-                              <Trash className="h-3 w-3 mr-1" />
-                              Reset
-                            </Button>
-                            <Link to="/supabase-test" className="text-xs text-blue-500 hover:underline flex items-center">
-                              Advanced testing
-                            </Link>
-                          </div>
-                        </div>
-                        <DialogFooter>
-                          <Button onClick={handleManualConnect} disabled={isLoading}>
-                            {isLoading ? 'Connecting...' : 'Connect'}
-                          </Button>
-                        </DialogFooter>
-                      </DialogContent>
-                    </Dialog>
-                    
-                    <Button 
-                      variant="outline" 
-                      size="icon" 
-                      className="h-5 w-5 rounded-full"
-                      onClick={openSupabaseTest}
-                      title="Advanced Supabase Testing"
-                    >
-                      <Settings className="h-3 w-3" />
-                    </Button>
-                  </>
-                )}
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  className="h-5 w-5 rounded-full"
-                  onClick={refreshStatus}
-                  disabled={isLoading}
-                >
-                  <RefreshCw className={`h-3 w-3 ${isLoading ? 'animate-spin' : ''}`} />
-                </Button>
-              </div>
-            </AlertTitle>
-            <AlertDescription className="mt-2 text-sm">
-              {isLoading ? (
-                <div className="text-center py-2">
-                  <RefreshCw className="h-4 w-4 animate-spin mx-auto mb-2" />
-                  Checking connection...
-                </div>
-              ) : !connectionStatus?.success ? (
-                <div className="text-sm">
-                  <div className="font-medium text-destructive mb-1">
-                    {usingPlaceholders ? 'Connection Not Established' : 'Connection Failed'}
-                  </div>
-                  <div className="text-xs opacity-90 mb-2">
-                    {connectionStatus?.details || (
-                      usingPlaceholders 
-                        ? 'Using placeholder Supabase credentials. Try using the manual connection option.' 
-                        : connectionStatus?.errorType === 'api_error' 
-                          ? 'Cannot reach Supabase API' 
-                          : connectionStatus?.errorType === 'auth_error' 
-                            ? 'Auth service unavailable' 
-                            : 'Unexpected connection error'
-                    )}
-                  </div>
-                  
-                  {showVerboseDetails && connectionStatus?.error && (
-                    <div className="text-xs bg-gray-100 p-2 rounded overflow-auto max-h-20">
-                      {typeof connectionStatus.error === 'object' 
-                        ? JSON.stringify(connectionStatus.error, null, 2) 
-                        : String(connectionStatus.error || 'Unknown error')}
-                    </div>
-                  )}
-                  
-                  <Button
-                    variant="link"
-                    size="sm"
-                    className="h-auto p-0 text-xs mt-1"
-                    onClick={() => setShowVerboseDetails(!showVerboseDetails)}
-                  >
-                    {showVerboseDetails ? 'Hide' : 'Show'} details
-                  </Button>
-                </div>
-              ) : (
-                <>
-                  <div className="mb-2 text-xs font-medium">Table Access:</div>
-                  {tableStatuses.map((status, index) => (
-                    <div key={index} className="text-sm flex items-center mb-1">
-                      {status.accessible ? (
-                        <CheckCircle className="h-3 w-3 mr-1 text-green-500 flex-shrink-0" />
-                      ) : (
-                        <AlertCircle className="h-3 w-3 mr-1 text-red-500 flex-shrink-0" />
-                      )}
-                      <span className="flex-1 truncate">
-                        {status.name}: {status.accessible ? "Connected" : "Error"}
+            <AlertTitle className="text-sm font-semibold">{statusTitle}</AlertTitle>
+            <AlertDescription className="text-xs mt-1">
+              {/* Mostrar mensaje principal */}
+              <span>{status.connection?.message || status.message}</span>
+
+              {/* Mostrar estado detallado de tablas si la conexión fue exitosa o si hay error */}
+              {!status.loading && (
+                <div className="mt-2 pt-2 border-t border-border/50">
+                  {status.tables.map((table, index) => (
+                    <div key={index} className="flex items-center justify-between text-xs">
+                      <span className="flex items-center">
+                        <Database className="w-3 h-3 mr-1.5 text-muted-foreground" />
+                        {table.name}
+                      </span>
+                      <span className={table.accessible ? 'text-green-600' : 'text-red-600'}>
+                        {table.accessible ? 'Accessible' : 'Error'}
                       </span>
                     </div>
                   ))}
-                </>
+                </div>
               )}
+
+              {/* --- COMENTADO: Botón para abrir diálogo de credenciales --- */}
+              {/* Si la conexión falla, mostrar botón para intentar configurar manualmente */}
+              {/* {!status.loading && !status.connection?.success && (
+                <Dialog open={isCredentialDialogOpen} onOpenChange={setIsCredentialDialogOpen}>
+                  <DialogTrigger asChild>
+                    <Button variant="link" size="sm" className="h-auto p-0 text-xs mt-2">
+                      <Settings className="w-3 h-3 mr-1"/> Set Credentials Manually
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="sm:max-w-[425px]">
+                    <DialogHeader>
+                      <DialogTitle>Set Supabase Credentials</DialogTitle>
+                      <DialogDescription>
+                        Enter your Supabase Project URL and Public Anon Key. These will be stored locally.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="grid gap-4 py-4">
+                      <div className="grid grid-cols-4 items-center gap-4">
+                        <Label htmlFor="supabase-url" className="text-right">
+                          Project URL
+                        </Label>
+                        <Input
+                          id="supabase-url"
+                          value={manualUrl}
+                          onChange={(e) => setManualUrl(e.target.value)}
+                          className="col-span-3"
+                          placeholder="https://your-project-url.supabase.co"
+                        />
+                      </div>
+                      <div className="grid grid-cols-4 items-center gap-4">
+                        <Label htmlFor="supabase-key" className="text-right">
+                          Anon Key
+                        </Label>
+                        <Input
+                          id="supabase-key"
+                          value={manualKey}
+                          onChange={(e) => setManualKey(e.target.value)}
+                          className="col-span-3"
+                          placeholder="your-public-anon-key"
+                        />
+                      </div>
+                    </div>
+                    <DialogFooter className="flex justify-between sm:justify-between w-full">
+                      <Button variant="ghost" size="sm" onClick={handleResetCredentials}>
+                        <Trash className="w-3 h-3 mr-1"/> Reset Stored
+                      </Button>
+                      <Button onClick={handleSetManualCredentials} disabled={!manualUrl || !manualKey}>
+                         <Key className="w-3 h-3 mr-1"/> Save & Retry
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              )} */}
+              {/* --- FIN COMENTADO --- */}
+
             </AlertDescription>
-            <div className="mt-3 text-xs text-muted-foreground">
-              <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={dismissStatus}>
-                Dismiss
-              </Button>
+            {/* Botón para refrescar */}
+            <div className="mt-2 pt-2 border-t border-border/50 flex justify-between items-center">
+                 <Button
+                   variant="ghost"
+                   size="sm"
+                   className="h-auto p-0 text-xs text-muted-foreground hover:text-foreground"
+                   onClick={checkStatus}
+                   disabled={status.loading}
+                 >
+                   <RefreshCw className={`w-3 h-3 mr-1 ${status.loading ? 'animate-spin' : ''}`} />
+                   Refresh Status
+                 </Button>
+                <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={dismissStatus}>
+                   Dismiss
+                </Button>
             </div>
           </div>
         </div>
