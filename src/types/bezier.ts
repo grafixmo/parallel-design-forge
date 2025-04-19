@@ -1,4 +1,3 @@
-
 export interface Point {
   x: number;
   y: number;
@@ -32,6 +31,7 @@ export interface CurveConfig {
 export interface BackgroundImage {
   url: string;
   opacity: number;
+  format?: 'jpg' | 'png' | 'svg';  // Added format field
 }
 
 export interface TransformSettings {

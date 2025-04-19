@@ -17,30 +17,59 @@ export const generateThumbnail = async (designData: string): Promise<string> => 
     // Try to parse the design data
     let parsedData: any;
     try {
-      // First, try to unescape if it's an SVG with escaped characters
-      let normalizedData = designData;
-      
-      if (typeof designData === 'string' && 
-          (designData.includes('\\\"') || designData.includes('\\\\'))) {
-        normalizedData = unescapeSvgContent(designData);
-      }
-      
-      // Check if it's SVG first (after unescaping)
-      if (typeof normalizedData === 'string' && 
-         (normalizedData.includes('<svg') || normalizedData.startsWith('<?xml'))) {
-        console.log('Template appears to be SVG format, attempting SVG render');
-        return renderSVGThumbnail(normalizedData, 200, 150);
-      }
-      
-      // If not SVG, try to parse as JSON
-      parsedData = JSON.parse(normalizedData);
+      // Parse the JSON data
+      parsedData = JSON.parse(designData);
       console.log('Successfully parsed JSON data');
-    } catch (e) {
-      // If still not parsed, make one more check for SVG format
-      if (typeof designData === 'string' && (designData.includes('<svg') || designData.startsWith('<?xml'))) {
-        console.log('Template appears to be SVG format after JSON parse failed, attempting SVG render');
-        return renderSVGThumbnail(designData, 200, 150);
+      
+      // Check if this is a background image design
+      if (parsedData.backgroundImage?.url) {
+        console.log('Found background image URL, generating direct thumbnail');
+        return new Promise((resolve) => {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = 200;
+            canvas.height = 150;
+            const ctx = canvas.getContext('2d');
+            
+            if (!ctx) {
+              console.error('Could not get canvas context');
+              resolve(createFallbackThumbnail());
+              return;
+            }
+            
+            // Clear with white background
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Calculate scaling to fit while maintaining aspect ratio
+            const scale = Math.min(
+              canvas.width / img.width,
+              canvas.height / img.height
+            );
+            
+            const scaledWidth = img.width * scale;
+            const scaledHeight = img.height * scale;
+            const x = (canvas.width - scaledWidth) / 2;
+            const y = (canvas.height - scaledHeight) / 2;
+            
+            // Draw the scaled image
+            ctx.drawImage(img, x, y, scaledWidth, scaledHeight);
+            
+            resolve(canvas.toDataURL('image/png'));
+          };
+          
+          img.onerror = () => {
+            console.error('Error loading background image');
+            resolve(createFallbackThumbnail());
+          };
+          
+          img.src = parsedData.backgroundImage.url;
+        });
       }
+      
+    } catch (e) {
       console.error('Failed to parse design data:', e);
       return createFallbackThumbnail();
     }

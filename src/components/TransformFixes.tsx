@@ -464,21 +464,13 @@ export const saveBackgroundImageToGallery = async (
     // Convert to JSON string as expected by SavedDesign type
     const jsonData = JSON.stringify(designData);
     
-    // Create a SVG content with the background image embedded
-    // This is crucial as designs need svg_content to display properly in the gallery
-    const svgContent = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600">
-      <rect width="800" height="600" fill="white"/>
-      <image href="${backgroundImage}" width="800" height="600" preserveAspectRatio="xMidYMid meet"/>
-      <text x="10" y="590" font-family="Arial" font-size="12" fill="#999">Background Image - ${formattedDate}</text>
-    </svg>`;
-    
     console.log("Saving background image to Paper(JPG) category...");
     console.log("Design name:", name);
     console.log("Category:", "Paper(JPG)");
-    console.log("Has SVG content:", !!svgContent);
+    console.log("Image URL length:", backgroundImage.length);
     
-    // Save to Paper (JPG) category - passing both the JSON data and SVG content
-    const result = await saveDesign(name, "Paper(JPG)", jsonData, svgContent);
+    // Save to Paper (JPG) category - passing the JSON data directly
+    const result = await saveDesign(name, "Paper(JPG)", jsonData);
     
     if (result && result.error) {
       throw new Error(result.error.message);
