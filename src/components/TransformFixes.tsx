@@ -447,19 +447,14 @@ export const saveBackgroundImageToGallery = async (
   }
 
   try {
-    // Ensure the image is in the correct format for storage
-    let imageData = backgroundImage;
-    
-    // Make sure we're working with a data URL
-    if (!imageData.startsWith('data:image/')) {
-      console.error("Background image is not in data URL format");
-      toast({
-        title: "Format Error",
-        description: "Background image is in an unsupported format",
-        variant: "destructive"
-      });
-      return;
-    }
+    // Create a proper DesignData object with the background image
+    const designData = {
+      objects: [], // Empty array since this is just a background
+      backgroundImage: {
+        url: backgroundImage,
+        opacity: 1 // Default opacity
+      }
+    };
     
     // Generate a name based on date with a more readable format
     const date = new Date();
@@ -467,20 +462,10 @@ export const saveBackgroundImageToGallery = async (
     const formattedTime = `${String(date.getHours()).padStart(2, '0')}-${String(date.getMinutes()).padStart(2, '0')}`;
     const name = `Background_${formattedDate}_${formattedTime}`;
     
-    // Create a proper DesignData object with the background image
-    const designData = {
-      objects: [],
-      backgroundImage: {
-        url: imageData,
-        opacity: 1
-      }
-    };
-    
     // Convert to JSON string as expected by SavedDesign type
     const jsonData = JSON.stringify(designData);
     
     // Save to Paper (JPG) category - using the exact category name as it appears in the UI
-    // The category must match exactly what's displayed in the gallery tabs
     const result = await saveDesign(name, "Paper(JPG)", jsonData);
     
     if (result && result.error) {
