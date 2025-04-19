@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
@@ -9,9 +10,26 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from '@/components/ui/alert-dialog';
 import { SavedDesign } from '@/types/bezier';
-import { getDesigns, getDesignsByCategory, updateDesign } from '@/services/supabaseClient';
-import { X, AlertTriangle, FileJson, FileText } from 'lucide-react';
+import { getDesigns, getDesignsByCategory, updateDesign, supabase } from '@/services/supabaseClient';
+import { X, AlertTriangle, FileJson, FileText, Trash2, Edit } from 'lucide-react';
 import { importSVGFromString } from '@/utils/svgExporter';
 import { useToast } from '@/hooks/use-toast';
 import MergeToggle from './MergeToggle';
@@ -30,6 +48,10 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign }) 
   const [fixedCount, setFixedCount] = useState<number>(0);
   const { toast } = useToast();
   const [mergeMode, setMergeMode] = useState(false);
+  const [selectedDesign, setSelectedDesign] = useState<SavedDesign | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
+  const [newName, setNewName] = useState('');
 
   useEffect(() => {
     fetchDesigns();
@@ -292,94 +314,244 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign }) 
     return "bg-gray-100 text-gray-800";
   };
 
+  const handleOpenDeleteDialog = (design: SavedDesign, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent design selection
+    setSelectedDesign(design);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleOpenRenameDialog = (design: SavedDesign, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent design selection
+    setSelectedDesign(design);
+    setNewName(design.name);
+    setRenameDialogOpen(true);
+  };
+
+  const handleDeleteDesign = async () => {
+    if (!selectedDesign || !selectedDesign.id) return;
+
+    try {
+      const { error } = await supabase
+        .from('designs')
+        .delete()
+        .eq('id', selectedDesign.id);
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      setDesigns((prev) => prev.filter(d => d.id !== selectedDesign.id));
+      toast({
+        title: 'Design Deleted',
+        description: `"${selectedDesign.name}" has been removed`
+      });
+    } catch (error) {
+      console.error('Error deleting design:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to delete the design',
+        variant: 'destructive'
+      });
+    } finally {
+      setDeleteDialogOpen(false);
+      setSelectedDesign(null);
+    }
+  };
+
+  const handleRenameDesign = async () => {
+    if (!selectedDesign || !selectedDesign.id || !newName.trim()) return;
+
+    try {
+      const { error } = await updateDesign(selectedDesign.id, {
+        name: newName
+      });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      setDesigns((prev) => prev.map(d =>
+        d.id === selectedDesign.id
+          ? { ...d, name: newName }
+          : d
+      ));
+
+      toast({
+        title: 'Design Updated',
+        description: `Design has been renamed to "${newName}"`
+      });
+    } catch (error) {
+      console.error('Error updating design:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to update the design',
+        variant: 'destructive'
+      });
+    } finally {
+      setRenameDialogOpen(false);
+      setSelectedDesign(null);
+      setNewName('');
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center">
-      <Card className="w-full max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
-        <div className="flex items-center justify-between p-4 border-b">
-          <h2 className="text-xl font-semibold">Design Library</h2>
-          <div className="flex items-center space-x-4">
-            <MergeToggle enabled={mergeMode} onToggle={setMergeMode} />
-            <Button variant="ghost" size="sm" onClick={onClose}>
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-        
-        <div className="p-4 border-b">
-          <div className="flex items-center space-x-4">
-            <div className="w-40">
-              <Select value={selectedCategory} onValueChange={handleCategoryChange}>
-                <SelectTrigger>
-                  <SelectValue placeholder="All Categories" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Categories</SelectItem>
-                  <SelectItem value="Collares">Collares</SelectItem>
-                  <SelectItem value="Anillos">Anillos</SelectItem>
-                  <SelectItem value="Pendientes">Pendientes</SelectItem>
-                  <SelectItem value="Prototipos">Prototipos</SelectItem>
-                </SelectContent>
-              </Select>
+    <>
+      <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center">
+        <Card className="w-full max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
+          <div className="flex items-center justify-between p-4 border-b">
+            <h2 className="text-xl font-semibold">Design Library</h2>
+            <div className="flex items-center space-x-4">
+              <MergeToggle enabled={mergeMode} onToggle={setMergeMode} />
+              <Button variant="ghost" size="sm" onClick={onClose}>
+                <X className="h-4 w-4" />
+              </Button>
             </div>
-            
-            <Button variant="outline" size="sm" onClick={fetchDesigns}>
-              Refresh
-            </Button>
-            
-            {fixedCount > 0 && (
-              <div className="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded">
-                Auto-fixed {fixedCount} designs
+          </div>
+          
+          <div className="p-4 border-b">
+            <div className="flex items-center space-x-4">
+              <div className="w-40">
+                <Select value={selectedCategory} onValueChange={handleCategoryChange}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All Categories" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Categories</SelectItem>
+                    <SelectItem value="Collares">Collares</SelectItem>
+                    <SelectItem value="Anillos">Anillos</SelectItem>
+                    <SelectItem value="Pendientes">Pendientes</SelectItem>
+                    <SelectItem value="Prototipos">Prototipos</SelectItem>
+                    <SelectItem value="Paper(JPG)">Paper (JPG)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <Button variant="outline" size="sm" onClick={fetchDesigns}>
+                Refresh
+              </Button>
+              
+              {fixedCount > 0 && (
+                <div className="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded">
+                  Auto-fixed {fixedCount} designs
+                </div>
+              )}
+            </div>
+          </div>
+          
+          <div className="flex-1 overflow-auto p-4">
+            {isLoading ? (
+              <div className="text-center py-8">
+                <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent"></div>
+                <p className="mt-2 text-gray-500">Loading designs...</p>
+              </div>
+            ) : error ? (
+              <div className="text-center py-8 text-red-500">
+                <p>{error}</p>
+                <Button variant="outline" size="sm" className="mt-2" onClick={fetchDesigns}>
+                  Try Again
+                </Button>
+              </div>
+            ) : designs.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                <p>No designs found.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {designs.map((design) => (
+                  <Card
+                    key={design.id}
+                    className="p-4 hover:shadow-md transition-shadow cursor-pointer"
+                    onClick={() => handleSelectDesign(design)}
+                  >
+                    <div className="aspect-square mb-2 border rounded flex items-center justify-center bg-gray-50 overflow-hidden">
+                      {getPreviewContent(design)}
+                    </div>
+                    <h3 className="font-medium text-sm truncate">{design.name}</h3>
+                    <div className="flex items-center justify-between mt-1">
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${getStatusBadgeClass(design)}`}>
+                        {getStatusLabel(design)}
+                      </span>
+                      {(design as any).wasFixed && (
+                        <span className="ml-1 text-xs text-amber-600">
+                          (Auto-Fixed)
+                        </span>
+                      )}
+                      <div className="flex items-center space-x-1">
+                        <button
+                          onClick={(e) => handleOpenRenameDialog(design, e)}
+                          className="text-muted-foreground hover:text-primary transition-colors"
+                          title="Edit design"
+                        >
+                          <Edit className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={(e) => handleOpenDeleteDialog(design, e)}
+                          className="text-muted-foreground hover:text-destructive transition-colors"
+                          title="Delete design"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </Card>
+                ))}
               </div>
             )}
           </div>
-        </div>
-        
-        <div className="flex-1 overflow-auto p-4">
-          {isLoading ? (
-            <div className="text-center py-8">
-              <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent"></div>
-              <p className="mt-2 text-gray-500">Loading designs...</p>
+        </Card>
+      </div>
+
+      {/* Delete confirmation dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Design</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{selectedDesign?.name}"? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setSelectedDesign(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteDesign} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Rename dialog */}
+      <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Rename Design</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <label htmlFor="name" className="text-right text-sm font-medium">
+                Name
+              </label>
+              <Input
+                id="name"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                className="col-span-3"
+              />
             </div>
-          ) : error ? (
-            <div className="text-center py-8 text-red-500">
-              <p>{error}</p>
-              <Button variant="outline" size="sm" className="mt-2" onClick={fetchDesigns}>
-                Try Again
-              </Button>
-            </div>
-          ) : designs.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
-              <p>No designs found.</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {designs.map((design) => (
-                <Card
-                  key={design.id}
-                  className="p-4 hover:shadow-md transition-shadow cursor-pointer"
-                  onClick={() => handleSelectDesign(design)}
-                >
-                  <div className="aspect-square mb-2 border rounded flex items-center justify-center bg-gray-50 overflow-hidden">
-                    {getPreviewContent(design)}
-                  </div>
-                  <h3 className="font-medium text-sm truncate">{design.name}</h3>
-                  <div className="flex items-center mt-1">
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${getStatusBadgeClass(design)}`}>
-                      {getStatusLabel(design)}
-                    </span>
-                    {(design as any).wasFixed && (
-                      <span className="ml-1 text-xs text-amber-600">
-                        (Auto-Fixed)
-                      </span>
-                    )}
-                  </div>
-                </Card>
-              ))}
-            </div>
-          )}
-        </div>
-      </Card>
-    </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setRenameDialogOpen(false);
+              setSelectedDesign(null);
+            }}>
+              Cancel
+            </Button>
+            <Button onClick={handleRenameDesign} disabled={!newName.trim()}>
+              Save changes
+            </Button>
+          </DialogFooter>
+          </DialogContent>
+      </Dialog>
+    </>
   );
 };
 

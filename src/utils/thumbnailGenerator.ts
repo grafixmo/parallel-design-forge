@@ -169,11 +169,59 @@ export const generateThumbnail = async (designData: string): Promise<string> => 
 
         // Apply style with fallbacks
         const style = obj.curveConfig?.styles?.[0] || { color: '#000000', width: 2 };
+        
+        // Ensure we properly apply color and width properties
         ctx.strokeStyle = style.color || '#000000';
-        ctx.lineWidth = Math.max(1, (style.width || 2) * scale);
+        ctx.lineWidth = Math.max(1, (style.width || 2) * Math.min(scale, 1.5));
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
-        ctx.stroke();
+        
+        // If we have multiple styles (parallel lines), draw them all
+        if (obj.curveConfig?.styles && obj.curveConfig.styles.length > 1 && obj.curveConfig.parallelCount > 1) {
+          // Draw the main path first
+          ctx.stroke();
+          
+          // Draw additional parallel paths if specified
+          const parallelCount = obj.curveConfig.parallelCount || 1;
+          const spacing = (obj.curveConfig.spacing || 5) * scale;
+          
+          // Draw additional paths with their respective styles
+          for (let i = 1; i < Math.min(parallelCount, obj.curveConfig.styles.length); i++) {
+            const parallelStyle = obj.curveConfig.styles[i];
+            if (!parallelStyle) continue;
+            
+            ctx.beginPath();
+            const offset = i * spacing;
+            
+            // Redraw the path with offset
+            const firstPoint = transformPoint(obj.points[0], scale, offsetX - minX * scale + offset, offsetY - minY * scale);
+            if (!firstPoint) continue;
+            
+            ctx.moveTo(firstPoint.x, firstPoint.y);
+            
+            for (let j = 0; j < obj.points.length - 1; j++) {
+              const current = obj.points[j];
+              const next = obj.points[j + 1];
+              
+              if (!current || !next || !current.handleOut || !next.handleIn) continue;
+              
+              const cp1 = transformPoint(current.handleOut, scale, offsetX - minX * scale + offset, offsetY - minY * scale);
+              const cp2 = transformPoint(next.handleIn, scale, offsetX - minX * scale + offset, offsetY - minY * scale);
+              const p = transformPoint(next, scale, offsetX - minX * scale + offset, offsetY - minY * scale);
+              
+              if (!cp1 || !cp2 || !p) continue;
+              
+              ctx.bezierCurveTo(cp1.x, cp1.y, cp2.x, cp2.y, p.x, p.y);
+            }
+            
+            ctx.strokeStyle = parallelStyle.color || '#000000';
+            ctx.lineWidth = Math.max(1, (parallelStyle.width || 2) * Math.min(scale, 1.5));
+            ctx.stroke();
+          }
+        } else {
+          // Just draw the single path
+          ctx.stroke();
+        }
       } catch (error) {
         console.error(`Error drawing object ${index}:`, error);
       }

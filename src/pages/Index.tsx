@@ -721,6 +721,7 @@ const Index = () => {
             backgroundImage={backgroundImage}
             backgroundOpacity={backgroundOpacity}
             isDrawingMode={isDrawingMode}
+            onUpdateTransform={updateObjectTransform}
           />
         </div>
         

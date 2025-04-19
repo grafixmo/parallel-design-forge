@@ -37,6 +37,7 @@ import {
   PopoverTrigger
 } from "@/components/ui/popover";
 import { CurveStyle, CurveConfig, TransformSettings, BezierObject } from '@/types/bezier';
+import { saveDesign } from '@/services/supabaseClient';
 import ObjectsPanel from './ObjectsPanel';
 import { ColorPicker } from '@/components/ui/color-picker';
 import { cn } from '@/lib/utils';
@@ -435,55 +436,31 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
               <span className="text-sm font-medium">Background Image</span>
             </AccordionTrigger>
             <AccordionContent className="pb-4">
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="flex items-center text-xs px-2.5 py-1 bg-gray-100 hover:bg-gray-200 rounded-md"
-                  >
-                    <Image className="h-3.5 w-3.5 mr-1" />
-                    {backgroundImage ? 'Change Image' : 'Upload Image'}
-                  </button>
-                  
-                  {backgroundImage && (
-                    <button
-                      type="button"
-                      onClick={onRemoveImage}
-                      className="flex items-center text-xs px-2 py-1 text-red-500 hover:text-red-700"
-                    >
-                      <X className="h-3.5 w-3.5 mr-1" />
-                      Remove
-                    </button>
-                  )}
-                  
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={onUploadImage}
-                    className="hidden"
-                  />
-                </div>
-                
-                {backgroundImage && (
-                  <div>
-                    <div className="flex justify-between mb-1">
-                      <Label htmlFor="bg-opacity" className="text-xs">Opacity</Label>
-                      <span className="text-xs text-gray-500">{Math.round(backgroundOpacity * 100)}%</span>
-                    </div>
-                    <Slider
-                      id="bg-opacity"
-                      value={[backgroundOpacity * 100]}
-                      min={10}
-                      max={100}
-                      step={5}
-                      onValueChange={(values) => onBackgroundOpacityChange(values[0] / 100)}
-                      className="flex-1"
-                    />
-                  </div>
-                )}
-              </div>
+              {/* Wrap the lazy-loaded component in a Suspense boundary */}
+              <React.Suspense fallback={<div className="p-4 text-center">Loading background controls...</div>}>
+                {React.createElement(React.lazy(() => import('@/components/TransformFixes').then(module => ({
+                  default: module.BackgroundImageControls
+                }))), {
+                  backgroundImage,
+                  backgroundOpacity,
+                  onBackgroundOpacityChange,
+                  onUploadImage,
+                  onRemoveImage,
+                  onSaveToGallery: async (bgImage) => {
+                    const { saveBackgroundImageToGallery } = await import('@/components/TransformFixes');
+                    // Pass the saveDesign function from supabaseClient
+                    return saveBackgroundImageToGallery(bgImage, async (name, category, data) => {
+                      return saveDesign({
+                        name,
+                        category,
+                        shapes_data: data,
+                        // Remove user_id as it's not in the SavedDesign type
+                        created_at: new Date().toISOString()
+                      });
+                    });
+                  }
+                })}
+              </React.Suspense>
             </AccordionContent>
           </AccordionItem>
         </Accordion>

@@ -10,14 +10,20 @@ console.log('Supabase environment check:', {
   NEXT_PUBLIC_SUPABASE_ANON_KEY: import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? 'defined' : 'undefined'
 });
 
-// Check for multiple environment variable naming patterns
-let supabaseUrl = import.meta.env.VITE_SUPABASE_URL ||
-                 import.meta.env.NEXT_PUBLIC_SUPABASE_URL ||
-                 'https://your-project-url.supabase.co';
+// Use provided Supabase credentials
+let supabaseUrl = 'https://nwrihwenctfimyjcbcal.supabase.co';
+let supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im53cmlod2VuY3RmaW15amNiY2FsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDIwNzUxNjMsImV4cCI6MjA1NzY1MTE2M30.fXmf6GUUn0OaEmisInMUP2oBlP2oBGhMSBOSx8HYI2k';
 
-let supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY ||
-                  import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-                  'your-public-anon-key';
+// Fallback to environment variables if needed
+if (!supabaseUrl || !supabaseKey) {
+  supabaseUrl = import.meta.env.VITE_SUPABASE_URL ||
+               import.meta.env.NEXT_PUBLIC_SUPABASE_URL ||
+               'https://your-project-url.supabase.co';
+
+  supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY ||
+                import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+                'your-public-anon-key';
+}
 
 // Try to load from localStorage if available
 if (typeof window !== 'undefined') {

@@ -8,6 +8,7 @@ import {
   HistoryState,
   BezierObject
 } from '../types/bezier';
+import { TransformSettings } from '@/types/bezier';
 import { 
   isPointNear, 
   generateId,
@@ -17,8 +18,10 @@ import { toast } from '@/hooks/use-toast';
 import { ZoomIn, ZoomOut, Undo, Move, RotateCcw } from 'lucide-react';
 import { BezierObjectRenderer } from './BezierObject';
 import { Button } from '@/components/ui/button';
+import { applyTransformToPoints } from './TransformFixes';
 
 interface BezierCanvasProps {
+  onUpdateTransform?: (objectId: string, transform: TransformSettings) => void;
   width: number;
   height: number;
   objects: BezierObject[];
@@ -45,7 +48,8 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
   onUndo,
   backgroundImage,
   backgroundOpacity,
-  isDrawingMode = true
+  isDrawingMode = true,
+  onUpdateTransform
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -251,11 +255,17 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
     if (backgroundImageObj) {
       ctx.globalAlpha = backgroundOpacity;
       
-      // Calculate scaling to fit the canvas while maintaining aspect ratio
-      const scale = Math.min(
+      // Get custom scale from CSS variable or use default scaling
+      const customScale = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--bg-image-scale') || '0.5');
+      
+      // Calculate scaling to fit the canvas while maintaining aspect ratio, then apply custom scale
+      const fitScale = Math.min(
         canvas.width / backgroundImageObj.width,
         canvas.height / backgroundImageObj.height
       ) / zoom; // Adjust for zoom
+      
+      // Apply the custom scale factor (default 0.5 or 50%)
+      const scale = fitScale * customScale;
       
       const scaledWidth = backgroundImageObj.width * scale;
       const scaledHeight = backgroundImageObj.height * scale;
@@ -302,8 +312,15 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       const isObjectSelected = selectedObjectIds.includes(object.id);
       const isDrawingObject = object.id === currentDrawingObjectId;
       
+      // Apply transformations to the object's points
+      // This ensures control points and handles follow the transformation properly
+      const transformedObject = {
+        ...object,
+        points: applyTransformToPoints(object)
+      };
+      
       const bezierObject = new BezierObjectRenderer({
-        object,
+        object: transformedObject,
         isSelected: isObjectSelected || isDrawingObject,
         zoom,
         selectedPoint,
@@ -356,6 +373,29 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       );
       ctx.fill();
       ctx.stroke();
+      
+      // Draw transform handles on the selection rectangle
+      if (selectionRect.width !== 0 && selectionRect.height !== 0) {
+        // Draw corner handles
+        const handleSize = 8 / zoom;
+        const corners = [
+          { x: selectionRect.startX, y: selectionRect.startY }, // Top-left
+          { x: selectionRect.startX + selectionRect.width, y: selectionRect.startY }, // Top-right
+          { x: selectionRect.startX + selectionRect.width, y: selectionRect.startY + selectionRect.height }, // Bottom-right
+          { x: selectionRect.startX, y: selectionRect.startY + selectionRect.height } // Bottom-left
+        ];
+        
+        corners.forEach(corner => {
+          ctx.fillStyle = 'white';
+          ctx.strokeStyle = 'rgba(52, 152, 219, 1)';
+          ctx.lineWidth = 1.5 / zoom;
+          
+          ctx.beginPath();
+          ctx.rect(corner.x - handleSize/2, corner.y - handleSize/2, handleSize, handleSize);
+          ctx.fill();
+          ctx.stroke();
+        });
+      }
     }
     
     // Draw zoom level indicator
@@ -493,7 +533,22 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       
       // Check if we're clicking on the object itself
       if (bezierObject.isPointInObject(x, y, POINT_RADIUS / zoom)) {
-        onObjectSelect(object.id, e.shiftKey);
+        // Handle shift-click for multiple selection
+        if (e.shiftKey) {
+          // If shift is pressed, toggle this object's selection without affecting others
+          const isCurrentlySelected = selectedObjectIds.includes(object.id);
+          if (isCurrentlySelected) {
+            // Deselect just this object
+            onObjectSelect(object.id, false);
+          } else {
+            // Add this object to selection
+            onObjectSelect(object.id, true);
+          }
+        } else {
+          // Normal click - select only this object
+          onObjectSelect(object.id, false);
+        }
+        
         clickedOnObject = true;
         
         // If the object is now selected, prepare for dragging
@@ -580,16 +635,17 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         });
       }
     } else if (!clickedOnObject && !isDrawingMode) {
-      // In selection mode with Shift key, start selection rectangle
-      if (e.shiftKey) {
-        setIsSelecting(true);
-        setSelectionRect({
-          startX: x,
-          startY: y,
-          width: 0,
-          height: 0
-        });
-      } else if (selectedObjectIds.length > 0) {
+      // Start selection rectangle regardless of shift key
+      setIsSelecting(true);
+      setSelectionRect({
+        startX: x,
+        startY: y,
+        width: 0,
+        height: 0
+      });
+      
+      // Only clear selection if shift is not pressed
+      if (!e.shiftKey && selectedObjectIds.length > 0) {
         // In selection mode, clear selection when clicking on empty space (without Shift)
         onObjectSelect('', false); // Deselect all objects
       }
@@ -650,11 +706,29 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
           }
         }));
         
-        return { ...obj, points: updatedPoints };
+        // Ensure transform properties are preserved during dragging
+        return { 
+          ...obj, 
+          points: updatedPoints,
+          // Keep the transform settings intact
+          transform: {
+            ...obj.transform
+          }
+        };
       });
       
       onObjectsChange(updatedObjects);
       setLastDragPosition({ x, y });
+      
+      // Notify parent component about transform changes for all selected objects
+      if (onUpdateTransform) {
+        selectedObjectIds.forEach(id => {
+          const obj = updatedObjects.find(o => o.id === id);
+          if (obj) {
+            onUpdateTransform(id, obj.transform);
+          }
+        });
+      }
       return;
     }
     
@@ -758,10 +832,11 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         });
         
         // Update selected objects in parent component
-        if (newSelectedIds.length !== selectedObjectIds.length) {
-          // Only update if the selection changed
-          objectIdsInSelection.forEach(id => onObjectSelect(id, true));
-        }
+        objectIdsInSelection.forEach(id => {
+          if (!selectedObjectIds.includes(id)) {
+            onObjectSelect(id, true);
+          }
+        });
       } else {
         // Replace current selection
         if (objectIdsInSelection.length > 0) {
@@ -779,6 +854,18 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
           description: "Drag to move objects as a group, or press Delete to remove them"
         });
       }
+    }
+    
+    // Maintain multi-selection state for dragging after mouse up
+    if (selectedObjectIds.length > 1) {
+      setIsMultiDragging(false);
+    } else {
+      // Reset all drag states
+      setIsDragging(false);
+      setIsMultiDragging(false);
+      setIsSelecting(false);
+      setSelectionRect(null);
+      setLastDragPosition(null);
     }
     
     setIsDragging(false);

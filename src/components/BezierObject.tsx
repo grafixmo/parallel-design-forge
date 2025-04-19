@@ -167,9 +167,6 @@ export class BezierObjectRenderer {
       }
     }
     
-    // Save the context state for transformation
-    ctx.save();
-    
     // Calculate center point for transformation
     let centerX = 0, centerY = 0;
     
@@ -179,11 +176,55 @@ export class BezierObjectRenderer {
     centerX = sumX / points.length;
     centerY = sumY / points.length;
     
-    // Apply transformations
-    ctx.translate(centerX, centerY);
-    ctx.rotate((transform.rotation * Math.PI) / 180);
-    ctx.scale(transform.scaleX, transform.scaleY);
-    ctx.translate(-centerX, -centerY);
+    // Create transformed points for rendering
+    // This ensures control points and handles follow the transformation properly
+    const transformedPoints = points.map(point => {
+      // Apply rotation and scaling to main point
+      const rotRad = (transform.rotation * Math.PI) / 180;
+      const cos = Math.cos(rotRad);
+      const sin = Math.sin(rotRad);
+      
+      // Transform main point
+      const dx = point.x - centerX;
+      const dy = point.y - centerY;
+      const rotatedX = dx * cos - dy * sin;
+      const rotatedY = dx * sin + dy * cos;
+      const scaledX = rotatedX * transform.scaleX;
+      const scaledY = rotatedY * transform.scaleY;
+      
+      // Transform handle in
+      const dxIn = point.handleIn.x - centerX;
+      const dyIn = point.handleIn.y - centerY;
+      const rotatedXIn = dxIn * cos - dyIn * sin;
+      const rotatedYIn = dxIn * sin + dyIn * cos;
+      const scaledXIn = rotatedXIn * transform.scaleX;
+      const scaledYIn = rotatedYIn * transform.scaleY;
+      
+      // Transform handle out
+      const dxOut = point.handleOut.x - centerX;
+      const dyOut = point.handleOut.y - centerY;
+      const rotatedXOut = dxOut * cos - dyOut * sin;
+      const rotatedYOut = dxOut * sin + dyOut * cos;
+      const scaledXOut = rotatedXOut * transform.scaleX;
+      const scaledYOut = rotatedYOut * transform.scaleY;
+      
+      return {
+        ...point,
+        renderX: scaledX + centerX,
+        renderY: scaledY + centerY,
+        renderHandleIn: {
+          x: scaledXIn + centerX,
+          y: scaledYIn + centerY
+        },
+        renderHandleOut: {
+          x: scaledXOut + centerX,
+          y: scaledYOut + centerY
+        }
+      };
+    });
+    
+    // Save the context state
+    ctx.save();
     
     // Draw curves if we have enough points
     if (points.length >= 2) {
