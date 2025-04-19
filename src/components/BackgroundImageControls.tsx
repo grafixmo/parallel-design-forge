@@ -1,14 +1,11 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { Slider } from '@/components/ui/slider';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { BackgroundImage } from '@/types/bezier';
-import { SavedBackImage, saveBackgroundImage, getBackgroundImages, deleteBackgroundImage } from '@/services/backgroundImageService';
+import { SavedBackImage, saveBackgroundImage } from '@/services/backgroundImageService';
 import { toast } from '@/hooks/use-toast';
-import BackgroundImageGallery from './BackgroundImageGallery';
 
 interface BackgroundImageControlsProps {
   backgroundImage?: string;
@@ -27,17 +24,11 @@ export const BackgroundImageControls: React.FC<BackgroundImageControlsProps> = (
   onRemoveImage,
   onSelectImage
 }) => {
-  const [showGallery, setShowGallery] = useState(false);
-  const [savedImages, setSavedImages] = useState<SavedBackImage[]>([]);
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    loadSavedImages();
-  }, []);
-
-  const loadSavedImages = async () => {
-    const images = await getBackgroundImages();
-    setSavedImages(images);
+  const handleUploadClick = () => {
+    fileInputRef.current?.click();
   };
 
   const handleSaveToGallery = async () => {
@@ -49,123 +40,106 @@ export const BackgroundImageControls: React.FC<BackgroundImageControlsProps> = (
       return;
     }
 
-    // Generate name based on date
-    const date = new Date();
-    const name = `Background_${date.toISOString().split('T')[0]}_${date.getHours()}-${date.getMinutes()}`;
+    setIsSaving(true);
+    try {
+      // Generate name based on date
+      const date = new Date();
+      const name = `Background_${date.toISOString().split('T')[0]}_${date.getHours()}-${date.getMinutes()}`;
 
-    const savedImage = await saveBackgroundImage(
-      {
-        url: backgroundImage,
-        opacity: backgroundOpacity,
-        format: 'jpg' // Default to jpg, the service will detect the actual format
-      },
-      name
-    );
+      const savedImage = await saveBackgroundImage(
+        {
+          url: backgroundImage,
+          opacity: backgroundOpacity,
+          format: detectImageFormat(backgroundImage)
+        },
+        name
+      );
 
-    if (savedImage) {
-      setSavedImages(prev => [savedImage, ...prev]);
+      if (savedImage) {
+        toast({
+          title: "Success",
+          description: "Background image saved to gallery"
+        });
+      }
+    } catch (error) {
+      console.error("Error saving background image:", error);
       toast({
-        title: "Image Saved",
-        description: "Background image has been saved to gallery"
+        title: "Error",
+        description: "Failed to save background image to gallery",
+        variant: "destructive"
       });
+    } finally {
+      setIsSaving(false);
     }
   };
 
-  const handleDeleteImage = async (id: string) => {
-    const success = await deleteBackgroundImage(id);
-    if (success) {
-      setSavedImages(prev => prev.filter(img => img.id !== id));
-      toast({
-        title: "Image Deleted",
-        description: "Background image has been removed from gallery"
-      });
-    }
-  };
-
-  const handleSelectImage = (image: SavedBackImage) => {
-    if (onSelectImage) {
-      onSelectImage({
-        url: image.url,
-        opacity: image.opacity,
-        format: image.format
-      });
-    }
-    setShowGallery(false);
+  // Helper function to detect image format from URL
+  const detectImageFormat = (url: string): 'jpg' | 'png' | 'svg' => {
+    const lowerUrl = url.toLowerCase();
+    if (lowerUrl.includes('image/svg')) return 'svg';
+    if (lowerUrl.includes('image/png')) return 'png';
+    return 'jpg';
   };
 
   return (
     <div className="p-4 border rounded-md">
-      <Tabs defaultValue="upload">
-        <TabsList className="w-full mb-4">
-          <TabsTrigger value="upload" className="flex-1">Upload</TabsTrigger>
-          <TabsTrigger value="gallery" className="flex-1">Gallery</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="upload">
-          <div className="flex flex-col gap-4">
-            <Button 
-              variant="outline" 
-              size="sm" 
-              onClick={() => fileInputRef.current?.click()}
-              className="w-full"
-            >
-              {backgroundImage ? 'Change Image' : 'Upload Image'}
-            </Button>
-            
-            <input 
-              type="file" 
-              ref={fileInputRef}
-              className="hidden" 
-              accept="image/*" 
-              onChange={onUploadImage}
+      <div className="flex flex-col gap-4">
+        <Button 
+          variant="outline" 
+          size="sm" 
+          onClick={handleUploadClick}
+          className="w-full"
+        >
+          {backgroundImage ? 'Change Image' : 'Upload Image'}
+        </Button>
+        
+        <input 
+          type="file" 
+          ref={fileInputRef}
+          className="hidden" 
+          accept="image/*" 
+          onChange={onUploadImage}
+        />
+        
+        {backgroundImage && (
+          <>
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">Opacity</Label>
+              <span className="text-xs text-gray-500">{Math.round(backgroundOpacity * 100)}%</span>
+            </div>
+            <Input
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={backgroundOpacity}
+              onChange={(e) => onBackgroundOpacityChange(Number(e.target.value))}
+              className="mt-1"
             />
             
-            {backgroundImage && (
-              <>
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs">Opacity</Label>
-                  <span className="text-xs text-gray-500">{Math.round(backgroundOpacity * 100)}%</span>
-                </div>
-                <Slider
-                  value={[backgroundOpacity * 100]}
-                  min={0}
-                  max={100}
-                  step={1}
-                  onValueChange={(values) => onBackgroundOpacityChange(values[0] / 100)}
-                />
-                
-                <div className="flex gap-2 mt-2">
-                  <Button 
-                    variant="destructive" 
-                    size="sm"
-                    onClick={onRemoveImage}
-                    className="flex-1"
-                  >
-                    Remove
-                  </Button>
-                  
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={handleSaveToGallery}
-                    className="flex-1"
-                  >
-                    Save to Gallery
-                  </Button>
-                </div>
-              </>
-            )}
-          </div>
-        </TabsContent>
-
-        <TabsContent value="gallery">
-          <BackgroundImageGallery
-            images={savedImages}
-            onSelectImage={handleSelectImage}
-            onDeleteImage={handleDeleteImage}
-          />
-        </TabsContent>
-      </Tabs>
+            <div className="flex gap-2 mt-2">
+              <Button 
+                variant="destructive" 
+                size="sm"
+                onClick={onRemoveImage}
+                className="flex-1"
+              >
+                Remove
+              </Button>
+              
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={handleSaveToGallery}
+                disabled={isSaving}
+                className="flex-1"
+              >
+                {isSaving ? 'Saving...' : 'Save to Gallery'}
+              </Button>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 };
