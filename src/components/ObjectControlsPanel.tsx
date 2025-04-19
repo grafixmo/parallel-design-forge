@@ -14,6 +14,7 @@ import { SketchPicker } from 'react-color';
 import { generateId } from '@/utils/bezierUtils';
 import { Trash2, Pencil, Plus, RotateCcw, RotateCw, Scale, Text } from 'lucide-react';
 import { BackgroundImageControls } from './BackgroundImageControls';
+import { ColorPicker } from '@/components/ui/color-picker'; // Replace SketchPicker with our custom ColorPicker
 
 interface ObjectControlsPanelProps {
   selectedObjects: BezierObject[];
@@ -50,10 +51,10 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
   onRemoveImage,
   onSelectImage
 }) => {
-  const handleColorChange = (color: { hex: string }) => {
+  const handleColorChange = (color: string) => {
     if (selectedObjects.length > 0) {
       selectedObjects.forEach(obj => {
-        onUpdateCurveConfig(obj.id, { color: color.hex });
+        onUpdateCurveConfig(obj.id, { color });
       });
     }
   };
@@ -149,9 +150,10 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
             <div className="mt-2 space-y-4">
               <div>
                 <Label className="text-xs">Color</Label>
-                <SketchPicker
+                {/* Replace SketchPicker with ColorPicker */}
+                <ColorPicker
                   color={selectedObjects[0].curveConfig?.styles?.[0]?.color || '#000000'}
-                  onChangeComplete={handleColorChange}
+                  onChange={handleColorChange}
                   className="mt-1"
                 />
               </div>
