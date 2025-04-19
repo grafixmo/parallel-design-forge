@@ -153,6 +153,26 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
         console.log('Using default canvas dimensions: 800x600');
       }
     }
+    
+    // Add touch event listeners with passive: false to fix preventDefault warnings
+    if (canvas) {
+      // Remove any existing listeners first
+      canvas.removeEventListener('touchstart', handleTouchStart);
+      canvas.removeEventListener('touchmove', handleTouchMove);
+      canvas.removeEventListener('touchend', handleTouchEnd);
+      
+      // Add new listeners with passive: false
+      canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+      canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+      canvas.addEventListener('touchend', handleTouchEnd, { passive: false });
+      
+      // Clean up on unmount
+      return () => {
+        canvas.removeEventListener('touchstart', handleTouchStart);
+        canvas.removeEventListener('touchmove', handleTouchMove);
+        canvas.removeEventListener('touchend', handleTouchEnd);
+      };
+    }
   }, [width, height]);
   
   // Convert screen coordinates to canvas coordinates (accounting for zoom)
@@ -161,6 +181,54 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       x: (x - panOffset.x) / zoom,
       y: (y - panOffset.y) / zoom
     };
+  };
+  
+  // Touch event handlers
+  const handleTouchStart = (e: TouchEvent) => {
+    e.preventDefault(); // Prevent default to avoid scrolling
+    if (!canvasRef.current) return;
+    
+    const rect = canvasRef.current.getBoundingClientRect();
+    const touch = e.touches[0];
+    const screenX = touch.clientX - rect.left;
+    const screenY = touch.clientY - rect.top;
+    
+    // Simulate mouse down event
+    const mouseEvent = new MouseEvent('mousedown', {
+      clientX: touch.clientX,
+      clientY: touch.clientY,
+      bubbles: true
+    });
+    canvasRef.current.dispatchEvent(mouseEvent);
+  };
+  
+  const handleTouchMove = (e: TouchEvent) => {
+    e.preventDefault(); // Prevent default to avoid scrolling
+    if (!canvasRef.current) return;
+    
+    const rect = canvasRef.current.getBoundingClientRect();
+    const touch = e.touches[0];
+    const screenX = touch.clientX - rect.left;
+    const screenY = touch.clientY - rect.top;
+    
+    // Simulate mouse move event
+    const mouseEvent = new MouseEvent('mousemove', {
+      clientX: touch.clientX,
+      clientY: touch.clientY,
+      bubbles: true
+    });
+    canvasRef.current.dispatchEvent(mouseEvent);
+  };
+  
+  const handleTouchEnd = (e: TouchEvent) => {
+    e.preventDefault(); // Prevent default to avoid scrolling
+    if (!canvasRef.current) return;
+    
+    // Simulate mouse up event
+    const mouseEvent = new MouseEvent('mouseup', {
+      bubbles: true
+    });
+    canvasRef.current.dispatchEvent(mouseEvent);
   };
 
   // Complete and finalize the current drawing object

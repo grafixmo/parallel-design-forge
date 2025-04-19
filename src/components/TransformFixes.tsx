@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { BezierObject, ControlPoint, Point, TransformSettings, SelectionRect } from '@/types/bezier';
 import { transformControlPoints, isPointInSelectionRect } from '@/utils/bezierUtils';
 import { Button } from '@/components/ui/button';
@@ -267,8 +267,16 @@ export const BackgroundImageControls: React.FC<BackgroundImageControlsProps> = (
   onSaveToGallery
 }) => {
   const [imageScale, setImageScale] = useState<number>(50); // Default to 50%
+  const [localOpacity, setLocalOpacity] = useState<number>(backgroundOpacity * 100);
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const opacityDebounceRef = useRef<NodeJS.Timeout>();
+  const scaleDebounceRef = useRef<NodeJS.Timeout>();
+
+  // Sync local opacity state with prop
+  useEffect(() => {
+    setLocalOpacity(backgroundOpacity * 100);
+  }, [backgroundOpacity]);
 
   // Apply scale to background image
   useEffect(() => {
@@ -283,9 +291,42 @@ export const BackgroundImageControls: React.FC<BackgroundImageControlsProps> = (
     }
   }, [backgroundImage, imageScale]);
 
-  const handleScaleChange = (value: number) => {
-    setImageScale(value);
-    document.documentElement.style.setProperty('--bg-image-scale', `${value / 100}`);
+  // Handle opacity change with real-time updates
+  const handleOpacityChange = (values: number[]) => {
+    const newOpacity = values[0];
+    setLocalOpacity(newOpacity);
+    
+    // Update immediately for real-time feedback
+    onBackgroundOpacityChange(newOpacity / 100);
+    
+    // Clear any existing timeout
+    if (opacityDebounceRef.current) {
+      clearTimeout(opacityDebounceRef.current);
+    }
+    
+    // Set a new timeout to avoid too many updates
+    opacityDebounceRef.current = setTimeout(() => {
+      onBackgroundOpacityChange(newOpacity / 100);
+    }, 50);
+  };
+
+  // Handle scale change with real-time updates
+  const handleScaleChange = (values: number[]) => {
+    const newScale = values[0];
+    setImageScale(newScale);
+    
+    // Update immediately for real-time feedback
+    document.documentElement.style.setProperty('--bg-image-scale', `${newScale / 100}`);
+    
+    // Clear any existing timeout
+    if (scaleDebounceRef.current) {
+      clearTimeout(scaleDebounceRef.current);
+    }
+    
+    // Set a new timeout to avoid too many updates
+    scaleDebounceRef.current = setTimeout(() => {
+      document.documentElement.style.setProperty('--bg-image-scale', `${newScale / 100}`);
+    }, 50);
   };
 
   const handleUploadClick = () => {
@@ -302,7 +343,7 @@ export const BackgroundImageControls: React.FC<BackgroundImageControlsProps> = (
       await onSaveToGallery(backgroundImage);
       toast({
         title: "Success",
-        description: "Background image saved to Paper(JPG) category"
+        description: "Background image saved to Paper (JPG) category"
       });
     } catch (error) {
       console.error("Error saving to gallery:", error);
@@ -343,11 +384,11 @@ export const BackgroundImageControls: React.FC<BackgroundImageControlsProps> = (
               <span className="text-xs text-gray-500">{Math.round(backgroundOpacity * 100)}%</span>
             </div>
             <Slider
-              value={[backgroundOpacity * 100]}
+              value={[localOpacity]}
               min={0}
               max={100}
               step={1}
-              onValueChange={(values) => onBackgroundOpacityChange(values[0] / 100)}
+              onValueChange={handleOpacityChange}
             />
             
             <div className="flex items-center justify-between">
@@ -359,7 +400,7 @@ export const BackgroundImageControls: React.FC<BackgroundImageControlsProps> = (
               min={10}
               max={200}
               step={5}
-              onValueChange={(values) => handleScaleChange(values[0])}
+              onValueChange={handleScaleChange}
             />
             
             <div className="flex gap-2 mt-2">
@@ -416,8 +457,9 @@ export const saveBackgroundImageToGallery = async (
     const date = new Date();
     const name = `Background_${date.toISOString().split('T')[0]}_${date.getHours()}-${date.getMinutes()}`;
     
-    // Save to Paper (JPG) category - using the correct category name
-    const result = await saveDesign(name, "Paper(JPG)", imageData);
+    // Save to Paper (JPG) category - using the exact category name as it appears in the UI
+    // The category name must match exactly what's displayed in the gallery tabs
+    const result = await saveDesign(name, "Paper (JPG)", imageData);
     
     if (result && result.error) {
       throw new Error(result.error.message);
