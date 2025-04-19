@@ -447,17 +447,28 @@ export const saveBackgroundImageToGallery = async (
   }
 
   try {
-    // Convert background image to proper format if needed
+    // Ensure the image is in the correct format for storage
     let imageData = backgroundImage;
     
-    // If it's a data URL, it's already in the right format
-    // Otherwise, we'd need to convert it
+    // Make sure we're working with a data URL
+    if (!imageData.startsWith('data:image/')) {
+      console.error("Background image is not in data URL format");
+      toast({
+        title: "Format Error",
+        description: "Background image is in an unsupported format",
+        variant: "destructive"
+      });
+      return;
+    }
     
-    // Generate a name based on date
+    // Generate a name based on date with a more readable format
     const date = new Date();
-    const name = `Background_${date.toISOString().split('T')[0]}_${date.getHours()}-${date.getMinutes()}`;
+    const formattedDate = date.toISOString().split('T')[0];
+    const formattedTime = `${String(date.getHours()).padStart(2, '0')}-${String(date.getMinutes()).padStart(2, '0')}`;
+    const name = `Background_${formattedDate}_${formattedTime}`;
     
     // Save to Paper (JPG) category - using the exact category name as it appears in the UI
+    // The category must match exactly what's displayed in the gallery tabs
     // The category name must match exactly what's displayed in the gallery tabs
     const result = await saveDesign(name, "Paper (JPG)", imageData);
     
