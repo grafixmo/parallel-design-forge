@@ -1,10 +1,10 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { BackgroundImage } from '@/types/bezier';
-import { SavedBackImage, saveBackgroundImage } from '@/services/backgroundImageService';
+import { SavedBackImage, saveBackgroundImage, getBackgroundImages } from '@/services/backgroundImageService';
 import { toast } from '@/hooks/use-toast';
 
 interface BackgroundImageControlsProps {
@@ -25,7 +25,22 @@ export const BackgroundImageControls: React.FC<BackgroundImageControlsProps> = (
   onSelectImage
 }) => {
   const [isSaving, setIsSaving] = useState(false);
+  const [savedImages, setSavedImages] = useState<SavedBackImage[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Fetch saved images when component mounts
+  useEffect(() => {
+    fetchSavedImages();
+  }, []);
+
+  const fetchSavedImages = async () => {
+    try {
+      const images = await getBackgroundImages();
+      setSavedImages(images);
+    } catch (error) {
+      console.error("Error fetching background images:", error);
+    }
+  };
 
   const handleUploadClick = () => {
     fileInputRef.current?.click();
@@ -60,6 +75,9 @@ export const BackgroundImageControls: React.FC<BackgroundImageControlsProps> = (
           title: "Success",
           description: "Background image saved to gallery"
         });
+        
+        // Refresh the saved images list
+        await fetchSavedImages();
       }
     } catch (error) {
       console.error("Error saving background image:", error);
@@ -143,4 +161,3 @@ export const BackgroundImageControls: React.FC<BackgroundImageControlsProps> = (
     </div>
   );
 };
-

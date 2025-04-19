@@ -73,4 +73,3 @@ const detectImageFormat = (url: string): 'jpg' | 'png' | 'svg' => {
   if (lowerUrl.includes('image/png')) return 'png';
   return 'jpg';
 };
-
