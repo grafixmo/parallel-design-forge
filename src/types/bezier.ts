@@ -111,3 +111,6 @@ export interface ObjectGroup {
   name: string;
   isSelected: boolean;
 }
+
+// Add the missing SelectionTool type that's being imported
+export type SelectionTool = 'none' | 'rectangle' | 'lasso' | 'direct';

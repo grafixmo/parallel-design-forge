@@ -353,7 +353,7 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
       {/* Background controls toggle */}
       <button
         className="absolute right-4 top-16 bg-white rounded-full p-2 shadow-md"
-        onClick={() => setShowBackgroundControls(!showBackgroundControls)}
+        onClick={()={() => setShowBackgroundControls(!showBackgroundControls)}
         title="Toggle background controls"
       >
         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -370,10 +370,14 @@ const BezierCanvas: React.FC<BezierCanvasProps> = ({
             onBackgroundOpacityChange={handleBackgroundOpacityChange}
             onUploadImage={handleImageUpload}
             onRemoveImage={handleRemoveBackground}
-            onSaveToGallery={(image) => saveBackgroundImageToGallery(
-              image, 
-              (window as any).saveDesignToLibrary
-            )}
+            onSaveToGallery={(image) => {
+              if (image && typeof window !== 'undefined' && (window as any).saveDesignToLibrary) {
+                saveBackgroundImageToGallery(
+                  image, 
+                  (window as any).saveDesignToLibrary
+                );
+              }
+            }}
           />
         </div>
       )}

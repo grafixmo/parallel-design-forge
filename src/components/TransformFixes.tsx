@@ -452,7 +452,7 @@ export const saveBackgroundImageToGallery = async (
     const formattedTime = `${String(date.getHours()).padStart(2, '0')}-${String(date.getMinutes()).padStart(2, '0')}`;
     const name = `Background_${formattedDate}_${formattedTime}`;
     
-    // Create design data object
+    // Create design data object with the background image
     const designData = {
       objects: [], // Empty array since this is just a background
       backgroundImage: {
@@ -464,12 +464,18 @@ export const saveBackgroundImageToGallery = async (
     // Convert to JSON string as expected by SavedDesign type
     const jsonData = JSON.stringify(designData);
     
-    // Create a minimal SVG content with the background image
-    // This is crucial as Supabase requires svg_content to be populated
-    const svgContent = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600">
+    // Create a SVG content with the background image embedded
+    // This is crucial as designs need svg_content to display properly in the gallery
+    const svgContent = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600">
       <rect width="800" height="600" fill="white"/>
-      <image href="${backgroundImage}" width="100%" height="100%" preserveAspectRatio="xMidYMid meet"/>
+      <image href="${backgroundImage}" width="800" height="600" preserveAspectRatio="xMidYMid meet"/>
+      <text x="10" y="590" font-family="Arial" font-size="12" fill="#999">Background Image - ${formattedDate}</text>
     </svg>`;
+    
+    console.log("Saving background image to Paper(JPG) category...");
+    console.log("Design name:", name);
+    console.log("Category:", "Paper(JPG)");
+    console.log("Has SVG content:", !!svgContent);
     
     // Save to Paper (JPG) category - passing both the JSON data and SVG content
     const result = await saveDesign(name, "Paper(JPG)", jsonData, svgContent);
