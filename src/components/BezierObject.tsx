@@ -1,4 +1,3 @@
-
 import React, { useRef, useEffect } from 'react';
 import { 
   BezierObject as BezierObjectType, 
@@ -11,6 +10,7 @@ import {
   isPointNear, 
   calculateParallelPoint 
 } from '@/utils/bezierUtils';
+import { isValidPoint, isValidHandle } from '@/utils/svgUtils';
 
 interface BezierObjectProps {
   object: BezierObjectType;
@@ -48,7 +48,6 @@ export class BezierObjectRenderer {
     this.onPointMove = props.onPointMove;
     this.onSelect = props.onSelect;
   }
-  
   // Check if point is within object to know if we should select
   isPointInObject(x: number, y: number, radius: number): boolean {
     const points = this.object.points;
@@ -57,17 +56,20 @@ export class BezierObjectRenderer {
     for (let i = 0; i < points.length; i++) {
       const point = points[i];
       
+      // Validate point and handles before checking
+      if (!isValidPoint(point)) continue;
+      
       // Check main point
       if (isPointNear({ x, y }, point, radius)) {
         return true;
       }
       
       // Check handles
-      if (isPointNear({ x, y }, point.handleIn, radius)) {
+      if (isValidHandle(point.handleIn) && isPointNear({ x, y }, point.handleIn, radius)) {
         return true;
       }
       
-      if (isPointNear({ x, y }, point.handleOut, radius)) {
+      if (isValidHandle(point.handleOut) && isPointNear({ x, y }, point.handleOut, radius)) {
         return true;
       }
     }
@@ -81,6 +83,12 @@ export class BezierObjectRenderer {
         const current = points[i];
         const next = points[i + 1];
         
+        // Validate both points before proceeding
+        if (!isValidPoint(current) || !isValidPoint(next) || 
+            !isValidHandle(current.handleOut) || !isValidHandle(next.handleIn)) {
+          continue;
+        }
+        
         const steps = Math.max(
           Math.abs(next.x - current.x),
           Math.abs(next.y - current.y)
@@ -89,17 +97,22 @@ export class BezierObjectRenderer {
         for (let t = 0; t <= steps; t++) {
           const normalizedT = t / steps;
           
-          const curvePoint = calculateParallelPoint(
-            current,
-            current.handleOut,
-            next.handleIn,
-            next,
-            normalizedT,
-            0 // No offset for the main curve
-          );
-          
-          if (isPointNear({ x, y }, curvePoint, radius + this.object.curveConfig.styles[0].width / 2)) {
-            return true;
+          try {
+            const curvePoint = calculateParallelPoint(
+              current,
+              current.handleOut,
+              next.handleIn,
+              next,
+              normalizedT,
+              0 // No offset for the main curve
+            );
+            
+            if (isPointNear({ x, y }, curvePoint, radius + this.object.curveConfig.styles[0].width / 2)) {
+              return true;
+            }
+          } catch (error) {
+            console.warn(`Error calculating curve point at t=${normalizedT}:`, error);
+            continue;
           }
         }
       }
@@ -107,7 +120,7 @@ export class BezierObjectRenderer {
     
     return false;
   }
-  
+
   // Handle mouse interaction on a control point
   handlePointInteraction(
     x: number, 
@@ -120,25 +133,27 @@ export class BezierObjectRenderer {
     for (let i = 0; i < points.length; i++) {
       const point = points[i];
       
+      // Validate point before checking
+      if (!isValidPoint(point)) continue;
+      
       // Check main point
       if (isPointNear({ x, y }, point, radius)) {
         return { found: true, pointIndex: i, type: ControlPointType.MAIN };
       }
       
       // Check handle in
-      if (isPointNear({ x, y }, point.handleIn, radius)) {
+      if (isValidHandle(point.handleIn) && isPointNear({ x, y }, point.handleIn, radius)) {
         return { found: true, pointIndex: i, type: ControlPointType.HANDLE_IN };
       }
       
       // Check handle out
-      if (isPointNear({ x, y }, point.handleOut, radius)) {
+      if (isValidHandle(point.handleOut) && isPointNear({ x, y }, point.handleOut, radius)) {
         return { found: true, pointIndex: i, type: ControlPointType.HANDLE_OUT };
       }
     }
     
     return { found: false, pointIndex: -1, type: ControlPointType.MAIN };
   }
-  
   // Draw the object in a canvas
   renderObject(ctx: CanvasRenderingContext2D) {
     const points = this.object.points;
@@ -155,14 +170,10 @@ export class BezierObjectRenderer {
     // Validate all points have valid coordinates
     for (let i = 0; i < points.length; i++) {
       const point = points[i];
-      if (!point || 
-          typeof point.x !== 'number' || isNaN(point.x) || 
-          typeof point.y !== 'number' || isNaN(point.y) ||
-          !point.handleIn || typeof point.handleIn.x !== 'number' || isNaN(point.handleIn.x) || 
-          typeof point.handleIn.y !== 'number' || isNaN(point.handleIn.y) ||
-          !point.handleOut || typeof point.handleOut.x !== 'number' || isNaN(point.handleOut.x) || 
-          typeof point.handleOut.y !== 'number' || isNaN(point.handleOut.y)) {
-        console.warn(`Object ${objectId} has invalid point at index ${i}, skipping render`);
+      if (!isValidPoint(point) || 
+          !isValidHandle(point.handleIn) || 
+          !isValidHandle(point.handleOut)) {
+        console.warn(`Object ${objectId} has invalid point or handles at index ${i}, skipping render`);
         return;
       }
     }
@@ -222,89 +233,113 @@ export class BezierObjectRenderer {
         }
       };
     });
-    
     // Save the context state
     ctx.save();
     
     // Draw curves if we have enough points
     if (points.length >= 2) {
-      // Only draw parallel curves if parallelCount is greater than 1
-      if (curveConfig.parallelCount > 1) {
-        // Draw parallel curves first (behind main curve)
-        for (let p = 1; p < curveConfig.parallelCount; p++) {
-          const offset = p * curveConfig.spacing;
-          const style = curveConfig.styles[p] || curveConfig.styles[0];
-          const color = style ? style.color : '#000000';
-          const width = style ? style.width : 5;
-          
-          ctx.strokeStyle = color;
-          ctx.lineWidth = width / this.zoom; // Adjust for zoom
-          ctx.lineCap = 'round';
-          ctx.lineJoin = 'round';
-          
-          ctx.beginPath();
-          
-          // Draw each segment between control points
-          for (let i = 0; i < points.length - 1; i++) {
-            const current = points[i];
-            const next = points[i + 1];
+      try {
+        // Only draw parallel curves if parallelCount is greater than 1
+        if (curveConfig.parallelCount > 1) {
+          // Draw parallel curves first (behind main curve)
+          for (let p = 1; p < curveConfig.parallelCount; p++) {
+            const offset = p * curveConfig.spacing;
+            const style = curveConfig.styles[p] || curveConfig.styles[0];
+            const color = style ? style.color : '#000000';
+            const width = style ? style.width : 5;
             
-            // Sample points along the curve and offset them
-            const steps = 30; // More steps = smoother curve
+            ctx.strokeStyle = color;
+            ctx.lineWidth = width / this.zoom; // Adjust for zoom
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
             
-            for (let t = 0; t <= steps; t++) {
-              const normalizedT = t / steps;
+            ctx.beginPath();
+            
+            // Draw each segment between control points
+            for (let i = 0; i < points.length - 1; i++) {
+              const current = points[i];
+              const next = points[i + 1];
               
-              const offsetPoint = calculateParallelPoint(
-                current,
-                current.handleOut,
-                next.handleIn,
-                next,
-                normalizedT,
-                offset
-              );
+              // Skip if points are invalid
+              if (!isValidPoint(current) || !isValidPoint(next) ||
+                  !isValidHandle(current.handleOut) || !isValidHandle(next.handleIn)) {
+                continue;
+              }
               
-              if (t === 0) {
-                ctx.moveTo(offsetPoint.x, offsetPoint.y);
-              } else {
-                ctx.lineTo(offsetPoint.x, offsetPoint.y);
+              // Sample points along the curve and offset them
+              const steps = 30; // More steps = smoother curve
+              
+              for (let t = 0; t <= steps; t++) {
+                const normalizedT = t / steps;
+                
+                try {
+                  const offsetPoint = calculateParallelPoint(
+                    current,
+                    current.handleOut,
+                    next.handleIn,
+                    next,
+                    normalizedT,
+                    offset
+                  );
+                  
+                  if (t === 0) {
+                    ctx.moveTo(offsetPoint.x, offsetPoint.y);
+                  } else {
+                    ctx.lineTo(offsetPoint.x, offsetPoint.y);
+                  }
+                } catch (error) {
+                  console.warn(`Error calculating parallel point at t=${normalizedT}:`, error);
+                  continue;
+                }
               }
             }
+            
+            ctx.stroke();
+          }
+        }
+        
+        // Draw main curve
+        const mainStyle = curveConfig.styles[0] || { color: '#000000', width: 5 };
+        ctx.strokeStyle = mainStyle.color;
+        ctx.lineWidth = mainStyle.width / this.zoom; // Adjust for zoom
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        
+        ctx.beginPath();
+        
+        // Draw bezier curve through all points
+        let firstValidPointFound = false;
+        
+        for (let i = 0; i < points.length - 1; i++) {
+          const current = points[i];
+          const next = points[i + 1];
+          
+          // Skip if points are invalid
+          if (!isValidPoint(current) || !isValidPoint(next) ||
+              !isValidHandle(current.handleOut) || !isValidHandle(next.handleIn)) {
+            continue;
           }
           
-          ctx.stroke();
+          if (!firstValidPointFound) {
+            ctx.moveTo(current.x, current.y);
+            firstValidPointFound = true;
+          }
+          
+          ctx.bezierCurveTo(
+            current.handleOut.x, current.handleOut.y,
+            next.handleIn.x, next.handleIn.y,
+            next.x, next.y
+          );
         }
-      }
-      
-      // Draw main curve
-      const mainStyle = curveConfig.styles[0] || { color: '#000000', width: 5 };
-      ctx.strokeStyle = mainStyle.color;
-      ctx.lineWidth = mainStyle.width / this.zoom; // Adjust for zoom
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      
-      ctx.beginPath();
-      
-      // Draw bezier curve through all points
-      ctx.moveTo(points[0].x, points[0].y);
-      
-      for (let i = 0; i < points.length - 1; i++) {
-        const current = points[i];
-        const next = points[i + 1];
         
-        ctx.bezierCurveTo(
-          current.handleOut.x, current.handleOut.y,
-          next.handleIn.x, next.handleIn.y,
-          next.x, next.y
-        );
+        ctx.stroke();
+      } catch (error) {
+        console.error('Error drawing curves:', error);
       }
-      
-      ctx.stroke();
     }
     
     // Restore the context state (remove transformation)
     ctx.restore();
-    
     // Only draw handles and points if the object is selected
     if (this.isSelected) {
       // Draw handle lines
@@ -314,43 +349,52 @@ export class BezierObjectRenderer {
       for (let i = 0; i < points.length; i++) {
         const point = points[i];
         
-        // Draw handle lines
-        ctx.beginPath();
-        ctx.moveTo(point.x, point.y);
-        ctx.lineTo(point.handleIn.x, point.handleIn.y);
-        ctx.stroke();
+        // Skip invalid points
+        if (!isValidPoint(point)) continue;
         
-        ctx.beginPath();
-        ctx.moveTo(point.x, point.y);
-        ctx.lineTo(point.handleOut.x, point.handleOut.y);
-        ctx.stroke();
-        
-        // Draw handle points
-        // Handle In
-        ctx.beginPath();
-        ctx.arc(point.handleIn.x, point.handleIn.y, this.HANDLE_RADIUS / this.zoom, 0, Math.PI * 2);
-        if (this.selectedPoint && 
-            this.selectedPoint.objectId === objectId && 
-            this.selectedPoint.pointIndex === i && 
-            this.selectedPoint.type === ControlPointType.HANDLE_IN) {
-          ctx.fillStyle = this.SELECTED_COLOR;
-        } else {
-          ctx.fillStyle = this.CONTROL_POINT_COLOR;
+        // Draw handle lines if handles are valid
+        if (isValidHandle(point.handleIn)) {
+          ctx.beginPath();
+          ctx.moveTo(point.x, point.y);
+          ctx.lineTo(point.handleIn.x, point.handleIn.y);
+          ctx.stroke();
         }
-        ctx.fill();
         
-        // Handle Out
-        ctx.beginPath();
-        ctx.arc(point.handleOut.x, point.handleOut.y, this.HANDLE_RADIUS / this.zoom, 0, Math.PI * 2);
-        if (this.selectedPoint && 
-            this.selectedPoint.objectId === objectId && 
-            this.selectedPoint.pointIndex === i && 
-            this.selectedPoint.type === ControlPointType.HANDLE_OUT) {
-          ctx.fillStyle = this.SELECTED_COLOR;
-        } else {
-          ctx.fillStyle = this.CONTROL_POINT_COLOR;
+        if (isValidHandle(point.handleOut)) {
+          ctx.beginPath();
+          ctx.moveTo(point.x, point.y);
+          ctx.lineTo(point.handleOut.x, point.handleOut.y);
+          ctx.stroke();
         }
-        ctx.fill();
+        
+        // Draw handle points if valid
+        if (isValidHandle(point.handleIn)) {
+          ctx.beginPath();
+          ctx.arc(point.handleIn.x, point.handleIn.y, this.HANDLE_RADIUS / this.zoom, 0, Math.PI * 2);
+          if (this.selectedPoint && 
+              this.selectedPoint.objectId === objectId && 
+              this.selectedPoint.pointIndex === i && 
+              this.selectedPoint.type === ControlPointType.HANDLE_IN) {
+            ctx.fillStyle = this.SELECTED_COLOR;
+          } else {
+            ctx.fillStyle = this.CONTROL_POINT_COLOR;
+          }
+          ctx.fill();
+        }
+        
+        if (isValidHandle(point.handleOut)) {
+          ctx.beginPath();
+          ctx.arc(point.handleOut.x, point.handleOut.y, this.HANDLE_RADIUS / this.zoom, 0, Math.PI * 2);
+          if (this.selectedPoint && 
+              this.selectedPoint.objectId === objectId && 
+              this.selectedPoint.pointIndex === i && 
+              this.selectedPoint.type === ControlPointType.HANDLE_OUT) {
+            ctx.fillStyle = this.SELECTED_COLOR;
+          } else {
+            ctx.fillStyle = this.CONTROL_POINT_COLOR;
+          }
+          ctx.fill();
+        }
         
         // Draw main point
         ctx.beginPath();
@@ -371,31 +415,34 @@ export class BezierObjectRenderer {
     } else {
       // When not selected, just highlight with a bounding box
       if (points.length > 0) {
-        // Find min/max bounds
-        const xValues = points.map(p => p.x);
-        const yValues = points.map(p => p.y);
-        const minX = Math.min(...xValues);
-        const minY = Math.min(...yValues);
-        const maxX = Math.max(...xValues);
-        const maxY = Math.max(...yValues);
+        // Find min/max bounds with validation
+        const validXValues = points.filter(p => isValidPoint(p)).map(p => p.x);
+        const validYValues = points.filter(p => isValidPoint(p)).map(p => p.y);
         
-        // Add padding
-        const padding = 10 / this.zoom;
-        
-        // Draw dashed rectangle around object
-        ctx.strokeStyle = 'rgba(52, 152, 219, 0.5)';
-        ctx.lineWidth = 1 / this.zoom;
-        ctx.setLineDash([5 / this.zoom, 3 / this.zoom]);
-        
-        ctx.beginPath();
-        ctx.rect(
-          minX - padding, 
-          minY - padding, 
-          maxX - minX + padding * 2, 
-          maxY - minY + padding * 2
-        );
-        ctx.stroke();
-        ctx.setLineDash([]);
+        if (validXValues.length > 0 && validYValues.length > 0) {
+          const minX = Math.min(...validXValues);
+          const minY = Math.min(...validYValues);
+          const maxX = Math.max(...validXValues);
+          const maxY = Math.max(...validYValues);
+          
+          // Add padding
+          const padding = 10 / this.zoom;
+          
+          // Draw dashed rectangle around object
+          ctx.strokeStyle = 'rgba(52, 152, 219, 0.5)';
+          ctx.lineWidth = 1 / this.zoom;
+          ctx.setLineDash([5 / this.zoom, 3 / this.zoom]);
+          
+          ctx.beginPath();
+          ctx.rect(
+            minX - padding, 
+            minY - padding, 
+            maxX - minX + padding * 2, 
+            maxY - minY + padding * 2
+          );
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
       }
     }
   }

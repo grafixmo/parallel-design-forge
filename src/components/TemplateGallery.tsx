@@ -29,7 +29,7 @@ import { Trash2, Heart, Edit, Loader2, Search, X, ExternalLink, AlertTriangle, F
 import { getTemplates, getTemplatesByCategory, updateTemplate, deleteTemplate, likeTemplate, Template } from '@/services/supabaseClient';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
-import { parseTemplateData } from '@/utils/svgExporter';
+import { parseTemplateData } from '@/utils/svgUtils';
 import MergeToggle from './MergeToggle';
 import { generateThumbnail } from '@/utils/thumbnailGenerator';
 

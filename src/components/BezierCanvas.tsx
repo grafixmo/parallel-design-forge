@@ -1126,6 +1126,66 @@ const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
         e.preventDefault();
         setIsSpacePressed(true);
       }
+
+      // Arrow keys to move selected objects
+      if (!isDrawingMode && selectedObjectIds.length > 0 && 
+          (e.key === 'ArrowUp' || e.key === 'ArrowDown' || 
+           e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+        e.preventDefault();
+        
+        // Set movement amount (use smaller increment with shift key for precision)
+        const moveAmount = e.shiftKey ? 1 : 10;
+        
+        // Determine direction
+        let deltaX = 0;
+        let deltaY = 0;
+        
+        if (e.key === 'ArrowUp') deltaY = -moveAmount;
+        if (e.key === 'ArrowDown') deltaY = moveAmount;
+        if (e.key === 'ArrowLeft') deltaX = -moveAmount;
+        if (e.key === 'ArrowRight') deltaX = moveAmount;
+        
+        // Update all selected objects
+        const updatedObjects = objects.map(obj => {
+          if (!selectedObjectIds.includes(obj.id)) return obj;
+          
+          // Move all points in the object
+          const updatedPoints = obj.points.map(point => ({
+            ...point,
+            x: point.x + deltaX,
+            y: point.y + deltaY,
+            handleIn: {
+              x: point.handleIn.x + deltaX,
+              y: point.handleIn.y + deltaY
+            },
+            handleOut: {
+              x: point.handleOut.x + deltaX,
+              y: point.handleOut.y + deltaY
+            }
+          }));
+          
+          // Ensure transform properties are preserved during movement
+          return { 
+            ...obj, 
+            points: updatedPoints,
+            transform: {
+              ...obj.transform
+            }
+          };
+        });
+        
+        onObjectsChange(updatedObjects);
+        
+        // Notify parent component about transform changes for all selected objects
+        if (onUpdateTransform) {
+          selectedObjectIds.forEach(id => {
+            const obj = updatedObjects.find(o => o.id === id);
+            if (obj) {
+              onUpdateTransform(id, obj.transform);
+            }
+          });
+        }
+      }
     };
     
     const handleKeyUp = (e: KeyboardEvent) => {
@@ -1142,7 +1202,7 @@ const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [selectedObjectIds, isDrawingMode, onUndo, currentDrawingObjectId, objects, onObjectSelect]);
+  }, [selectedObjectIds, isDrawingMode, onUndo, currentDrawingObjectId, objects, onObjectSelect, onObjectsChange, onUpdateTransform]);
   
   return (
     <div ref={wrapperRef} className="relative w-full h-full overflow-hidden">

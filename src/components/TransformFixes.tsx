@@ -467,10 +467,21 @@ export const saveBackgroundImageToGallery = async (
     const formattedTime = `${String(date.getHours()).padStart(2, '0')}-${String(date.getMinutes()).padStart(2, '0')}`;
     const name = `Background_${formattedDate}_${formattedTime}`;
     
+    // Create a proper DesignData object with the background image
+    const designData = {
+      objects: [],
+      backgroundImage: {
+        url: imageData,
+        opacity: 1
+      }
+    };
+    
+    // Convert to JSON string as expected by SavedDesign type
+    const jsonData = JSON.stringify(designData);
+    
     // Save to Paper (JPG) category - using the exact category name as it appears in the UI
     // The category must match exactly what's displayed in the gallery tabs
-    // The category name must match exactly what's displayed in the gallery tabs
-    const result = await saveDesign(name, "Paper (JPG)", imageData);
+    const result = await saveDesign(name, "Paper(JPG)", jsonData);
     
     if (result && result.error) {
       throw new Error(result.error.message);

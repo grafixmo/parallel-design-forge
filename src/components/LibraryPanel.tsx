@@ -30,7 +30,6 @@ import {
 import { SavedDesign } from '@/types/bezier';
 import { getDesigns, getDesignsByCategory, updateDesign, supabase } from '@/services/supabaseClient';
 import { X, AlertTriangle, FileJson, FileText, Trash2, Edit } from 'lucide-react';
-import { importSVGFromString } from '@/utils/svgExporter';
 import { useToast } from '@/hooks/use-toast';
 import MergeToggle from './MergeToggle';
 import { generateThumbnail } from '@/utils/thumbnailGenerator';
@@ -224,8 +223,11 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign }) 
       console.log(`Note: Design ${design.name} was auto-fixed during loading`);
     }
     
-    onSelectDesign(design, mergeMode);
-    onClose();
+    // Set a small timeout to ensure the design is properly processed before sending to canvas
+    setTimeout(() => {
+      onSelectDesign(design, mergeMode);
+      onClose();
+    }, 100);
   };
 
   // Check if a string looks like SVG
