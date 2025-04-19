@@ -34,11 +34,12 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
   onBackgroundOpacityChange = () => {},
   onUploadImage = () => {},
   onRemoveImage = () => {},
+  onDeleteObject = () => {},
 }) => {
   const selectedObject = selectedObjects && selectedObjects.length > 0 ? selectedObjects[0] : null;
 
   const handleTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (selectedObject && selectedObject.text) {
+    if (selectedObject && selectedObject.text !== undefined) {
       // In a real implementation, this would call a prop function to update the text
       console.log('Text changed:', e.target.value);
     }
@@ -46,7 +47,7 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
 
   const handleRemove = () => {
     if (selectedObject) {
-      // In a real implementation, this would call onDeleteObject
+      onDeleteObject(selectedObject.id);
       onClose();
     }
   };
@@ -54,36 +55,42 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
   const handleDuplicate = () => {
     if (selectedObject) {
       // In a real implementation, this would duplicate the object
+      console.log('Duplicate object');
     }
   };
 
   const handleRotateLeft = () => {
     if (selectedObject) {
       // In a real implementation, this would rotate the object
+      console.log('Rotate left');
     }
   };
 
   const handleRotateRight = () => {
     if (selectedObject) {
       // In a real implementation, this would rotate the object
+      console.log('Rotate right');
     }
   };
 
   const handleBringForward = () => {
     if (selectedObject) {
       // In a real implementation, this would bring the object forward
+      console.log('Bring forward');
     }
   };
 
   const handleSendToBack = () => {
     if (selectedObject) {
       // In a real implementation, this would send the object to back
+      console.log('Send to back');
     }
   };
 
   const handleFillChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (selectedObject) {
       // In a real implementation, this would change the object's fill
+      console.log('Fill changed:', e.target.value);
     }
   };
 
@@ -99,11 +106,35 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
     onRemoveImage();
   };
 
+  // Always show background image controls, regardless of whether an object is selected
+  const backgroundControls = (
+    <BackgroundImageControls
+      backgroundImage={backgroundImage}
+      backgroundOpacity={backgroundOpacity}
+      onBackgroundOpacityChange={handleBackgroundOpacityChange}
+      onUploadImage={handleUploadImage}
+      onRemoveImage={handleRemoveImage}
+    />
+  );
+
   if (!selectedObject) {
-    return <div className="p-4">No object selected</div>;
+    return (
+      <div className="p-4 space-y-4">
+        <div className="text-lg font-medium mb-2">No object selected</div>
+        {backgroundControls}
+      </div>
+    );
   }
 
-  const objectFill = selectedObject.curveConfig?.styles[0]?.color || '#000000';
+  // Helper function to safely get object fill color
+  const getObjectFill = (obj: BezierObject): string => {
+    if (obj.curveConfig?.styles && obj.curveConfig.styles[0]?.color) {
+      return obj.curveConfig.styles[0].color;
+    }
+    return '#000000';
+  };
+
+  const objectFill = getObjectFill(selectedObject);
 
   return (
     <div className="p-4 space-y-4">
@@ -113,7 +144,7 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
           <Input
             type="text"
             id="text"
-            defaultValue={selectedObject.text}
+            defaultValue={selectedObject.text as string}
             onChange={handleTextChange}
           />
         </div>
@@ -129,13 +160,7 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
         />
       </div>
 
-      <BackgroundImageControls
-        backgroundImage={backgroundImage}
-        backgroundOpacity={backgroundOpacity}
-        onBackgroundOpacityChange={handleBackgroundOpacityChange}
-        onUploadImage={handleUploadImage}
-        onRemoveImage={handleRemoveImage}
-      />
+      {backgroundControls}
 
       <div className="flex space-x-2">
         <Button variant="outline" size="icon" onClick={handleRotateLeft}>
