@@ -396,6 +396,42 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign }) 
     }
   };
 
+  const saveDesignWithSvg = async (name: string, category: string, data: string, svgContent?: string): Promise<any> => {
+    try {
+      // Prepare the data object to be saved
+      const designData: any = {
+        name,
+        category,
+        shapes_data: data
+      };
+      
+      // Include SVG content if provided (needed for background images)
+      if (svgContent) {
+        designData.svg_content = svgContent;
+      }
+
+      // Insert into the designs table
+      const { data: result, error } = await supabase
+        .from('designs')
+        .insert(designData)
+        .select();
+
+      if (error) throw error;
+      return result;
+    } catch (error) {
+      console.error('Error saving design:', error);
+      return { error };
+    }
+  };
+
+  // Expose the save function for background images 
+  useEffect(() => {
+    // Make the save function available to the BackgroundImageControls component
+    if (window) {
+      (window as any).saveDesignToLibrary = saveDesignWithSvg;
+    }
+  }, []);
+
   return (
     <>
       <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center">

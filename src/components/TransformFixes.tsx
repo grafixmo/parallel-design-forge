@@ -435,19 +435,24 @@ export const BackgroundImageControls: React.FC<BackgroundImageControlsProps> = (
 // 4. Function to save background image to Paper(JPG) category
 export const saveBackgroundImageToGallery = async (
   backgroundImage: string | undefined,
-  saveDesign: (name: string, category: string, data: string) => Promise<any>
+  saveDesign: (name: string, category: string, data: string, svgContent?: string) => Promise<any>
 ) => {
   if (!backgroundImage) {
     toast({
       title: "No Background Image",
       description: "There is no background image to save",
-      variant: "destructive"
     });
     return;
   }
 
   try {
-    // Create a proper DesignData object with the background image
+    // Generate a name based on date with a more readable format
+    const date = new Date();
+    const formattedDate = date.toISOString().split('T')[0];
+    const formattedTime = `${String(date.getHours()).padStart(2, '0')}-${String(date.getMinutes()).padStart(2, '0')}`;
+    const name = `Background_${formattedDate}_${formattedTime}`;
+    
+    // Create design data object
     const designData = {
       objects: [], // Empty array since this is just a background
       backgroundImage: {
@@ -456,17 +461,18 @@ export const saveBackgroundImageToGallery = async (
       }
     };
     
-    // Generate a name based on date with a more readable format
-    const date = new Date();
-    const formattedDate = date.toISOString().split('T')[0];
-    const formattedTime = `${String(date.getHours()).padStart(2, '0')}-${String(date.getMinutes()).padStart(2, '0')}`;
-    const name = `Background_${formattedDate}_${formattedTime}`;
-    
     // Convert to JSON string as expected by SavedDesign type
     const jsonData = JSON.stringify(designData);
     
-    // Save to Paper (JPG) category - using the exact category name as it appears in the UI
-    const result = await saveDesign(name, "Paper(JPG)", jsonData);
+    // Create a minimal SVG content with the background image
+    // This is crucial as Supabase requires svg_content to be populated
+    const svgContent = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600">
+      <rect width="800" height="600" fill="white"/>
+      <image href="${backgroundImage}" width="100%" height="100%" preserveAspectRatio="xMidYMid meet"/>
+    </svg>`;
+    
+    // Save to Paper (JPG) category - passing both the JSON data and SVG content
+    const result = await saveDesign(name, "Paper(JPG)", jsonData, svgContent);
     
     if (result && result.error) {
       throw new Error(result.error.message);
