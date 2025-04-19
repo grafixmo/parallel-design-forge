@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef } from 'react';
 import { 
   ControlPoint, 
@@ -7,7 +6,8 @@ import {
   TransformSettings,
   SavedDesign,
   CurveConfig,
-  BezierObject
+  BezierObject,
+  BackgroundImage
 } from '@/types/bezier';
 import BezierCanvas from '@/components/BezierCanvas';
 import Header from '@/components/Header';
@@ -405,7 +405,7 @@ const Index = () => {
     let minX = Infinity;
     let minY = Infinity;
     let maxX = -Infinity;
-    let maxY = -Infinity;
+    let maxY = Infinity;
     
     // Find min/max coordinates across all objects
     objects.forEach(obj => {
@@ -692,6 +692,16 @@ const Index = () => {
       description: 'The selected object has been removed.'
     });
   };
+
+  // Update background image handler to work with the new BackgroundImage type
+  const handleBackgroundImageSelect = (image: BackgroundImage) => {
+    setBackgroundImage(image.url);
+    setBackgroundOpacity(image.opacity);
+    toast({
+      title: 'Background Updated',
+      description: 'Selected background image has been applied.'
+    });
+  };
   
   return (
     <div className="flex flex-col h-screen">
@@ -741,6 +751,7 @@ const Index = () => {
             onBackgroundOpacityChange={setBackgroundOpacity}
             onUploadImage={handleUploadImage}
             onRemoveImage={handleRemoveImage}
+            onSelectImage={handleBackgroundImageSelect}
           />
         </div>
       </div>
