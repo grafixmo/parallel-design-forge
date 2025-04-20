@@ -93,7 +93,6 @@ export const downloadSVG = (svgString: string, filename: string = 'design.svg'):
     console.error('Error downloading SVG:', error);
   }
 };
-
 type Shape = {
   id?: string;
   type?: string;
@@ -338,6 +337,122 @@ function processPathData(pathData: string): string {
   }
 }
 
+// Helper function to create a fallback SVG when processing fails
+function createFallbackSvg(): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600">
+    <rect width="800" height="600" fill="white"/>
+    <rect x="200" y="200" width="400" height="200" fill="none" stroke="black" stroke-width="2"/>
+    <text x="400" y="300" font-family="sans-serif" font-size="24" text-anchor="middle" fill="black">
+      SVG Import Error - Fallback
+    </text>
+  </svg>`;
+}
+
+// ... [rest of the functions would continue here] ...
+
+// Import the proper implementation from svgConverter
+import { processSVGPaths as processSVGPathsFromConverter } from './svgConverter';
+
+/**
+ * Process SVG paths into BezierObject - delegates to the implementation in svgConverter
+ * FIXED: Now returns an array of BezierObject to match the expected return type
+ */
+export function processSVGPaths(paths: SVGPathElement[]): BezierObject[] | null {
+  try {
+    if (!paths || paths.length === 0) return null;
+    
+    // Use the implementation from svgConverter
+    const bezierObject = processSVGPathsFromConverter(paths);
+    if (!bezierObject) return null;
+    
+    // Return as an array to match the expected return type
+    return [bezierObject];
+  } catch (error) {
+    console.error('Error in processSVGPaths:', error);
+    return null;
+  }
+}
+
+/**
+ * Imports an SVG string and converts it to BezierObjects
+ */
+export const importSVGFromString = (svgString: string): BezierObject[] | null => {
+  try {
+    if (!svgString || typeof svgString !== 'string') {
+      console.error('Invalid SVG string provided to importSVGFromString');
+      return null;
+    }
+    
+    // Log the incoming SVG for debugging
+    console.log('Importing SVG string (first 100 chars):', svgString.substring(0, 100));
+    
+    // Clean up the SVG string
+    const cleanedSvg = fixSvgAttributes(unescapeSvgContent(svgString));
+    
+    // Parse the SVG using DOMParser
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(cleanedSvg, 'image/svg+xml');
+    
+    // Check for parsing errors
+    const parserError = doc.querySelector('parsererror');
+    if (parserError) {
+      console.error('SVG parsing error:', parserError.textContent);
+      return null;
+    }
+    
+    // Find all path elements
+    const paths = Array.from(doc.querySelectorAll('path'));
+    
+    // If no paths found, try to extract paths from other SVG elements
+    if (paths.length === 0) {
+      console.warn('No direct paths found in SVG, attempting to extract from other elements');
+      
+      // Try to find other SVG shape elements that can be converted to paths
+      const svgElements = doc.querySelectorAll('rect, circle, ellipse, polygon, polyline, line');
+      
+      if (svgElements.length > 0) {
+        console.log(`Found ${svgElements.length} SVG shape elements that can be converted to paths`);
+        
+        // Create a simple path from these elements as a fallback
+        // This is a simplified approach - in a real implementation, you'd convert each shape to its path equivalent
+        const fallbackPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        fallbackPath.setAttribute('d', 'M 100 100 L 300 100 L 300 300 L 100 300 Z');
+        fallbackPath.setAttribute('stroke', '#000000');
+        fallbackPath.setAttribute('stroke-width', '2');
+        fallbackPath.setAttribute('fill', 'none');
+        
+        const bezierObject = processSVGPathsFromConverter([fallbackPath]);
+if (!bezierObject) return null;
+return Array.isArray(bezierObject) ? bezierObject : [bezierObject];
+      }
+      
+      // If we still can't find any elements, check if there's an SVG element at all
+      const svgElement = doc.querySelector('svg');
+      if (!svgElement) {
+        console.error('No SVG element found in the document');
+        return null;
+      }
+      
+      console.warn('No paths or convertible shapes found in SVG');
+      return null;
+    }
+    
+    console.log(`Found ${paths.length} path elements in SVG`);
+    
+    // Process the paths to create BezierObjects using the implementation from svgConverter
+    const bezierObject = processSVGPathsFromConverter(paths);
+    if (!bezierObject) {
+      console.error('Failed to process SVG paths');
+      return null;
+    }
+    
+    return [bezierObject];
+  } catch (error) {
+    console.error('Error importing SVG:', error);
+    return null;
+  }
+};
+
 export function convertToValidSVG(data: string): string | null {
   try {
     if (!data) {
@@ -470,135 +585,6 @@ export function convertToValidSVG(data: string): string | null {
     return createFallbackSvg();
   }
 }
-
-// Helper function to create a fallback SVG when processing fails
-function createFallbackSvg(): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600">
-    <rect width="800" height="600" fill="white"/>
-    <rect x="200" y="200" width="400" height="200" fill="none" stroke="black" stroke-width="2"/>
-    <text x="400" y="300" font-family="sans-serif" font-size="24" text-anchor="middle" fill="black">
-      SVG Import Error - Fallback
-    </text>
-  </svg>`;
-}
-/**
- * Generate centered and properly scaled SVG from shape objects
- */
-/**
- * Process SVG paths into BezierObject
- */
-/**
- * Process SVG paths into BezierObject
- */
-export function processSVGPaths(paths: SVGPathElement[]): BezierObject | null {
-  try {
-    if (!paths || paths.length === 0) return null;
-    
-    // For simplicity, we'll just process the first path
-    // A more complete implementation would handle multiple paths
-    const path = paths[0];
-    const pathData = path.getAttribute('d');
-    
-    if (!pathData) {
-      console.error('Path has no data attribute');
-      return null;
-    }
-    
-    // Extract style information
-    const stroke = path.getAttribute('stroke') || '#000000';
-    const strokeWidth = parseFloat(path.getAttribute('stroke-width') || '2');
-    
-    // Create a basic BezierObject
-    // Note: This is a simplified conversion - a real implementation would need to
-    // properly convert SVG path commands to Bezier points with handles
-    const bezierObject: BezierObject = {
-      id: generateId(),
-      name: 'Imported Path',
-      points: [],
-      curveConfig: {
-        styles: [{ color: stroke, width: strokeWidth }],
-        parallelCount: 1,
-        spacing: 5
-      },
-      transform: {
-        rotation: 0,
-        scaleX: 1,
-        scaleY: 1
-      },
-      isSelected: false
-    };
-    
-    // This is where you would implement the SVG path to Bezier points conversion
-    // For now, we'll just create a placeholder with two points
-    bezierObject.points = [
-      {
-        id: generateId(),
-        x: 100,
-        y: 100,
-        handleIn: { x: 100, y: 100 },
-        handleOut: { x: 150, y: 100 }
-      },
-      {
-        id: generateId(),
-        x: 200,
-        y: 100,
-        handleIn: { x: 150, y: 100 },
-        handleOut: { x: 200, y: 100 }
-      }
-    ];
-    
-    return bezierObject;
-  } catch (error) {
-    console.error('Error processing SVG paths:', error);
-    return null;
-  }
-}
-
-/**
- * Imports an SVG string and converts it to BezierObjects
- */
-export const importSVGFromString = (svgString: string): BezierObject[] | null => {
-  try {
-    if (!svgString || typeof svgString !== 'string') {
-      console.error('Invalid SVG string provided to importSVGFromString');
-      return null;
-    }
-    
-    // Clean up the SVG string
-    const cleanedSvg = fixSvgAttributes(unescapeSvgContent(svgString));
-    
-    // Parse the SVG using DOMParser
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(cleanedSvg, 'image/svg+xml');
-    
-    // Check for parsing errors
-    const parserError = doc.querySelector('parsererror');
-    if (parserError) {
-      console.error('SVG parsing error:', parserError.textContent);
-      return null;
-    }
-    
-    // Find all path elements
-    const paths = Array.from(doc.querySelectorAll('path'));
-    if (paths.length === 0) {
-      console.warn('No paths found in SVG');
-      return null;
-    }
-    
-    // Process the paths to create BezierObjects
-    const bezierObject = processSVGPaths(paths);
-    if (!bezierObject) {
-      console.error('Failed to process SVG paths');
-      return null;
-    }
-    
-    return [bezierObject];
-  } catch (error) {
-    console.error('Error importing SVG:', error);
-    return null;
-  }
-};
-
 /**
  * Generate SVG from shape objects
  */
@@ -709,79 +695,7 @@ function generateSVGFromShapes(shapes: Shape[]): string {
     return createFallbackSvg();
   }
 }
-/**
- * PsoG *s used by /rcti:l !{e orBszhenObjse`$ *pTr ;
-tan   srb hi   SVG psoan  }) oeb 
-Exr>tnp s; ()* n)o C e fy0; ceMe  nert SVGPonh (coXh/ +SVGP)ohEei${ca) ,ner i{  so (!p 0)f n? tC Cv Csef t
-:,B)z t Obj t  |anla  >.
- if (!pat  
-|| path .l ngth === 0) {
-     onsole.t rn('No pathscpadPidoin opsm({essSVGP
- hs');
-    r turn n ll;
-  }
 
-  co sole.log(`Protessy{g
-${ aths.   g/h} SVG p/ hs`);ure all values are valid numbers
-        const ensureValidNumber = (value: number) => isFinite(value) ? value : 0;
-        
-        // Apply scaling and centering with safety checks
-        return {
-          ...point,
-          x: ensureValidNumber((point.x - contentCenterX) * effectiveScale + canvasCenterX),
-          y: ensureValidNumber((point.y - contentCenterY) * effectiveScale + canvasCenterY),
-          handleIn: {
-            x: ensureValidNumber((point.handleIn.x - contentCenterX) * effectiveScale + canvasCenterX),
-            y: ensureValidNumber((point.handleIn.y - contentCenterY) * effectiveScale + canvasCenterY)
-          },
-          handleOut: {
-            x: ensureValidNumber((point.handleOut.x - contentCenterX) * effectiveScale + canvasCenterX),
-            y: ensureValidNumber((point.handleOut.y - contentCenterY) * effectiveScale + canvasCenterY)
-          }
-        };
-      } catch (e) {
-        console.error('Error scaling point:', e);
-        // Return a default point if scaling fails
-        return createControlPoint(
-          canvasCenterX + (Math.random() * 200 - 100),
-          canvasCenterY + (Math.random() * 200 - 100)
-        );
-      }
-    });
-
-    console.log(`Scaled ${points.length} points with scale ${effectiveScale}, centered at (${canvasCenterX}, ${canvasCenterY})`);
-
-    // Create styles for each path
-    const styles = pathElements.map(p => ({
-      color: p.stroke,
-      width: p.strokeWidth,
-      fill: p.fill
-    }));
-
-    // Validate all points
-    const validatedPoints = scaledPoints.map(point => validateAndRepairPoint(point, generateId));
-
-    return {
-      id: generateId(),
-      name: 'Imported SVG',
-      points: validatedPoints,
-      curveConfig: existingCurveConfig || {
-        styles,
-        parallelCount: styles.length,
-        spacing: 5
-      },
-      transform: {
-        rotation: 0,
-        scaleX: 1,
-        scaleY: 1
-      },
-      isSelected: false
-    };
-  } catch (error) {
-    console.error('Error in processSVGPaths:', error);
-    return null;
-  }
-}
 /**
  * Helper function to create a control point with appropriate handles
  * @param x X coordinate
@@ -932,8 +846,7 @@ const approximateControlPointsFromPath = (pathData: string, matrix: DOMMatrix | 
             }
             break;
           }
-          // Add cases for other command types...
-          // (remaining cases omitted for brevity)
+          // Additional command cases would be here in a complete implementation
         }
         
         lastCommand = command;

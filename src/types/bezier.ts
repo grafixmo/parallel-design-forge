@@ -31,7 +31,6 @@ export interface CurveConfig {
 export interface BackgroundImage {
   url: string;
   opacity: number;
-  format?: 'jpg' | 'png' | 'svg';  // Added format field
 }
 
 export interface TransformSettings {
@@ -67,6 +66,7 @@ export interface SavedDesign {
   svg_content?: string; // Added missing property
   created_at?: string;
   updated_at?: string;
+  user_id?: string; // Added to fix the type error
 }
 
 export enum ControlPointType {
@@ -111,6 +111,3 @@ export interface ObjectGroup {
   name: string;
   isSelected: boolean;
 }
-
-// Add the missing SelectionTool type that's being imported
-export type SelectionTool = 'none' | 'rectangle' | 'lasso' | 'direct';

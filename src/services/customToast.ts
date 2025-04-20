@@ -1,49 +1,24 @@
+import { toast as sonnerToast } from '@/components/ui/sonner';
 
-import { toast } from "sonner";
-
-export const customToast = {
-  success: (message: string) => {
-    toast.success(message, {
-      duration: 3000,
-    });
-  },
-
-  error: (message: string) => {
-    toast.error(message, {
-      duration: 4000,
-    });
-  },
-
-  loading: (message: string) => {
-    toast.loading(message, {
-      duration: 2000,
-    });
-  },
-
-  info: (message: string) => {
-    toast.info(message, {
-      duration: 3000,
-    });
-  },
-
-  warning: (message: string) => {
-    toast.warning(message, {
-      duration: 3500,
-    });
-  },
-
-  promise: async <T>(
-    promise: Promise<T>,
-    messages: {
-      loading: string;
-      success: string;
-      error: string;
+// Create a custom toast wrapper that works with sonner's type definitions
+const toast = (message: string, options?: { variant?: 'default' | 'destructive' | 'success' }) => {
+  // Base toast options
+  const toastOptions: any = {};
+  
+  // Map our variant to appropriate sonner properties
+  if (options?.variant) {
+    // Different sonner implementations might use different properties
+    // Check sonner's documentation for the correct way to style toasts
+    if (options.variant === 'destructive') {
+      // For destructive variant, use a common approach
+      toastOptions.className = 'bg-red-500 text-white';
+    } else if (options.variant === 'success') {
+      toastOptions.className = 'bg-green-500 text-white';
     }
-  ) => {
-    return toast.promise(promise, {
-      loading: messages.loading,
-      success: messages.success,
-      error: messages.error,
-    });
-  },
+  }
+  
+  // Call sonner toast with the right parameters
+  return sonnerToast(message, toastOptions);
 };
+
+export { toast };

@@ -1,4 +1,3 @@
-
 /**
  * Utility functions for SVG processing and normalization
  */
@@ -121,6 +120,14 @@ export function fixSvgAttributes(svgString: string): string {
   if (!svgString || typeof svgString !== 'string') return svgString;
   
   let result = svgString;
+  
+  // Handle XML declaration and DOCTYPE
+  // Extract just the SVG content if there's an XML declaration or DOCTYPE
+  const svgStartIndex = result.indexOf('<svg');
+  if (svgStartIndex > 0) {
+    console.log('Found SVG tag at position', svgStartIndex, 'extracting SVG content only');
+    result = result.substring(svgStartIndex);
+  }
   
   // Ensure xmlns attribute exists
   if (!result.includes('xmlns=')) {

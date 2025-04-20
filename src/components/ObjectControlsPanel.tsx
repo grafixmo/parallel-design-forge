@@ -447,14 +447,19 @@ const ObjectControlsPanel: React.FC<ObjectControlsPanelProps> = ({
                   onUploadImage,
                   onRemoveImage,
                   onSaveToGallery: async (bgImage) => {
+                    // Use the new BackImages table for saving background images
                     const { saveBackgroundImageToGallery } = await import('@/components/TransformFixes');
-                    // Pass the saveDesign function from supabaseClient
+                    const { saveBackgroundImage } = await import('@/services/backImagesClient');
+                    
+                    // First save to the BackImages table in native format
+                    const result = await saveBackgroundImage(bgImage);
+                    
+                    // Then use the traditional method for backward compatibility
                     return saveBackgroundImageToGallery(bgImage, async (name, category, data) => {
                       return saveDesign({
                         name,
                         category,
                         shapes_data: data,
-                        // Remove user_id as it's not in the SavedDesign type
                         created_at: new Date().toISOString()
                       });
                     });

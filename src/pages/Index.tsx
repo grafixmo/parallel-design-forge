@@ -19,6 +19,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useBezierObjects } from '@/hooks/useBezierObjects';
 import ObjectControlsPanel from '@/components/ObjectControlsPanel';
 import { convertToValidSVG } from '@/utils/svgConverter';
+import TemplateGallery from '@/components/TemplateGallery';
 
 // Helper function to safely normalize design data
 const normalizeDesignData = (data: any): string => {
@@ -93,6 +94,7 @@ const Index = () => {
   
   // UI state
   const [showLibrary, setShowLibrary] = useState<boolean>(false);
+  const [showGallery, setShowGallery] = useState<boolean>(false);
   const [isDrawingMode, setIsDrawingMode] = useState<boolean>(true);
   
   // Export state - track if we are currently in middle of exporting
@@ -386,16 +388,29 @@ const Index = () => {
   
   // Function to preprocess SVG before import
   const preprocessSVG = (svgString: string): string => {
+    // Log the original SVG for debugging
+    console.log('Original SVG (first 100 chars):', svgString.substring(0, 100));
+    
+    // Handle XML declaration and DOCTYPE
+    // Extract just the SVG content if there's an XML declaration or DOCTYPE
+    let processedSvg = svgString;
+    const svgStartIndex = processedSvg.indexOf('<svg');
+    if (svgStartIndex > 0) {
+      console.log('Found SVG tag at position', svgStartIndex, 'extracting SVG content only');
+      processedSvg = processedSvg.substring(svgStartIndex);
+    }
+    
     // First convert using the utility function
-    let enhancedSvg = convertToValidSVG(svgString);
+    let enhancedSvg = convertToValidSVG(processedSvg);
     
     if (!enhancedSvg) {
-      console.warn('SVG conversion failed, using original SVG');
-      enhancedSvg = svgString;
+      console.warn('SVG conversion failed, using processed SVG');
+      enhancedSvg = processedSvg;
     }
     
     return enhancedSvg;
   };
+
   
   // Improved scaleAndCenterObjects function with better handling of complex SVGs
   const scaleAndCenterObjects = (objects: BezierObject[], targetWidth: number, targetHeight: number): BezierObject[] => {
@@ -698,7 +713,10 @@ const Index = () => {
       <Header
         onClearCanvas={handleReset}
         onSaveDesign={handleSaveDesign}
-        onLoadDesigns={() => setShowLibrary(true)}
+        onLoadDesigns={() => {
+          // Open the library panel to show saved designs
+          setShowLibrary(true);
+        }}
         onExportSVG={handleExportSVG}
         onImportSVG={handleImportSVG}
         onLoadTemplate={(templateData, merge) => handleLoadTemplate(templateData, merge)}
@@ -745,10 +763,32 @@ const Index = () => {
         </div>
       </div>
       
+      {showGallery && (
+        <TemplateGallery
+          open={showGallery}
+          onClose={() => setShowGallery(false)}
+          onSelectTemplate={handleLoadTemplate}
+          onSelectBackgroundImage={(imageUrl, opacity) => {
+            setBackgroundImage(imageUrl);
+            if (opacity !== undefined) {
+              setBackgroundOpacity(opacity);
+            }
+            setShowGallery(false);
+          }}
+        />
+      )}
+      
       {showLibrary && (
         <LibraryPanel
           onClose={() => setShowLibrary(false)}
           onSelectDesign={handleSelectDesign}
+          onSelectBackgroundImage={(imageUrl, opacity) => {
+            setBackgroundImage(imageUrl);
+            if (opacity !== undefined) {
+              setBackgroundOpacity(opacity);
+            }
+            setShowLibrary(false);
+          }}
         />
       )}
     </div>

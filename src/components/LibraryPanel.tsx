@@ -29,17 +29,19 @@ import {
 } from '@/components/ui/alert-dialog';
 import { SavedDesign } from '@/types/bezier';
 import { getDesigns, getDesignsByCategory, updateDesign, supabase } from '@/services/supabaseClient';
-import { X, AlertTriangle, FileJson, FileText, Trash2, Edit } from 'lucide-react';
+import { X, AlertTriangle, FileJson, FileText, Trash2, Edit, Image } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import MergeToggle from './MergeToggle';
+import BackgroundImagesGrid from './BackgroundImagesGrid';
 import { generateThumbnail } from '@/utils/thumbnailGenerator';
 
 interface LibraryPanelProps {
   onClose: () => void;
   onSelectDesign: (design: SavedDesign, merge: boolean) => void;
+  onSelectBackgroundImage?: (imageUrl: string, opacity?: number) => void;
 }
 
-const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign }) => {
+const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign, onSelectBackgroundImage }) => {
   const [designs, setDesigns] = useState<SavedDesign[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -87,7 +89,7 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign }) 
           
           // Ensure shapes_data is a string
           let normalizedData: string;
-          let dataFormat: 'json' | 'svg' | 'invalid' = 'invalid';
+          let dataFormat: 'json' | 'svg' | 'image' | 'invalid' = 'invalid';
           let needsUpdate = false;
           
           if (typeof design.shapes_data === 'string') {
@@ -235,6 +237,12 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign }) 
     if (!content || typeof content !== 'string') return false;
     return content.trim().startsWith('<svg') || content.includes('<svg ');
   };
+  
+  // Check if a string is a data URL for an image
+  const isImageDataUrl = (content: any): boolean => {
+    if (!content || typeof content !== 'string') return false;
+    return content.startsWith('data:image/');
+  };
 
   // Render SVG preview safely
   const renderSvgPreview = (svgContent: string) => {
@@ -273,6 +281,30 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign }) 
       );
     }
     
+    // Check if this is a background image in Paper(JPG) category
+    if (design.category === "Paper(JPG)") {
+      try {
+        // Try to parse the shapes_data to see if it contains a backgroundImage
+        const parsedData = JSON.parse(design.shapes_data as string);
+        
+        if (parsedData.backgroundImage && parsedData.backgroundImage.url) {
+          // Display the image directly in its native format
+          return (
+            <div className="w-full h-full flex items-center justify-center">
+              <img 
+                src={parsedData.backgroundImage.url} 
+                alt={design.name} 
+                className="max-w-full max-h-full object-contain"
+              />
+            </div>
+          );
+        }
+      } catch (error) {
+        console.error("Error parsing background image data:", error);
+      }
+    }
+    
+    // Fall back to SVG rendering for other designs
     if ((design as any).isSvg) {
       return isSvgContent(design.shapes_data) ? 
         renderSvgPreview(design.shapes_data as string) : 
@@ -300,6 +332,25 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign }) 
 
   // Get status label for design
   const getStatusLabel = (design: SavedDesign) => {
+    // For Paper(JPG) category, show image format if possible
+    if (design.category === "Paper(JPG)") {
+      try {
+        const parsedData = JSON.parse(design.shapes_data as string);
+        if (parsedData.backgroundImage && parsedData.backgroundImage.url) {
+          const url = parsedData.backgroundImage.url;
+          if (url.includes('data:image/png')) return "PNG";
+          if (url.includes('data:image/jpeg') || url.includes('data:image/jpg')) return "JPG";
+          if (url.includes('data:image/')) {
+            const format = url.match(/data:image\/(\w+);/)?.[1]?.toUpperCase();
+            return format || "IMAGE";
+          }
+          return "IMAGE";
+        }
+      } catch (e) {
+        // Fall back to default handling
+      }
+    }
+    
     if ((design as any).isSvg) return "SVG";
     if ((design as any).isJson) return "JSON";
     if ((design as any).wasFixed) return "Fixed";
@@ -309,6 +360,18 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign }) 
 
   // Get badge styling based on data status
   const getStatusBadgeClass = (design: SavedDesign) => {
+    // Special styling for image formats in Paper(JPG) category
+    if (design.category === "Paper(JPG)") {
+      try {
+        const parsedData = JSON.parse(design.shapes_data as string);
+        if (parsedData.backgroundImage && parsedData.backgroundImage.url) {
+          return "bg-purple-100 text-purple-800"; // Special color for native images
+        }
+      } catch (e) {
+        // Fall back to default handling
+      }
+    }
+    
     if ((design as any).wasFixed) return "bg-amber-100 text-amber-800";
     if ((design as any).hasParseError) return "bg-red-100 text-red-800";
     if ((design as any).isSvg) return "bg-blue-100 text-blue-800";
@@ -396,42 +459,6 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign }) 
     }
   };
 
-  const saveDesignWithSvg = async (name: string, category: string, data: string, svgContent?: string): Promise<any> => {
-    try {
-      // Prepare the data object to be saved
-      const designData: any = {
-        name,
-        category,
-        shapes_data: data
-      };
-      
-      // Include SVG content if provided (needed for background images)
-      if (svgContent) {
-        designData.svg_content = svgContent;
-      }
-
-      // Insert into the designs table
-      const { data: result, error } = await supabase
-        .from('designs')
-        .insert(designData)
-        .select();
-
-      if (error) throw error;
-      return result;
-    } catch (error) {
-      console.error('Error saving design:', error);
-      return { error };
-    }
-  };
-
-  // Expose the save function for background images 
-  useEffect(() => {
-    // Make the save function available to the BackgroundImageControls component
-    if (window) {
-      (window as any).saveDesignToLibrary = saveDesignWithSvg;
-    }
-  }, []);
-
   return (
     <>
       <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center">
@@ -446,37 +473,54 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign }) 
             </div>
           </div>
           
-          <div className="p-4 border-b">
-            <div className="flex items-center space-x-4">
-              <div className="w-40">
-                <Select value={selectedCategory} onValueChange={handleCategoryChange}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="All Categories" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Categories</SelectItem>
-                    <SelectItem value="Collares">Collares</SelectItem>
-                    <SelectItem value="Anillos">Anillos</SelectItem>
-                    <SelectItem value="Pendientes">Pendientes</SelectItem>
-                    <SelectItem value="Prototipos">Prototipos</SelectItem>
-                    <SelectItem value="Paper(JPG)">Paper (JPG)</SelectItem>
-                  </SelectContent>
-                </Select>
+          <Tabs defaultValue="designs" className="flex-1 flex flex-col overflow-hidden">
+            <div className="p-4 border-b">
+              <div className="flex items-center justify-between">
+                <TabsList>
+                  <TabsTrigger value="designs" className="flex items-center gap-1">
+                    <FileText className="h-4 w-4" />
+                    Designs
+                  </TabsTrigger>
+                  <TabsTrigger value="backgrounds" className="flex items-center gap-1">
+                    <Image className="h-4 w-4" />
+                    Background Images
+                  </TabsTrigger>
+                </TabsList>
+                
+                {fixedCount > 0 && (
+                  <div className="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded">
+                    Auto-fixed {fixedCount} designs
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            <TabsContent value="designs" className="flex-1 flex flex-col overflow-hidden">
+              <div className="p-4 border-b">
+                <div className="flex items-center space-x-4">
+                  <div className="w-40">
+                    <Select value={selectedCategory} onValueChange={handleCategoryChange}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="All Categories" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Categories</SelectItem>
+                        <SelectItem value="Collares">Collares</SelectItem>
+                        <SelectItem value="Anillos">Anillos</SelectItem>
+                        <SelectItem value="Pendientes">Pendientes</SelectItem>
+                        <SelectItem value="Prototipos">Prototipos</SelectItem>
+                        <SelectItem value="Paper(JPG)">Paper (JPG)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  <Button variant="outline" size="sm" onClick={fetchDesigns}>
+                    Refresh
+                  </Button>
+                </div>
               </div>
               
-              <Button variant="outline" size="sm" onClick={fetchDesigns}>
-                Refresh
-              </Button>
-              
-              {fixedCount > 0 && (
-                <div className="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded">
-                  Auto-fixed {fixedCount} designs
-                </div>
-              )}
-            </div>
-          </div>
-          
-          <div className="flex-1 overflow-auto p-4">
+              <div className="flex-1 overflow-auto p-4">
             {isLoading ? (
               <div className="text-center py-8">
                 <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent"></div>
@@ -535,7 +579,18 @@ const LibraryPanel: React.FC<LibraryPanelProps> = ({ onClose, onSelectDesign }) 
                 ))}
               </div>
             )}
-          </div>
+              </div>
+            </TabsContent>
+            
+            <TabsContent value="backgrounds" className="flex-1 overflow-hidden">
+              {onSelectBackgroundImage && (
+                <BackgroundImagesGrid 
+                  onSelectBackgroundImage={onSelectBackgroundImage} 
+                  onClose={onClose}
+                />
+              )}
+            </TabsContent>
+          </Tabs>
         </Card>
       </div>
 

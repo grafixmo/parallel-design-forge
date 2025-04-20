@@ -435,46 +435,57 @@ export const BackgroundImageControls: React.FC<BackgroundImageControlsProps> = (
 // 4. Function to save background image to Paper(JPG) category
 export const saveBackgroundImageToGallery = async (
   backgroundImage: string | undefined,
-  saveDesign: (name: string, category: string, data: string, svgContent?: string) => Promise<any>
+  saveDesign: (name: string, category: string, data: string) => Promise<any>
 ) => {
   if (!backgroundImage) {
     toast({
       title: "No Background Image",
       description: "There is no background image to save",
+      variant: "destructive"
     });
     return;
   }
 
   try {
+    // Import the saveBackgroundImage function from the new client
+    const { saveBackgroundImage } = await import('@/services/backImagesClient');
+    
+    // Make sure we're working with a data URL
+    if (!backgroundImage.startsWith('data:image/')) {
+      console.error("Background image is not in data URL format");
+      toast({
+        title: "Format Error",
+        description: "Background image is in an unsupported format",
+        variant: "destructive"
+      });
+      return;
+    }
+    
     // Generate a name based on date with a more readable format
     const date = new Date();
     const formattedDate = date.toISOString().split('T')[0];
     const formattedTime = `${String(date.getHours()).padStart(2, '0')}-${String(date.getMinutes()).padStart(2, '0')}`;
     const name = `Background_${formattedDate}_${formattedTime}`;
     
-    // Create design data object with the background image
-    const designData = {
-      objects: [], // Empty array since this is just a background
-      backgroundImage: {
-        url: backgroundImage,
-        opacity: 1 // Default opacity
-      }
-    };
-    
-    // Convert to JSON string as expected by SavedDesign type
-    const jsonData = JSON.stringify(designData);
-    
-    console.log("Saving background image to Paper(JPG) category...");
-    console.log("Design name:", name);
-    console.log("Category:", "Paper(JPG)");
-    console.log("Image URL length:", backgroundImage.length);
-    
-    // Save to Paper (JPG) category - passing the JSON data directly
-    const result = await saveDesign(name, "Paper(JPG)", jsonData);
+    // Save directly to the BackImages table in its native format
+    const result = await saveBackgroundImage(backgroundImage, name);
     
     if (result && result.error) {
       throw new Error(result.error.message);
     }
+    
+    // Also save a reference in the designs table for backward compatibility
+    // Create a minimal DesignData object with just the metadata
+    const designData = {
+      objects: [],
+      backgroundImage: {
+        url: backgroundImage,
+        opacity: 1
+      }
+    };
+    
+    // Save to Paper (JPG) category in the designs table
+    await saveDesign(name, "Paper(JPG)", JSON.stringify(designData));
     
     toast({
       title: "Background Saved",

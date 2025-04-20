@@ -25,24 +25,26 @@ import {
   PopoverContent,
   PopoverTrigger
 } from '@/components/ui/popover';
-import { Trash2, Heart, Edit, Loader2, Search, X, ExternalLink, AlertTriangle, FileJson, FileText } from 'lucide-react';
+import { Trash2, Heart, Edit, Loader2, Search, X, ExternalLink, AlertTriangle, FileJson, FileText, Image } from 'lucide-react';
 import { getTemplates, getTemplatesByCategory, updateTemplate, deleteTemplate, likeTemplate, Template } from '@/services/supabaseClient';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { parseTemplateData } from '@/utils/svgUtils';
 import MergeToggle from './MergeToggle';
+import BackgroundImagesGrid from './BackgroundImagesGrid';
 import { generateThumbnail } from '@/utils/thumbnailGenerator';
 
 interface TemplateGalleryProps {
   open: boolean;
   onClose: () => void;
   onSelectTemplate: (templateData: string, merge?: boolean) => void;
+  onSelectBackgroundImage?: (imageUrl: string, opacity?: number) => void;
 }
 
 // Define a type for the data format to ensure compatibility
 type DataFormat = 'svg' | 'json' | 'invalid';
 
-const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSelectTemplate }) => {
+const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSelectTemplate, onSelectBackgroundImage }) => {
   const { toast } = useToast();
   const [templates, setTemplates] = useState<Template[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -406,24 +408,38 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
             </Button>
           </div>
 
-          {/* Added h-full to Tabs to ensure it takes available space */}
-          <Tabs 
-            value={activeCategory} 
-            onValueChange={handleCategoryChange}
-
-            className="flex-1 flex flex-col h-full overflow-hidden"
-          >
+          {/* Main tabs for content type */}
+          <Tabs defaultValue="templates" className="flex-1 flex flex-col h-full overflow-hidden">
             <TabsList className="mb-4 flex-shrink-0">
-              <TabsTrigger value="all">All</TabsTrigger>
-              <TabsTrigger value="Earrings">Earrings</TabsTrigger>
-              <TabsTrigger value="Rings">Rings</TabsTrigger>
-              <TabsTrigger value="Necklaces">Necklaces</TabsTrigger>
-              <TabsTrigger value="Prototypes">Prototypes</TabsTrigger>
-              <TabsTrigger value="Paper">Paper (JPG)</TabsTrigger>
+              <TabsTrigger value="templates" className="flex items-center gap-1">
+                <FileText className="h-4 w-4" />
+                Templates
+              </TabsTrigger>
+              <TabsTrigger value="backgrounds" className="flex items-center gap-1">
+                <Image className="h-4 w-4" />
+                Background Images
+              </TabsTrigger>
             </TabsList>
+            
+            {/* Templates tab content */}
+            <TabsContent value="templates" className="flex-1 h-full overflow-hidden">
+              {/* Category tabs for templates */}
+              <Tabs 
+                value={activeCategory} 
+                onValueChange={handleCategoryChange}
+                className="flex-1 flex flex-col h-full overflow-hidden"
+              >
+                <TabsList className="mb-4 flex-shrink-0">
+                  <TabsTrigger value="all">All</TabsTrigger>
+                  <TabsTrigger value="Earrings">Earrings</TabsTrigger>
+                  <TabsTrigger value="Rings">Rings</TabsTrigger>
+                  <TabsTrigger value="Necklaces">Necklaces</TabsTrigger>
+                  <TabsTrigger value="Prototypes">Prototypes</TabsTrigger>
+                  <TabsTrigger value="Paper">Paper (JPG)</TabsTrigger>
+                </TabsList>
 
-            {/* Added h-full to TabsContent */}
-            <TabsContent value={activeCategory} className="flex-1 h-full overflow-hidden">
+                {/* Template categories content */}
+                <TabsContent value={activeCategory} className="flex-1 h-full overflow-hidden">
               {/* Updated ScrollArea to take full height and width */}
               <ScrollArea className="h-full w-full pr-3">
                 {isLoading ? (
@@ -514,6 +530,18 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ open, onClose, onSele
                   </div>
                 )}
               </ScrollArea>
+                </TabsContent>
+              </Tabs>
+            </TabsContent>
+            
+            {/* Background images tab content */}
+            <TabsContent value="backgrounds" className="flex-1 h-full overflow-hidden">
+              {onSelectBackgroundImage && (
+                <BackgroundImagesGrid 
+                  onSelectBackgroundImage={onSelectBackgroundImage}
+                  onClose={onClose}
+                />
+              )}
             </TabsContent>
           </Tabs>
 
